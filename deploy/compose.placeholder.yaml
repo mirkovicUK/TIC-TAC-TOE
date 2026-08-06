@@ -1,0 +1,42 @@
+# Placeholder stack for task 2.2. Run from deploy/ on the instance:
+#
+#   docker volume create caddy-data          # once, by hand, before this file is used
+#   cp Caddyfile Caddyfile.local             # then set the hostname in the copy
+#   docker compose -f compose.placeholder.yaml up -d
+#
+# The Caddyfile mount points at `Caddyfile.local`, an untracked copy of the committed
+# template, so the instance never modifies a tracked file and the `git pull` in task 13.3
+# is a clean fast-forward. `cp Caddyfile Caddyfile.local` must happen before `up`, because
+# Docker creates a *directory* at a bind-mount source path that does not exist and Caddy
+# then fails on a directory where it wants a config file.
+#
+# Brought down with `down`, never `down -v`. See docs/aws-infra.md.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Untracked copy of the committed template, carrying this instance's hostname and
+      # gitignored. Created by Part 2 step 3 of docs/aws-infra.md; see the header above.
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  # `external: true` with the fixed name is what pins this declaration to the volume
+  # created by hand with `docker volume create caddy-data`, and what stops Compose
+  # prefixing it with the project name. A plain `caddy-data:` declaration here would
+  # materialise as `deploy_caddy-data`, because Compose derives the project name from
+  # the invoking directory and this file is invoked from deploy/ while the real stack is
+  # invoked from the repository root. The certificate, its private key and the ACME
+  # account state would sit in a volume the real stack never mounts, `docker compose up`
+  # would perform a second issuance against the rate-limit bucket shared by every user
+  # of sslip.io on submission day, and ADR-009's mitigation 2 would be inert while
+  # appearing to be in place. `compose.yaml` at the repository root declares this volume
+  # identically.
+  caddy-data:
+    external: true
+    name: caddy-data

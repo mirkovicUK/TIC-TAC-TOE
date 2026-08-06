@@ -11,6 +11,9 @@
 .env
 .env.backup
 .env.production
+# Both are specific to one provisioned instance: its hostname and its resource ids.
+/deploy/Caddyfile.local
+/deploy/.provisioned.env
 .phpactor.json
 .phpunit.result.cache
 /.codex

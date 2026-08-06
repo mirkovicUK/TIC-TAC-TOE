@@ -1,0 +1,36 @@
+# Placeholder Caddyfile — task 2.2.
+#
+# This file exists only to complete one Let's Encrypt issuance ahead of the real
+# deployment (ADR-009, mitigation 2). A site address plus a `respond` directive is all
+# the ACME HTTP-01 challenge needs: Caddy answers the challenge itself, so no
+# application, no PHP and no static files have to exist yet.
+#
+# It is committed rather than thrown away because task 13.2's production Caddyfile
+# evolves from it. Starting from a file that has already completed an issuance on this
+# host is cheaper than writing a fresh one and discovering on submission day which of
+# the two variables changed.
+#
+# This file is a committed *template*. Copy it to `Caddyfile.local` and edit the copy,
+# never this file; `compose.placeholder.yaml` mounts the copy, and keeping this one
+# pristine is what makes the `git pull` in task 13.3 a clean fast-forward.
+#
+# Replace the site address in the copy with your own address before starting the stack.
+# The placeholder is left in angle brackets on purpose: Caddy refuses to adapt this config
+# at all while it is unedited, failing with
+#   subject does not qualify for certificate: '<elastic-ip-dashed>.sslip.io'
+# before any ACME request is made. A plausible-looking placeholder would instead be
+# accepted and would spend a failed authorization against the shared sslip.io
+# rate-limit bucket.
+#
+# Use the dashed form of the address — 203-0-113-5.sslip.io rather than
+# 203.0.113.5.sslip.io. Both resolve to the same address, and the dashed form cannot be
+# misread as a subdomain of a numeric label by anything downstream that parses labels.
+#
+# nip.io fallback (ADR-009, mitigation 1): a refused issuance is retried by changing that
+# one line in the copy to `<elastic-ip-dashed>.nip.io {`. nip.io is a separate registered
+# domain and therefore a separate rate-limit bucket, so exhaustion of sslip.io's bucket
+# by strangers says nothing about it.
+
+<elastic-ip-dashed>.sslip.io {
+	respond "tic-tac-toe placeholder. TLS certificate provisioned ahead of deployment." 200
+}
