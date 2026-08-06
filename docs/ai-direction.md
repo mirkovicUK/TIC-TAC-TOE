@@ -93,4 +93,17 @@ Recorded here so a reader can see which strategy the project actually uses rathe
 - **Eris on PHP 8.5** — resolved. Eris 1.1 installs and its generators run under PHP 8.5.9, verified by constructing a `ChooseGenerator` and drawing a value rather than by trusting Composer's resolution. The hand-picked-dataset fallback was not needed. Worth distinguishing the two checks: Composer resolving a package says only that its constraints are satisfiable, not that its code runs on the interpreter in use.
 - **Pest 4** — resolved. Pest 4.7.8, with the Laravel and browser plugins. The browser plugin is what makes Requirement 14.5 satisfiable without adding Dusk.
 - **Requirement 10.9 against `PreventRequestForgery`** — resolved by amending the criterion, as described above. No application configuration follows.
-- **The enumeration node count convention** — whether the empty move list counts as a node; still open, to be settled at task 3.6 on the first run of the exhaustive walk.
+- **The enumeration node count convention** — resolved, and earlier than planned. It was recorded as open until task 3.6, but verifying task 3.2's rules engine meant walking the tree anyway, so the answer arrived with the engine rather than with the test that formalises it. The root counts: incrementing on entry to each node, the empty move list included, gives exactly 549,946, and 549,945 means the root was skipped. Task 3.6 now states the convention instead of asking the implementer to choose one — the open version invited whoever got the right answer to go hunting for a discrepancy that does not exist.
+- **The enumeration runtime** — measured, and the flagged risk did not materialise. The design named the exhaustive walk as the most likely thing to overrun the CI budget and staged four mitigations against a 60-second limit. The full walk, engine plus an independently written oracle in plain PHP with no optimisation, took about five seconds. The mitigations stay on record as contingency rather than being deleted, because naming them in advance is what made this a five-second check instead of a mid-build surprise.
+
+## Evidence rather than assertion, for the one part that had to be right
+
+This belongs here as the opposite case to everything above: not a claim that was wrong, but a claim that was checked hard.
+
+The rules engine is the one component where a defect is both plausible and quiet. A storage bug loses a game. A rules bug tells a player they lost a game they won, and nothing else in the system objects.
+
+So it is not verified by assertion. Every reachable position — all 549,946 move sequences, 255,168 of them terminal — is walked, and at each one the engine's verdict is compared against a **separately written** win oracle. The engine is never its own judge: had the walk asked the engine when to stop recursing, the properties would be tautologies and the exercise worthless.
+
+Both counts are externally known combinatorial facts about tic-tac-toe, which is what makes them ground truth rather than a restatement of the implementation's own opinion. They matched exactly, with no disagreement on terminality, winning-line sets, move counts, mark-to-move or winner at any node.
+
+One consequence worth recording for whoever writes the tests. Guard *ordering* inside the engine is deliberately not observable through its return value, because Requirement 11.5 mandates one uniform, detail-free rejection: a move list breaking two rules at once returns identical output whichever guard fired. The reachable property is "all five violation classes collapse to the same value", which is what the requirement actually asks for. An ordering assertion would have to reach inside the implementation to exist, and should not be written.

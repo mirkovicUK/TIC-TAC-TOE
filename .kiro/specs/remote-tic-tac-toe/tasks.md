@@ -15,7 +15,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
 
 ## Tasks
 
-- [ ] 1. Toolchain resolution, risk discovery, and repository skeleton
+- [x] 1. Toolchain resolution, risk discovery, and repository skeleton
   - [x] 1.1 Scaffold the application and make the repository real
     - Create a fresh Laravel 13 application at the repository root, keeping the existing `the-skills-network/` and `.kiro/` directories
     - Install the Inertia v2 + React 19 + TypeScript starter scaffolding (`resources/js/pages`, `resources/js/components`, Vite config, `app.tsx` root)
@@ -34,21 +34,21 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Record the outcome of the two remaining checks in the AI-direction record started in 1.3, alongside the forgery outcome already recorded there, so the reader knows which strategy the suite uses
     - _Requirements: 10.9, 12.3_
 
-  - [-] 1.3 Commit the spec documents and open the AI-direction record
+  - [x] 1.3 Commit the spec documents and open the AI-direction record
     - Commit `.kiro/specs/remote-tic-tac-toe/requirements.md`, `design.md` and this `tasks.md` to the repository
     - Have `docs/ai-direction.md` record how the AI tooling was directed — the spec documents it produced and the corrections made to its output — and append to it as work proceeds. **The file already exists and is committed**, holding the corrections grouped by kind of failure, the decisions recorded rather than corrected, and the verification items settled on first run, so this step is satisfied by extending that file rather than writing one from scratch
     - _Requirements: 12.5, 12.6_
 
-  - [ ] 1.4 Configure the SQLite connection and the session store
+  - [x] 1.4 Configure the SQLite connection and the session store
     - In `config/database.php` on the `sqlite` connection set `foreign_key_constraints => true` (issues `PRAGMA foreign_keys = ON` per connection — SQLite disables them per connection by default), `journal_mode => WAL`, `synchronous => NORMAL`, `busy_timeout => 5000`
     - Set the session driver to `database` in the same SQLite file, and `SESSION_LIFETIME` to 30 days so a Player_Session outlives the 7-day retention window
     - _Requirements: 9.1, 13.2_
     - _Design: ADR-004_
 
-- [ ] 2. Provision the hosted hostname and TLS certificate — do this at least one week before submission
+- [x] 2. Provision the hosted hostname and TLS certificate — do this at least one week before submission
   - Out of code order on purpose. ADR-009 records that Let's Encrypt rate-limits per *registered* domain and `sslip.io` is one registered domain shared by all its users, so issuance can be refused because of strangers' usage. A refusal with a week of slack is recoverable; a refusal on submission day is not. Nothing in group 3 onwards depends on this.
 
-  - [ ] 2.1 Stand up the instance and fix the hostname
+  - [x] 2.1 Stand up the instance and fix the hostname
     - Launch the EC2 instance, install Docker and the Compose plugin, allocate an Elastic IP and associate it
     - Security group exposes only 80 and 443 inbound. **Port 22 is not opened, and no key pair is created**
     - Attach an instance profile carrying the `AmazonSSMManagedInstanceCore` managed policy, and confirm the instance appears as a managed node in Systems Manager
@@ -59,7 +59,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 12.4_
     - _Design: ADR-009_
 
-  - [ ] 2.2 Obtain the certificate now, against a placeholder site
+  - [x] 2.2 Obtain the certificate now, against a placeholder site
     - Create a `deploy/` directory in the repository holding the placeholder `Caddyfile` (the hostname plus a `respond` directive is enough for ACME to complete) and a minimal `compose.placeholder.yaml`. Committing them means task 13.2's production Caddyfile evolves from a known-working file rather than being written from scratch, and the volume is declared in one place
     - **First, create the volume out of band: `docker volume create caddy-data`.** Creating it by hand rather than letting Compose create it is what keeps it outside any Compose project's namespace
     - Run a minimal Caddy container serving a static placeholder for `<elastic-ip>.sslip.io` and let it complete an ACME issuance; confirm HTTPS loads without an interstitial
@@ -74,13 +74,13 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Design: ADR-009_
 
 - [ ] 3. The domain layer: `App\Domain\TicTacToe` (independent of group 4)
-  - [ ] 3.1 Write the seven domain types
+  - [x] 3.1 Write the seven domain types
     - `Mark` (with `forSequenceIndex`, `opponent`), `Move`, `MoveList` (`empty`, `fromCellIndices`, `fromMoves`, `append`, `count`, `cellIndices`, iterable), `WinningLine` (eight cases, `cells()`, `all()`), `Board`, `Outcome`, `Analysis`, `InvalidMoveList`
     - `Move` carries plain integers and `MoveList::fromMoves()` accepts ill-formed input verbatim — well-formedness is checked by the engine, not asserted by the type system, because Requirements 11.5 and 14.8 require the engine to be *handed* bad lists
     - No `Illuminate\*`, no models, no session, no request anywhere in the namespace
     - _Requirements: 4.1, 11.1, 11.4, 11.9_
 
-  - [ ] 3.2 Implement `RulesEngine::analyse` as a single pass with five ordered guards
+  - [x] 3.2 Implement `RulesEngine::analyse` as a single pass with five ordered guards
     - One entry point returning `Analysis|InvalidMoveList`; guards in the order length, move-after-a-win, `sequenceIndex !== position`, cell range, repeated cell — each returning the same uniform `InvalidMoveList::Error` and deriving nothing
     - `completedLinesFor` returns **every** line the mark now occupies, not the first; the double-line position `X0 O1 X2 O3 X6 O5 X8 O7 X4` is reachable in legal play
     - The win check sits at the *top* of the iteration, so a list whose last move completes a line is well formed and a list with any move after it is not
@@ -110,8 +110,8 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
   - [ ] 3.6 Write `EnumerationTest` — the exhaustive walk
     - **Properties 1, 2, 3, 4** checked at every node of the reachable game tree, depth-first from the empty Move_List, with the oracle from 3.3 deciding terminality and the winning-line set
     - Assert `terminals === 255_168`. **This count carries no convention ambiguity** — a mismatch means the engine and the oracle disagree with the accepted combinatorial result. Stop and debug; do not adjust the expectation
-    - Assert `nodes === 549_946`. **This count does carry one** — whether the empty Move_List counts as a node. A first run reporting 549,945 is harness accounting, not a rules defect: fix the root accounting, record the convention adopted in the test, and leave the engine alone
-    - Treat the first run as a *measurement*. If it overruns 60 s, apply the mitigations in order: static line table (done in 3.3), carry a plain board alongside the Move_List through the recursion, split the walk into its own CI job, then accept the longer job
+    - Assert `nodes === 549_946`. **The convention is settled: the root counts.** Increment the node counter on entry to each node, the empty Move_List included; 549,946 is the count under that convention, established by a full walk. A first run reporting 549,945 means the root was not counted — a harness bug with a known fix, not a rules defect and not a convention left to the implementer. Fix the root accounting and leave the engine alone; do not adjust the expectation. Stated this plainly so that a correct 549,946 is not mistaken for a discrepancy worth hunting
+    - The walk has been measured: engine plus independent oracle, plain PHP, recursive closure, no optimisation, approximately 5 s on the development machine (PHP 8.5.9, amd64). That was a throwaway verification harness rather than the committed Pest test, so the committed figure may differ somewhat — the point is that it sits an order of magnitude inside the 60 s budget, not that it is exactly 5 s. The mitigations stay on record as contingency, in the same order should an overrun appear: static line table (done in 3.3), carry a plain board alongside the Move_List through the recursion, split the walk into its own CI job, then accept the longer job. Naming them in advance is what turned the runtime question into a short check rather than a mid-build surprise
     - **Sampling a subset of the tree is not a mitigation and is not acceptable** — Requirement 14.2 requires exhaustive enumeration, and the two counts are what make the walk a check against external ground truth
     - **Validates: Requirements 14.2, 11.2, 11.3, 11.7, 11.8, 6.1, 6.2, 6.3, 6.4**
 

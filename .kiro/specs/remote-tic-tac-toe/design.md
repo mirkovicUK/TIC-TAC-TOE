@@ -296,6 +296,14 @@ Five things about this loop are load-bearing:
 
 At most one mark can hold a completed line in a well-formed list, because play stops at the first completed line. `Outcome::wonBy(lastMark)` is therefore sound, and the enumeration test confirms it across the whole tree rather than by assertion here.
 
+One difference a reader diffing this section against `RulesEngine.php` will notice, better found explained than found unexplained: the implementation does not carry `lastMark` out of the loop. It recovers the winning mark from parity instead.
+
+```php
+$lines !== [] => Outcome::wonBy(Mark::forSequenceIndex($moveCount - 1)),
+```
+
+`lastMark` is initialised to null before the loop and assigned inside it, so reading it afterwards is a nullable read — sound at runtime, since a non-empty line set implies at least one iteration ran, but PHPStan at level `max`, which this project's static analysis gate requires, cannot see that. Keeping `lastMark` means an `assert()` or an ignore comment, and both tell the analyser to trust a claim rather than removing the need for trust. The two forms are equivalent: a non-empty line set implies at least one Move, so the final Move sits at sequence index `count - 1`, and the sequence-index guard has already established that every Move's sequence index equals its position — so the parity of `count - 1` *is* the Mark that completed the line. The equivalence is an argument, and arguments can be wrong, so it is also evidence: the exhaustive walk of all 549,946 reachable nodes, run against the independently written win oracle, agreed on the winner at every terminal position. The pseudocode above keeps `lastMark` because it states the algorithm more clearly; a nullable accumulator is a pseudocode convention, not a claim about PHP's type system.
+
 #### What the domain layer deliberately does not know
 
 `waiting_for_opponent` is not a domain concept — the engine cannot tell "no opponent yet" from "no moves yet", and it does not need to. Game_State is a Game_Service concern (`App\Games\GameState`), mapped from the engine's Outcome:
