@@ -16,14 +16,14 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
 ## Tasks
 
 - [ ] 1. Toolchain resolution, risk discovery, and repository skeleton
-  - [ ] 1.1 Scaffold the application and make the repository real
+  - [x] 1.1 Scaffold the application and make the repository real
     - Create a fresh Laravel 13 application at the repository root, keeping the existing `the-skills-network/` and `.kiro/` directories
     - Install the Inertia v2 + React 19 + TypeScript starter scaffolding (`resources/js/pages`, `resources/js/components`, Vite config, `app.tsx` root)
     - Confirm the runtime is PHP 8.5 and that `php artisan --version` reports Laravel 13
     - Initial commit; create the public remote and push
     - _Requirements: 12.5_
 
-  - [ ] 1.2 Resolve the dev toolchain and settle the two dependency risks now
+  - [x] 1.2 Resolve the dev toolchain and settle the two dependency risks now
     - `composer require --dev` Pest 4, Larastan, Eris (`giorgiosironi/eris`), Pint
     - **Verify Larastan resolves against Laravel 13.** If it does not, drop it and configure plain PHPStan at level `max` over `App\Domain\TicTacToe` only (see Notes, item 1)
     - **Verify Eris resolves and runs on PHP 8.5** with a one-line throwaway property. If it does not, record the Pest-dataset fallback (see Notes, item 2)
@@ -34,9 +34,9 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Record the outcome of the two remaining checks in the AI-direction record started in 1.3, alongside the forgery outcome already recorded there, so the reader knows which strategy the suite uses
     - _Requirements: 10.9, 12.3_
 
-  - [ ] 1.3 Commit the spec documents and open the AI-direction record
+  - [-] 1.3 Commit the spec documents and open the AI-direction record
     - Commit `.kiro/specs/remote-tic-tac-toe/requirements.md`, `design.md` and this `tasks.md` to the repository
-    - Create `docs/ai-direction.md` with the significant prompts issued so far and the corrections made to generated output; append to it as work proceeds
+    - Have `docs/ai-direction.md` record how the AI tooling was directed — the spec documents it produced and the corrections made to its output — and append to it as work proceeds. **The file already exists and is committed**, holding the corrections grouped by kind of failure, the decisions recorded rather than corrected, and the verification items settled on first run, so this step is satisfied by extending that file rather than writing one from scratch
     - _Requirements: 12.5, 12.6_
 
   - [ ] 1.4 Configure the SQLite connection and the session store
@@ -432,8 +432,8 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 12.7, 12.11_
 
   - [ ] 15.3 Complete the AI-direction record
-    - Finish `docs/ai-direction.md`: the spec documents, the significant prompts issued, and the corrections made to the generated output — including the two dependency fallbacks resolved in 1.2, the Requirement 10.9 outcome also recorded in 1.2 (with the criterion amendment if outcome 3 was taken), and any enumeration-count convention adopted in 3.6
-    - **Enumerate the spec-stage defects the review process caught**, so they are captured while fresh rather than reconstructed from memory at the end: the test suite not being required to exist at all; rematch token issuance specified in a way no implementation could satisfy; the polling stop condition that was always true at the moment it was evaluated, so both clients stopped polling and neither could discover a rematch; Requirement 13.3 deleting a Game at the moment 13.4's command was supposed to find it; concurrent joins being undefined; the concurrency guarantee in 5.3 contradicting the authorisation rules in Requirements 3 and 4; the idle indication firing on the viewing Player's own turn; a CHECK constraint requiring a token slot that per-request rematch minting leaves null; Property 10 claiming contiguity as a persisted constraint after the schema section had established it was not; the missing `TrustProxies` configuration; and the incorrect claim that CSRF forces a session into existence, which Laravel 13's `Sec-Fetch-Site` behaviour inverts
+    - Finish `docs/ai-direction.md`: the spec documents and the corrections made to the generated output — including the outcomes of the two dependency checks recorded in 1.2 (Larastan 3.10 and Eris 1.1 both resolved and run on PHP 8.5.9, so neither fallback was needed), the Requirement 10.9 outcome also recorded in 1.2 (outcome 3 was taken and the criterion has been amended), and any enumeration-count convention adopted in 3.6
+    - **Enumerate the spec-stage defects the review process caught**, so they are captured while fresh rather than reconstructed from memory at the end: the test suite not being required to exist at all; rematch token issuance specified in a way no implementation could satisfy; the polling stop condition that was always true at the moment it was evaluated, so both clients stopped polling and neither could discover a rematch; Requirement 13.3 deleting a Game at the moment 13.4's command was supposed to find it; concurrent joins being undefined; the concurrency guarantee in 5.3 contradicting the authorisation rules in Requirements 3 and 4; the idle indication firing on the viewing Player's own turn; a CHECK constraint requiring a token slot that per-request rematch minting leaves null; Property 10 claiming contiguity as a persisted constraint after the schema section had established it was not; the missing `TrustProxies` configuration; the incorrect claim that CSRF forces a session into existence, which Laravel 13's `Sec-Fetch-Site` behaviour inverts; the follow-on claim that a single configuration flag would close the resulting Requirement 10.9 gap, which was wrong because no such flag exists, together with the unimplementable test assertion built on top of it; and the amendment of Requirement 12.6 itself, dropping the prompts component as disproportionate to the stated time budget — recorded as a scoping decision rather than a correction of an error, so a reader can tell the two apart
     - **The entries where the generated reasoning was confidently wrong and had to be corrected — the CHECK constraint, the Property 10 contradiction, the CSRF inversion — are the ones that actually evidence Requirement 12.8.** A correction log containing only other people's errors does not demonstrate reviewing AI output
     - _Requirements: 12.6, 12.8_
 

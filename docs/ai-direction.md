@@ -79,6 +79,12 @@ Not everything below was an error; these are choices where the reasoning matters
 - Exactly one browser test
 - No continuous deployment, and what would be built if there were
 
+## A requirement narrowed rather than met
+
+One acceptance criterion was amended rather than satisfied, and it belongs here as a scoping decision rather than among the corrections above. Requirement 12.6 originally asked this documentation to comprise three things: the spec documents, the significant prompts issued, and the corrections made to the generated output. The prompts component was dropped against the brief's "no more than a few hours" budget, and the criterion now names only the two components actually delivered.
+
+The reasoning is the part worth keeping. An unmet criterion that a reviewer can find by reading your own specification is worse than a narrower criterion honestly stated. The choice was between satisfying it cheaply and amending it openly; leaving it quietly unsatisfied was not one of the options. Requirement 12.8 — recording where the generated output was wrong — is untouched and still in force, and this file satisfies it.
+
 ## Verification items settled on first run
 
 Recorded here so a reader can see which strategy the project actually uses rather than which one was planned. Three of the four items were flagged in advance as things that could force a fallback; naming them before starting is what made each one a short check rather than a mid-build surprise.

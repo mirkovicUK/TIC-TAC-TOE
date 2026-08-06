@@ -21,6 +21,7 @@ The following are explicit non-goals. They are recorded here so that their absen
 - Board sizes other than 3x3, or more than two players per game
 - Forfeit timers, turn clocks, or automatic resignation on inactivity
 - Real-time transport such as WebSockets (state synchronisation is poll-based)
+- A record of the individual prompts issued to the AI tooling; reproducing the instructions given across a working session was judged disproportionate to the stated time budget, so the corrections made to the generated output are recorded instead, those being the part that evidences review of the output rather than merely its production
 
 ## Glossary
 
@@ -237,7 +238,7 @@ The following are explicit non-goals. They are recorded here so that their absen
 3. THE README SHALL state the commands that run the automated test suites and the static analysis and formatting checks.
 4. THE README SHALL state the URL of the publicly hosted running instance of the Application.
 5. THE Application repository SHALL contain the requirements, design, and task documents for this feature.
-6. THE Application repository SHALL contain a record of how the AI tooling was directed, comprising the spec documents, the significant prompts issued, and the corrections made to the generated output.
+6. THE Application repository SHALL contain a record of how the AI tooling was directed, comprising the spec documents and the corrections made to the generated output.
 7. THE Application repository SHALL contain a decision record for each significant technical choice, stating the decision, the alternatives considered, and the reason for the choice.
 8. THE README SHALL state which AI tooling was used, for which parts of the work, and identify the places where the generated output was corrected or rejected.
 9. WHEN a change is pushed to the repository or a pull request is opened, THE continuous integration workflow SHALL run the automated test suites and the static analysis and formatting checks and SHALL report a failure status if any check fails.
