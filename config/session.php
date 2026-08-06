@@ -32,7 +32,9 @@ return [
     |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    // 30 days in minutes. A Player_Session holds the only copy of a player's raw
+    // Player_Tokens, so it must outlive the 7-day game retention window (Req 13.2).
+    'lifetime' => (int) env('SESSION_LIFETIME', 43200),
 
     'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
 

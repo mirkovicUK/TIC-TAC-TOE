@@ -37,10 +37,15 @@ return [
             'url' => env('DB_URL'),
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
+            // All four options below are applied by Illuminate\Database\Connectors\
+            // SQLiteConnector::connect() as PRAGMAs on every new connection. Foreign
+            // keys and the busy timeout are per-connection settings that SQLite resets
+            // to its defaults each time; the journal mode persists in the database file
+            // once set. A null value here means "leave at the SQLite default".
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
-            'synchronous' => null,
+            'busy_timeout' => env('DB_BUSY_TIMEOUT', 5000),
+            'journal_mode' => env('DB_JOURNAL_MODE', 'WAL'),
+            'synchronous' => env('DB_SYNCHRONOUS', 'NORMAL'),
             'transaction_mode' => 'DEFERRED',
         ],
 
