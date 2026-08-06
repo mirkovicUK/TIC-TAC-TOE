@@ -240,9 +240,7 @@ chmod a+r /etc/apt/keyrings/docker.asc
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list
 apt-get update
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-usermod -aG docker ssm-user
 mkdir -p /srv/tic-tac-toe
-chown ssm-user: /srv/tic-tac-toe
 docker --version
 docker compose version
 EOF
@@ -260,7 +258,7 @@ echo "$CMD_ID"
 
 Run those two blocks exactly as written: the quoted heredoc delimiter keeps `$(dpkg --print-architecture)` literal so it expands on the instance, and the `python3` line is there to get the script into JSON with correct escaping rather than fighting shell quoting inside `--parameters`. `noble` is 24.04's codename and changes with the release.
 
-`chown ssm-user:` with the trailing colon sets the group to that user's login group without assuming a group named `ssm-user` exists, and it is not `$(id -u):$(id -g)` because this runs as root and that would hand the directory to root.
+**Nothing in this step may reference `ssm-user`, and that is the whole reason it is split from step 13.** The SSM Agent creates that account lazily, when the first Session Manager session opens — not at boot. A `usermod -aG docker ssm-user` here fails with `user 'ssm-user' does not exist`, exit status 6, and `set -euo pipefail` then abandons the rest of the script, so the deploy directory and the version checks silently never happen. `mkdir` is safe because it names no user; the `chown` that goes with it waits for step 13.
 
 ```bash
 # Local machine.
@@ -268,9 +266,9 @@ aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$IID" \
   --query '{status:Status,out:StandardOutputContent,err:StandardErrorContent}'
 ```
 
-Expect `status: Success`. Doing `usermod` here means the `docker` group is in place before the first interactive session, which sidesteps the classic trap; if you ever add the group interactively instead, you must end the session and open a new one, because group membership is fixed at login. Tradeoff accepted: membership of `docker` is equivalent to root, which is tolerable because the only route to that shell is an IAM-authorised session.
+Expect `status: Success` with both versions in `out`. It may report `InProgress` for a minute or so; re-run the same command.
 
-### 12. Verify the shell, Docker, and the disk
+### 12. Open a session once, to bring `ssm-user` into existence
 
 ```bash
 # Local machine — opens an interactive shell on the instance.
@@ -280,14 +278,72 @@ aws ssm start-session --target "$IID"
 ```bash
 # Session Manager shell, on the instance.
 whoami
-docker compose version
+exit
+```
+
+Expect `whoami` to print `ssm-user`. This step is doing two jobs. It is the **gate**: with no key pair and no port 22 there is no other way in, every deploy command at spec task 13 runs through this path, and if it does not open, stop and fix it now rather than discovering it during the deployment — the remedy is terminate and relaunch, which is cheap here and expensive later. It is also what *creates* the account that step 13 modifies, so it cannot be skipped as a formality even if you are confident the shell works.
+
+`session-manager-plugin` is a separate install from the AWS CLI; see Prerequisites if this fails before connecting.
+
+### 13. Group membership and directory ownership
+
+Now that the account exists, the two things that need it.
+
+```bash
+# Local machine.
+cat > /tmp/post-session.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+if id -u ssm-user >/dev/null 2>&1; then
+  usermod -aG docker ssm-user
+  chown ssm-user: /srv/tic-tac-toe
+  id ssm-user
+else
+  echo "ssm-user absent — open a session (step 12) first, then re-run this step"
+  exit 1
+fi
+EOF
+
+python3 -c 'import json; print(json.dumps({"commands": [open("/tmp/post-session.sh").read()]}))' > /tmp/ssm-params2.json
+
+export CMD_ID2=$(aws ssm send-command \
+  --instance-ids "$IID" \
+  --document-name AWS-RunShellScript \
+  --comment "docker group, deploy directory ownership" \
+  --parameters file:///tmp/ssm-params2.json \
+  --query 'Command.CommandId' --output text)
+
+aws ssm get-command-invocation --command-id "$CMD_ID2" --instance-id "$IID" \
+  --query '{status:Status,out:StandardOutputContent,err:StandardErrorContent}'
+```
+
+Expect `status: Success` and an `id` line listing `docker` among the groups. The `id -u` guard is there so running this out of order tells you what to do instead of failing with a bare `exit status 6`.
+
+`chown ssm-user:` with the trailing colon sets the group to that user's login group without assuming a group named `ssm-user` exists, and it is deliberately not `$(id -u):$(id -g)` — Run Command runs as root, so that would hand the directory to root and quietly defeat the step.
+
+Tradeoff accepted: membership of `docker` is equivalent to root, since anything in that group can start a container mounting the host filesystem. That is tolerable here because the only route to this shell is an IAM-authorised Session Manager session, and anyone who can reach it already holds credentials that could attach a more permissive role.
+
+### 14. Verify in a *new* session
+
+The session from step 12 predates the group change and will not have it. Group membership is fixed at login, so this must be a freshly opened session or `docker ps` fails on the socket while looking as though step 13 did not work.
+
+```bash
+# Local machine.
+aws ssm start-session --target "$IID"
+```
+
+```bash
+# Session Manager shell, on the instance — a freshly opened one.
+docker ps
+id
+ls -ld /srv/tic-tac-toe
 df -h /
 sudo ss -ltnp | grep 9000 || echo "9000 not listening — correct"
 ```
 
-Expect `ssm-user`; a Compose version with no `sudo`; `/` showing about 20G, because 8G means the block device mapping did not apply and `npm run build` will fill the disk at task 13; and the 9000 line printing the "correct" message. The design's `*` trusted-proxy range is only safe while php-fpm is unreachable from the host, so port 9000 stays unpublished.
+Expect an empty container table with headers rather than a permission error on `/var/run/docker.sock`; `docker` among the groups in `id`; `/srv/tic-tac-toe` owned by `ssm-user`; `/` showing about 19–20G, because 8G means the block device mapping did not apply and `npm run build` will fill the disk at task 13; and the 9000 line printing the "correct" message. The design's `*` trusted-proxy range is only safe while php-fpm is unreachable from the host, so port 9000 stays unpublished.
 
-This shell working is a **gate**. With no key pair and no port 22 there is no other way in, and every deploy command at task 13 runs through it.
+A new terminal will not have the shell variables. `source deploy/.provisioned.env` first, or pass the instance id literally.
 
 ## Part 2 — task 2.2: the certificate
 
@@ -410,9 +466,16 @@ Bring the stack down first with `cd /srv/tic-tac-toe && docker compose down` in 
 - [ ] `imds: required` and a profile ARN ending `/tic-tac-toe-ssm`
 - [ ] `describe-instance-information` shows `ping: Online`
 - [ ] `whoami` in the Session Manager shell returns `ssm-user`
-- [ ] `docker compose version` prints a version without `sudo`
-- [ ] `df -h /` shows a root filesystem of about 20G, not 8G
+- [ ] `docker ps` in a session opened **after** step 13 prints an empty table, not a socket permission error
+- [ ] `id` lists `docker` among `ssm-user`'s groups
+- [ ] `ls -ld /srv/tic-tac-toe` shows it owned by `ssm-user`, not root
+- [ ] `df -h /` shows a root filesystem of about 19–20G, not 8G
 - [ ] `dig +short "$HOST"` from the **local** machine returns the Elastic IP
 - [ ] `https://$HOST` loads in a **browser** with a padlock and no interstitial
 - [ ] `.crt`, `.key` and `.json` present under `/data/caddy/certificates` in `caddy-data`
 - [ ] `docker volume ls | grep caddy` shows exactly one line, `caddy-data`, with no project prefix
+
+
+cd /home/ubuntu/Desktop/tic-tac-toe && source deploy/.provisioned.env
+
+aws ssm start-session --target "$IID"
