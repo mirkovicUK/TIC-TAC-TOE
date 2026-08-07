@@ -1,0 +1,113 @@
+name: CI
+
+# Requirement 12.9: every push and every pull request runs the test suite, the
+# static analysis and the formatting check, and reports failure if any of them
+# fails. No step carries `continue-on-error`, so any red step is a red workflow.
+on:
+  push:
+  pull_request:
+
+# Read-only token: nothing here writes to the repository or publishes anything.
+permissions:
+  contents: read
+
+jobs:
+  # The `browser` job is deliberately absent — it arrives with task 14.3, after
+  # task 12.5 writes the one `browser`-tagged test. Until then a `--group=browser`
+  # selection is empty, and an empty selection exits 1 (verified), so adding the
+  # job now would turn the workflow red for want of a test rather than a defect.
+  quality:
+    name: quality
+    runs-on: ubuntu-24.04
+
+    steps:
+      # Third-party actions are pinned to a commit, not a floating tag: a moving
+      # `@v7` is a write to this workflow by someone outside the repository.
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # PHP is pinned to 8.5, the version the project is developed and deployed
+      # on (`php:8.5-fpm` in the Dockerfile). Coverage is off — nothing here
+      # reads a coverage report, and Xdebug would roughly triple the enumeration.
+      - name: Set up PHP 8.5
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.5'
+          extensions: mbstring, dom, xml, curl, intl, bcmath, fileinfo, tokenizer, sqlite3, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+
+      - name: Resolve the Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php8.5-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php8.5-
+
+      # Before `composer install`, because its `post-autoload-dump` hook runs
+      # `artisan package:discover`, and giving that an `.env` to read is one less
+      # way for the install step to be the first thing that boots the framework
+      # without one. `.env` itself is gitignored, so CI always starts from the
+      # example.
+      - name: Create the environment file
+        run: cp .env.example .env
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      # `phpunit.xml` already pins the test database to sqlite `:memory:` and the
+      # session, cache and queue drivers to non-persistent ones, so no database
+      # file is created and no migration is run here — the suite builds its schema
+      # in memory, and those settings win over `.env` because variables already
+      # present in the environment are not overwritten. What `phpunit.xml` does
+      # not supply is `APP_KEY`, which the encrypter needs before the application
+      # will boot, so a throwaway key is generated per run. No real secret is
+      # committed or needed.
+      - name: Generate a throwaway application key
+        run: php artisan key:generate
+
+      # Formatting first, then static analysis: both are seconds, and finding a
+      # style or type error should not wait on a Node install or the enumeration.
+      - name: Check formatting (pint --test)
+        run: composer lint
+
+      # Both tiers: level 8 over app/, database/ and tests/, then level max over
+      # the domain. `composer analyse` runs them in that order and stops on the
+      # first failure.
+      - name: Run static analysis
+        run: composer analyse
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Cache npm downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      # The front-end build is not decoration in this job. `resources/views/app.blade.php`
+      # carries `@vite(...)`, so any feature test that renders the root view
+      # throws "Vite manifest not found" without `public/build/manifest.json`,
+      # which is gitignored. Verified by removing the manifest locally: the
+      # feature test fails. Assets are therefore built before the suite runs.
+      - name: Build front-end assets
+        run: npm run build
+
+      # Excludes the `browser` group, which task 14.3 runs in its own job. The
+      # exhaustive enumeration (549,946 nodes, Req 14.2) stays in this job and is
+      # NOT split out: it measures 9.8s of a 10.4s suite locally on PHP 8.5,
+      # comfortably inside the design's 60s budget, so mitigation 3 in the design's
+      # runtime-budget list is not taken.
+      - name: Run the test suite (excluding the browser group)
+        run: vendor/bin/pest --exclude-group=browser
