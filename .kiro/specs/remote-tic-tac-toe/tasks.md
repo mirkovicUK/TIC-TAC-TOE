@@ -146,7 +146,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - `GameSnapshot`: the game row, its `MoveList` and its `Analysis` as observed by one request — the type that makes task 6.1's purity invariant expressible
     - _Requirements: 6.1, 9.1_
 
-  - [ ] 4.5 Write a schema-constraint test
+  - [x] 4.5 Write a schema-constraint test
     - Assert both unique indexes reject a duplicate, that a tenth move is impossible, and that contiguity from zero is *not* persisted (rows 0,1,2,4,5 are accepted by the schema) so the application-delivered half of Property 10 is visibly distinguished from the persisted half
     - **Not optional, and not to be re-marked optional.** This is the only assertion of Requirement 5.6 anywhere in the plan — the concurrency halves (5.8, 6.8) touch 5.1 and 5.2 behaviourally through the conflict outcome and 6.6 covers 4.2, but nothing else asserts the nine-Move cap — and Requirement 14 mandates no test for it, so skipping it leaves the criterion with no coverage at all. It is also the only place Property 10's persisted-versus-application-delivered split is demonstrated, at roughly fifteen lines
     - **Property 10: The persisted Move_List is always well formed**
