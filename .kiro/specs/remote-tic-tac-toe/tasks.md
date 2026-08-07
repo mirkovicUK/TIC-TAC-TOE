@@ -272,7 +272,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Properties: 15_
     - _Design: ADR-010_
 
-  - [ ] 7.2 Build `RematchControl.tsx`
+  - [x] 7.2 Build `RematchControl.tsx`
     - Presented to both players while the game is terminal, and reused as the "go to rematch" control once `rematchGameId` is present
     - **Both are a POST to `/games/{game}/rematch`, not a link.** A plain link would land the second player on a game for which their session holds no token, and be refused — the token is minted by the POST
     - _Requirements: 7.1, 7.13_

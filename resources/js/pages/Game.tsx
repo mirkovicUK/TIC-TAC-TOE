@@ -2,6 +2,7 @@ import { Head, usePage } from '@inertiajs/react';
 import Board from '@/components/Board';
 import JoinCodePanel from '@/components/JoinCodePanel';
 import OutcomeMessage from '@/components/OutcomeMessage';
+import RematchControl from '@/components/RematchControl';
 import StatusBanner from '@/components/StatusBanner';
 import useGamePolling from '@/hooks/useGamePolling';
 import useOpponentIdle from '@/hooks/useOpponentIdle';
@@ -35,7 +36,13 @@ import useOpponentIdle from '@/hooks/useOpponentIdle';
  * `active` and not-your-turn branch of `StatusBanner`, which needs no clock — and
  * Requirement 9.4's "may have stopped playing" is the branch this flag selects. The
  * 60-second decision, and the timer that makes it change without a visit, live in the
- * hook. The rematch control (task 7.2) is absent rather than approximated.
+ * hook.
+ *
+ * `RematchControl` IS MOUNTED UNCONDITIONALLY AND GATES ITSELF, like `StatusBanner` and
+ * unlike `JoinCodePanel`. Requirements 7.1 and 7.13 are the same control in two states —
+ * "play again" while the Game is terminal, "go to the rematch" once `rematchGameId` is
+ * present — and both post to the preceding Game's `/rematch`, so the state rule and the
+ * reason a link would be wrong sit together in that file rather than half here.
  *
  * `useGamePolling` IS CALLED FOR ITS EFFECT AND ITS RETURN IS IGNORED. It reads the
  * game prop, chooses the interval and stops itself when a Rematch appears (Req 8.1,
@@ -90,6 +97,8 @@ export default function Game({ game }: { game: GameProps }) {
                 <StatusBanner game={game} opponentIdle={opponentIdle} />
 
                 <Board game={game} />
+
+                <RematchControl game={game} />
 
                 {game.state === 'waiting_for_opponent' && game.joinCode !== null && game.joinUrl !== null && (
                     <JoinCodePanel joinCode={game.joinCode} joinUrl={game.joinUrl} />
