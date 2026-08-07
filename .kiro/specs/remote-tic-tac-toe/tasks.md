@@ -121,7 +121,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Validates: Requirements 11.1, 11.9, 14.1**
 
 - [ ] 4. Persistence schema and models (independent of group 3)
-  - [ ] 4.1 Migration for `games`
+  - [x] 4.1 Migration for `games`
     - Columns per the design: `id` (UUIDv7 text primary key), `join_code`, `state`, `winning_mark`, `version_counter` default 0, `x_token_hash`, `o_token_hash`, `rematch_of_game_id` (self reference, `ON DELETE RESTRICT`), timestamps, `last_activity_at`
     - The seven CHECKs exactly as listed, including `join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL` and the one-directional `state <> 'waiting_for_opponent' OR o_token_hash IS NULL`
     - **Do NOT add a CHECK requiring `x_token_hash IS NOT NULL` on a rematch.** A rematch is inserted with both token slots NULL and tokens are minted per request (ADR-010); the mark swap means the first requester may fill `o_token_hash` while `x_token_hash` stays NULL. Such a constraint was present in an earlier draft and is recorded as removed
@@ -402,7 +402,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 12.4, 12.12_
 
 - [ ] 14. Static analysis, formatting, and CI (may proceed alongside any group after 1.2)
-  - [ ] 14.1 Configure Pint and static analysis
+  - [x] 14.1 Configure Pint and static analysis
     - `pint --test` in check mode; Larastan at level 8 over `app/` plus level `max` over `App\Domain\TicTacToe` — or, if 1.2 found Larastan unresolvable, plain PHPStan at level `max` over the domain namespace alone
     - _Requirements: 12.3, 11.9_
 
