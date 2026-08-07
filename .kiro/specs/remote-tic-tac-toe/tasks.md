@@ -153,7 +153,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Validates: Requirements 5.1, 5.2, 5.6**
 
 - [ ] 5. Create a Game and join a Game
-  - [ ] 5.1 Implement `PlayerTokens`
+  - [x] 5.1 Implement `PlayerTokens`
     - 32 bytes from `random_bytes()` rendered as hex (256 bits, above the 128-bit floor); `issue()` stores `hash('sha256', $raw)` in the game row's mark slot and puts the raw value in `session('player_tokens.'.$game->id)`
     - `resolve()` compares with `hash_equals()` against the two slots of *that game's* row, so a token minted for another game cannot match — the binding is enforced by storage location, not by a claim inside the token
     - No token value is ever rendered into HTML, a prop, or a JSON body
