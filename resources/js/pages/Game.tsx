@@ -1,27 +1,47 @@
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
+import Board from '@/components/Board';
 import JoinCodePanel from '@/components/JoinCodePanel';
+import OutcomeMessage from '@/components/OutcomeMessage';
+import StatusBanner from '@/components/StatusBanner';
 
 /*
  * `GET /games/{game}` — the game page.
  *
- * THIS IS THE MINIMAL FORM OF THIS PAGE, AND TASK 6.3 IS WHAT FINISHES IT. What is
- * here is what task 5.6 owns: the route renders, `props.game` arrives from
- * `GameRepresentation`, and the waiting state shows the Join_Code and a copyable
- * Join_Link (Req 1.6, 1.7) through `JoinCodePanel`.
+ * IT RENDERS FROM PROPS AND HOLDS NO LOCAL STATE AT ALL. The board is
+ * `props.game.board`, the banner is derived from `state`, `isYourTurn`,
+ * `markToMove` and `winningMark`, the winning highlight is the flattened
+ * `winningLines`, and the refusal message is the shared `outcome` prop. There is no
+ * client-side copy of the board and no optimistic placement: a Move is a POST, the
+ * server answers 303, and the following GET brings back the board the server
+ * derived. That is what makes the two players' screens agree, and it is why a
+ * conflict (Req 5.5) needs no reconciliation here — the response after the redirect
+ * *is* the current state.
  *
- * DELIBERATELY LEFT TO TASK 6.3, and not approximated here: `Board.tsx` and
- * `Cell.tsx` (with the disabled condition `!isYourTurn || state !== 'active'` and the
- * per-cell `aria-label`), `StatusBanner.tsx`, `OutcomeMessage.tsx` with
- * `lib/outcomes.ts`, and the two hooks — `useGamePolling` (task 6.4) and
- * `useOpponentIdle` (task 6.5). A board rendered here without the disabled condition
- * would be the exact defect the design writes two paragraphs about, so none is
- * rendered: the state is stated in words until the board arrives with the rules that
- * govern clicking it.
+ * `usePage` FOR `outcome`, PROPS FOR THE GAME. `outcome` is the one prop
+ * `HandleInertiaRequests` shares, so it is not in this page's own props; `Join.tsx`
+ * reads it the same way.
  *
- * `GameProps` IS THE WHOLE SHAPE `GameRepresentation` PRODUCES, including the fields
- * this page does not yet read. It is declared in full and exported because it is the
- * client's half of that contract, and task 6.3's components take it apart rather than
- * redeclaring pieces of it.
+ * THE BOARD IS RENDERED IN EVERY STATE, INCLUDING `waiting_for_opponent`. The
+ * disabled condition in `Board.tsx` covers all three inert cases — waiting, the
+ * opponent's turn, and a finished Game — so there is nothing to gate here, and a
+ * grid that appears and disappears would move the join panel and the banner under a
+ * player's cursor as the Game starts. While waiting, the Creator sees an empty
+ * inert board beside the code to send.
+ *
+ * `opponentIdle` IS A LITERAL `false` UNTIL TASK 6.5. Requirement 9.3's
+ * waiting-for-opponent indication is already rendered — it is the `active` and
+ * not-your-turn branch of `StatusBanner`, which needs no clock — and Requirement
+ * 9.4's "may have stopped playing" is the branch this flag selects. The 60-second
+ * decision is `useOpponentIdle`'s (task 6.5), and passing the constant now is what
+ * lets that task supply the signal without touching the rendering. Likewise the
+ * polling loop (`useGamePolling`, task 6.4) and the rematch control (task 7.2) are
+ * absent rather than approximated: this page currently updates when it is visited.
+ *
+ * `GameProps` IS THE WHOLE SHAPE `GameRepresentation` PRODUCES, and it is exported
+ * because it is the client's half of that contract — `Board.tsx` and
+ * `StatusBanner.tsx` import it rather than redeclaring the fields they read. It is
+ * a type-only import in both, so nothing at runtime imports a page from a
+ * component.
  */
 
 export type GameProps = {
@@ -42,6 +62,8 @@ export type GameProps = {
 };
 
 export default function Game({ game }: { game: GameProps }) {
+    const { outcome } = usePage<{ outcome: string | null }>().props;
+
     return (
         <>
             <Head title="Your game" />
@@ -53,12 +75,14 @@ export default function Game({ game }: { game: GameProps }) {
                     You are playing <span className="font-mono uppercase">{game.yourMark}</span>.
                 </p>
 
+                <OutcomeMessage outcome={outcome} />
+
+                <StatusBanner game={game} opponentIdle={false} />
+
+                <Board game={game} />
+
                 {game.state === 'waiting_for_opponent' && game.joinCode !== null && game.joinUrl !== null && (
                     <JoinCodePanel joinCode={game.joinCode} joinUrl={game.joinUrl} />
-                )}
-
-                {game.state !== 'waiting_for_opponent' && (
-                    <p className="text-gray-700">Both players are here. The board arrives with the next task.</p>
                 )}
             </main>
         </>

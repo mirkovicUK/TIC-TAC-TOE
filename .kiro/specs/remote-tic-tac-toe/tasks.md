@@ -222,7 +222,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Rejections of an authorised player's action answer 303 to the game page with the outcome flashed, so the following GET carries the outcome together with the current Game_State, Move_List and Version_Counter
     - _Requirements: 4.4, 5.4, 5.5_
 
-  - [ ] 6.3 Build the game page and board
+  - [x] 6.3 Build the game page and board
     - `Game.tsx` rendering from props with almost no local state; `StatusBanner.tsx`, `Cell.tsx` (occupant, winning-line highlight, `aria-label`), `OutcomeMessage.tsx` with `lib/outcomes.ts`
     - **`Board.tsx`'s disabled condition is `!isYourTurn || state !== 'active'`, and both halves are required.** `markToMove` is total over Move_List length by Requirement 4.1, so it is defined in terminal states too: on a board X won at sequence 4, `markToMove` is `O` and `isYourTurn` alone would leave a finished board clickable. The server would answer `game_ended` harmlessly, but the UI would appear to accept the click and then flash an error. The single browser test stops at the win assertion and would not catch this
     - Winning cells are the flattened `winningLines`, so a double line highlights both; the turn banner shows `markToMove` plus whether it is yours, only while `active`
