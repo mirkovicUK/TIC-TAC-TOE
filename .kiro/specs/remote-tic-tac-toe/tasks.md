@@ -165,7 +165,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Join_Code: 50 bits from `random_bytes()` rendered as ten Crockford base32 characters displayed `XXXXX-XXXXX`; uniqueness enforced by the index from 4.1
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-  - [ ] 5.3 Implement `GameResolver` and the `ResolveActingPlayer` middleware
+  - [x] 5.3 Implement `GameResolver` and the `ResolveActingPlayer` middleware
     - Implement the seven-row visibility table verbatim, including the two rows that answer identically so a tokenless caller cannot distinguish "was a Game" from "never was"
     - Runs before any move-validity or lifecycle check and short-circuits; returns `not_authorised` identically for absent, unrecognised, and bound-elsewhere tokens; returns `game_expired` only for a session presenting a valid token, and `not_recognised` otherwise
     - _Requirements: 3.3, 3.4, 3.9, 3.10, 9.6, 13.6, 13.7, 13.8_
