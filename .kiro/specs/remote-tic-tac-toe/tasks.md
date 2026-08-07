@@ -283,7 +283,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Property 15: A Rematch is unique, swapped, and entered by presenting the preceding token**
     - **Validates: Requirements 7.2, 7.3, 7.4, 7.5, 7.6, 7.8, 7.9, 7.14, 7.15**
 
-- [ ] 8. MILESTONE — the deliverable is viable from here. Ensure all tests pass, ask the user if questions arise.
+- [x] 8. MILESTONE — the deliverable is viable from here. Ensure all tests pass, ask the user if questions arise.
   - At this point all four behaviours the brief names are implemented and covered: create a game, join it from a second session, play it with each side seeing the other's move without refreshing, end-of-game signalling, and a subsequent game
   - Run the full suite and the enumeration; commit and push. If the budget ran out here, the repository plus tasks 2 and 15 would still be a coherent submission
   - **Everything below this line improves the submission rather than enabling it.** Groups 9 to 11 satisfy the operational requirements; group 12 completes the mandated verification; groups 13 to 15 produce the hosted instance and the documentation
