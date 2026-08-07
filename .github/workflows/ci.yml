@@ -96,6 +96,13 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      # Vite transpiles with esbuild, which strips types without checking them,
+      # so `npm run build` succeeding says nothing about type soundness. This is
+      # the only step that checks the props contract between GameRepresentation
+      # and GameProps holds.
+      - name: Type-check the client
+        run: npx tsc --noEmit
+
       # The front-end build is not decoration in this job. `resources/views/app.blade.php`
       # carries `@vite(...)`, so any feature test that renders the root view
       # throws "Vite manifest not found" without `public/build/manifest.json`,
