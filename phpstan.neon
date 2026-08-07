@@ -3,5 +3,14 @@ includes:
 
 parameters:
     level: 8
+    # `app/` alone would leave two thirds of the project's PHP unread. `tests/`
+    # is the larger tree — the enumeration walk, the architecture checker and the
+    # Eris properties are real logic, not assertions — and `database/factories/`
+    # holds the fixtures every feature test depends on, where a type error
+    # surfaces as a confusing test failure rather than an honest analyser
+    # complaint. PHPStan does not check leniently outside `paths`; it does not
+    # open the files at all.
     paths:
         - app
+        - database
+        - tests
