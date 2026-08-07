@@ -160,7 +160,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 3.1, 3.2, 3.8, 8.7_
     - _Properties: 8_
 
-  - [ ] 5.2 Implement `CreateGame`
+  - [x] 5.2 Implement `CreateGame`
     - Insert with `state = 'waiting_for_opponent'`, empty Move_List, `version_counter = 0`, UUIDv7 id, `last_activity_at` set; issue the X token via 5.1
     - Join_Code: 50 bits from `random_bytes()` rendered as ten Crockford base32 characters displayed `XXXXX-XXXXX`; uniqueness enforced by the index from 4.1
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
