@@ -338,9 +338,23 @@ Models: `Game`, `Move`, `ExpiryRecord`. Controllers: one per action, each about 
 A Player_Token is 32 bytes from `random_bytes()` rendered as hex — 256 bits, comfortably above the 128-bit floor (Req 3.8). It is bound to exactly one `(Game_Id, Mark)` pair (Req 3.1) by *where its hash is stored*: `games.x_token_hash` or `games.o_token_hash` on that game's row. There is no tokens table; a game has at most two players, so two nullable columns say it precisely and give the join race a single row to contend on.
 
 ```php
+final readonly class MintedToken
+{
+    public function __construct(
+        public string $raw,
+        public string $hash,
+    ) {}
+}
+
 final class PlayerTokens
 {
-    /** Mints a token, stores its hash on the game's mark slot, puts the raw value in the session. */
+    /** 32 bytes from random_bytes() as hex, plus its SHA-256. No side effects. */
+    public function mint(): MintedToken;
+
+    /** The session write, alone. Call last: it is what makes a credential real. */
+    public function remember(string $gameId, MintedToken $token): void;
+
+    /** mint + assign the hash to the mark's slot + remember. For callers with no losing path. */
     public function issue(Game $game, Mark $mark): void;
 
     /** Req 3.2: the acting mark comes from the token and nothing else. */
@@ -350,7 +364,11 @@ final class PlayerTokens
 }
 ```
 
-- **How the token reaches the session.** `issue()` writes the raw value to `session('player_tokens.'.$game->id)`. Sessions use the `database` driver in the same SQLite file, so the value lives server-side and the browser holds only the session cookie. The token is never rendered into HTML, never a prop, never in a JSON body (Req 8.7). `SESSION_LIFETIME` is set to 30 days so a session outlives the 7-day game retention window (Req 13.2); a lost session is unrecoverable and the README says so (Req 12.10).
+Minting is separate from remembering because a composed `issue()` alone is under-specified for a caller with a losing path, which surfaced at task 5.4. `CreateGame` (task 5.2) uses `issue()`: it inserts a fresh row, so there is no competing writer, no conditional statement and therefore no path on which the token should not exist — the composed form is exactly what it wants. `JoinGame` (task 5.4) uses `mint()` and `remember()` directly: its guarded `UPDATE ... WHERE state = 'waiting_for_opponent' AND o_token_hash IS NULL` must carry the hash *in* the statement, yet the affected-row count that decides between claiming the slot and `game_full` is only known after the statement has run. So the hash must exist before the outcome, the session write must happen after it, and because the losing branch never calls `remember()`, "no orphan credential exists" is a consequence of the control flow rather than of a cleanup step that could be skipped or fail. The two values travel as a `MintedToken` rather than as `mint(): string` plus a public `hashOf(string): string` because they are not interchangeable — one is the secret the session holds, the other is what a `games` row may store — while to PHP and to PHPStan both are `string`. `JoinGame` interpolates one of them into `SET o_token_hash = ?`, and putting the raw value there would write the secret into the database: the exact disclosure Requirement 8.7 prevents, at the exact point Requirement 3.1's binding is established, with no type checker saying a word. `$token->hash` is visibly right at that call site and `$token->raw` visibly wrong; two bare strings are one transposition away from the leak and read identically afterwards. Be honest about the limit of that: `MintedToken` offers no `__toString()` and does not implement `JsonSerializable`, so a stringifying mistake is a `TypeError` where the mistake is, but `readonly` prevents mutation, not disclosure, and `raw` is a public property — `var_dump`, `json_encode` and `dd()` would all print it. What protects the secret is that no instance is ever handed to a serialiser: `mint()` produces one, a service holds it for one request, `remember()` consumes it, and `GameRepresentation` never sees one.
+
+For task 7.1: `CreateRematch` mints a token per request against a row it may have just lost the race to insert, so it will want `mint()`/`remember()` for the same reason `JoinGame` does, not `issue()`.
+
+- **How the token reaches the session.** `remember()` writes the raw value to `session('player_tokens.'.$gameId)`, and it is the only method that does — `issue()` reaches the session through it. Sessions use the `database` driver in the same SQLite file, so the value lives server-side and the browser holds only the session cookie. The token is never rendered into HTML, never a prop, never in a JSON body (Req 8.7). `SESSION_LIFETIME` is set to 30 days so a session outlives the 7-day game retention window (Req 13.2); a lost session is unrecoverable and the README says so (Req 12.10).
 - **How it is checked.** `resolve()` computes `hash('sha256', $presented)` and compares it against the two slots with `hash_equals()`. A match yields the bound Mark. Because the hash is stored on the requested game's row, a token minted for a different game cannot match (Req 3.4) — the binding is enforced by location, not by a claim inside the token. SHA-256 without a work factor is correct here: the secret is 256 random bits, so there is nothing to brute-force, and a password KDF would only add latency to every poll.
 
 #### `GameResolver`: one table decides visibility

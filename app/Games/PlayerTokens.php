@@ -40,8 +40,12 @@ use Illuminate\Support\Facades\Session;
  * would run roughly once a second forever, for no attack it defends against.
  *
  * NO METHOD HERE LEAKS A RAW TOKEN (Req 8.7). Nothing in this class logs,
- * throws or returns a token value except `heldFor()`, which serves the
- * server-side resolve path and is never reached by a serialiser. In particular
+ * throws or renders a token value. Two methods hand one to a server-side
+ * caller, and both are named here so the exceptions are visible rather than
+ * implied: `mint()`, whose `MintedToken` a service holds for the duration of
+ * one request and passes to `remember()` (see `MintedToken` for why that object
+ * is never given to a serialiser), and `heldFor()`, which serves the resolve
+ * path. Neither is reached by a serialiser. In particular
  * this class throws no exception at all — contrast
  * `CorruptMoveListException`, which carries a Game_Id in its message because a
  * Game_Id is not a secret; there is no equivalent diagnostic here into which a
@@ -59,8 +63,64 @@ final class PlayerTokens
     private const SESSION_PREFIX = 'player_tokens.';
 
     /**
+     * Mints a Player_Token: 32 bytes from `random_bytes()` as hex, and its
+     * SHA-256. NO SIDE EFFECTS — no model is touched, no session key written,
+     * nothing persisted. It returns the pair and forgets it.
+     *
+     * THIS IS THE PRIMITIVE `JoinGame` (task 5.4) NEEDS, and the reason it
+     * exists separately from `issue()`. `JoinGame` claims the O slot with a
+     * conditional `UPDATE ... WHERE state = 'waiting_for_opponent' AND
+     * o_token_hash IS NULL` whose affected-row count decides the outcome: 1
+     * claims the slot, 0 is `game_full`. It cannot know which it is until after
+     * the statement has run, and the statement needs the hash *in* it. So the
+     * hash must exist before the outcome is known, while the session write must
+     * happen only after — which is exactly the shape this method plus
+     * `remember()` provide, and exactly the shape a single `issue()` cannot.
+     *
+     * The two values come back as a `MintedToken` rather than as a string plus a
+     * separate hashing helper, so that the guarded UPDATE reads `$token->hash`
+     * and could not have silently read the raw secret instead. That reasoning is
+     * in `MintedToken`, along with why the object is never serialised.
+     */
+    public function mint(): MintedToken
+    {
+        $raw = bin2hex(random_bytes(32));
+
+        return new MintedToken($raw, hash('sha256', $raw));
+    }
+
+    /**
+     * Records `$token`'s raw value as the one this session holds for `$gameId`,
+     * and does nothing else: no model touched, no hash stored.
+     *
+     * ONLY THE RAW VALUE IS WRITTEN, never the hash — the hash belongs on the
+     * row, and the session is the only place the secret itself may live.
+     *
+     * CALL THIS LAST. It is the step that makes a credential real from the
+     * browser's point of view, so on any path where the hash might not be
+     * persisted — a guarded UPDATE that may lose, a transaction that may roll
+     * back — the outcome must be known first. `JoinGame`'s losing request
+     * therefore never calls this at all: it discards its `MintedToken` and
+     * leaves the session untouched, so "no orphan credential exists" is a
+     * consequence of the control flow rather than of a cleanup step that could
+     * be skipped or fail.
+     *
+     * TAKES A GAME_ID STRING, NOT A `Game`, matching `heldFor()`. `JoinGame`
+     * does have the row in hand and could pass it, but the id is the whole of
+     * what this method depends on — the session is keyed by id and no attribute
+     * of the row is consulted — and taking a `Game` would suggest otherwise. It
+     * also keeps the two session-facing methods a matching pair: one writes the
+     * key `heldFor()` reads, and both name it the same way.
+     */
+    public function remember(string $gameId, MintedToken $token): void
+    {
+        Session::put(self::SESSION_PREFIX.$gameId, $token->raw);
+    }
+
+    /**
      * Mints a token, sets its hash on `$game`'s slot for `$mark`, and puts the
-     * raw value in the session.
+     * raw value in the session: `mint()`, assign, `remember()`, composed for the
+     * callers that have no losing path to worry about.
      *
      * THIS METHOD DOES NOT PERSIST `$game`. It assigns the attribute and leaves
      * the write to the caller, deliberately:
@@ -91,24 +151,28 @@ final class PlayerTokens
      * stale session key names no Game and `GameResolver` reports
      * `not_recognised` (Req 13.8) rather than authorising anything.
      *
-     * `JoinGame` needs a shape this signature does not offer: it must know
-     * whether the guarded UPDATE won *before* it is safe to write the session,
-     * because a losing request must discard its raw token and leave no orphan
-     * credential. That is recorded against task 5.4 rather than pre-empted
-     * here; this method is the design's stated signature, implemented as
-     * stated.
+     * WHY THIS METHOD SURVIVES ALONGSIDE THE PRIMITIVES. `CreateGame` (task 5.2)
+     * inserts a fresh row: there is no other writer to race, no conditional
+     * statement and therefore no losing path, so mint-assign-remember is
+     * unconditionally correct there and the composition is what it wants.
+     * `JoinGame` (task 5.4) uses `mint()` and `remember()` directly instead,
+     * because it must know whether its guarded UPDATE won before it is safe to
+     * write the session — and because it does, the session is never written on a
+     * losing path and "no orphan credential exists" is structural rather than
+     * dependent on a retraction. That is the whole reason the three methods are
+     * shaped this way; forcing `CreateGame` through the primitives as well would
+     * make the common case worse in exchange for nothing.
      */
     public function issue(Game $game, Mark $mark): void
     {
-        $raw = bin2hex(random_bytes(32));
-        $hash = hash('sha256', $raw);
+        $token = $this->mint();
 
         match ($mark) {
-            Mark::X => $game->x_token_hash = $hash,
-            Mark::O => $game->o_token_hash = $hash,
+            Mark::X => $game->x_token_hash = $token->hash,
+            Mark::O => $game->o_token_hash = $token->hash,
         };
 
-        Session::put(self::SESSION_PREFIX.$game->id, $raw);
+        $this->remember($game->id, $token);
     }
 
     /**
