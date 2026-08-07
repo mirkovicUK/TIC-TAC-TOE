@@ -235,7 +235,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 8.1, 8.2, 8.5, 8.6_
     - _Design: ADR-001_
 
-  - [ ] 6.5 Implement `useOpponentIdle`
+  - [x] 6.5 Implement `useOpponentIdle`
     - Ticks every 5 s; returns true when the game is `active`, `isYourTurn` is false, and `now - lastMoveAt >= 60s`. Under the threshold the banner shows the waiting-for-opponent indication. No server involvement — `lastMoveAt` is already a prop
     - _Requirements: 9.3, 9.4_
 

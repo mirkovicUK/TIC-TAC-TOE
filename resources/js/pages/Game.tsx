@@ -4,6 +4,7 @@ import JoinCodePanel from '@/components/JoinCodePanel';
 import OutcomeMessage from '@/components/OutcomeMessage';
 import StatusBanner from '@/components/StatusBanner';
 import useGamePolling from '@/hooks/useGamePolling';
+import useOpponentIdle from '@/hooks/useOpponentIdle';
 
 /*
  * `GET /games/{game}` — the game page.
@@ -29,13 +30,12 @@ import useGamePolling from '@/hooks/useGamePolling';
  * player's cursor as the Game starts. While waiting, the Creator sees an empty
  * inert board beside the code to send.
  *
- * `opponentIdle` IS A LITERAL `false` UNTIL TASK 6.5. Requirement 9.3's
- * waiting-for-opponent indication is already rendered — it is the `active` and
- * not-your-turn branch of `StatusBanner`, which needs no clock — and Requirement
- * 9.4's "may have stopped playing" is the branch this flag selects. The 60-second
- * decision is `useOpponentIdle`'s (task 6.5), and passing the constant now is what
- * lets that task supply the signal without touching the rendering. The rematch control
- * (task 7.2) is likewise absent rather than approximated.
+ * `opponentIdle` COMES FROM `useOpponentIdle` AND NOTHING HERE COMPUTES IT.
+ * Requirement 9.3's waiting-for-opponent indication is already rendered — it is the
+ * `active` and not-your-turn branch of `StatusBanner`, which needs no clock — and
+ * Requirement 9.4's "may have stopped playing" is the branch this flag selects. The
+ * 60-second decision, and the timer that makes it change without a visit, live in the
+ * hook. The rematch control (task 7.2) is absent rather than approximated.
  *
  * `useGamePolling` IS CALLED FOR ITS EFFECT AND ITS RETURN IS IGNORED. It reads the
  * game prop, chooses the interval and stops itself when a Rematch appears (Req 8.1,
@@ -72,6 +72,8 @@ export default function Game({ game }: { game: GameProps }) {
 
     useGamePolling(game);
 
+    const opponentIdle = useOpponentIdle(game);
+
     return (
         <>
             <Head title="Your game" />
@@ -85,7 +87,7 @@ export default function Game({ game }: { game: GameProps }) {
 
                 <OutcomeMessage outcome={outcome} />
 
-                <StatusBanner game={game} opponentIdle={false} />
+                <StatusBanner game={game} opponentIdle={opponentIdle} />
 
                 <Board game={game} />
 
