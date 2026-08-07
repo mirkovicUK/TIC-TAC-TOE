@@ -318,17 +318,39 @@ it('rows 6 and 7: the two responses are indistinguishable to a tokenless caller'
     $sweptResponse = get('/_probe/games/'.$swept);
     $neverWasResponse = get('/_probe/games/'.$neverWas);
 
+    // THE COMPARISON IS MADE WITH EACH RESPONSE'S OWN Game_Id NORMALISED OUT, and
+    // that concession was forced by task 5.6 rather than chosen. Since a refusal
+    // renders `NotAPlayer.tsx`, the response body is an Inertia page object, and an
+    // Inertia page object always carries the URL of the request it answers — which
+    // for these two requests is `/_probe/games/<the id the caller asked for>`. So
+    // the two bodies differ by construction, in exactly one place, in the one string
+    // the caller supplied itself.
+    //
+    // That discloses nothing, and the earlier form of this assertion — the raw
+    // bodies compared byte for byte, plus "the body must not echo the id" — was
+    // written at task 5.3 against the framework's own bodyless 404 and is not
+    // satisfiable once a page is rendered. What the requirement actually forbids is
+    // a caller learning whether an id WAS a Game, and substituting a fixed
+    // placeholder for each response's own id leaves every other byte under
+    // assertion: the status, the component name, the props, the version. A row 6
+    // that gained its own outcome, its own copy or an extra prop still fails here.
+    $sweptBody = str_replace($swept, '{game-id}', (string) $sweptResponse->getContent());
+    $neverWasBody = str_replace($neverWas, '{game-id}', (string) $neverWasResponse->getContent());
+
     expect($sweptResponse->getStatusCode())->toBe(
         $neverWasResponse->getStatusCode(),
         'a swept Game and an id that never existed answered with different statuses, so a tokenless caller can tell them apart',
-    )->and($sweptResponse->getContent())->toBe(
-        $neverWasResponse->getContent(),
-        'the two response bodies differ, so the tombstone is observable to a caller holding no token',
+    )->and($sweptBody)->toBe(
+        $neverWasBody,
+        'the two response bodies differ other than by the Game_Id the caller itself supplied, so the tombstone is observable to a caller holding no token',
     );
 
-    // Neither body may mention the swept id while the other cannot mention it,
-    // which is the one way two 404 bodies could still differ meaningfully.
-    expect((string) $sweptResponse->getContent())->not->toContain($swept, 'the 404 body echoes the Game_Id, so the two rows could be compared by it');
+    // And the normalisation is not what makes the two equal: both bodies really do
+    // contain the placeholder, so each response echoed its own id and neither echoed
+    // the other's.
+    expect(str_contains($sweptBody, '{game-id}'))->toBeTrue('the swept response does not carry its own Game_Id, so normalising it out proves nothing')
+        ->and(str_contains($sweptBody, $neverWas))->toBeFalse('the swept response mentions the id that never existed')
+        ->and(str_contains($neverWasBody, $swept))->toBeFalse('the never-existed response mentions the swept id');
 });
 
 /*

@@ -188,7 +188,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Properties: 11_
     - _Design: ADR-002_
 
-  - [ ] 5.6 Wire the routes, controllers and entry pages
+  - [x] 5.6 Wire the routes, controllers and entry pages
     - `GET /`, `POST /games`, `GET /join/{join_code?}`, `POST /join`, `GET /games/{game}` with `ResolveActingPlayer`
     - `Home.tsx` (create form + join form), `Join.tsx` (prefilled from a Join_Link), `NotAPlayer.tsx` keyed by outcome for 403/404/410, `JoinCodePanel.tsx` showing the code and a copyable Join_Link while waiting
     - Denial-of-visibility outcomes render an Inertia error page carrying only the outcome; join-form rejections are a 303 back to `/join` with the outcome flashed

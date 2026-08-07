@@ -216,33 +216,34 @@ final class GameRepresentation
      * The Join_Link: an absolute URL a Player can paste, opening the application at
      * the join action with the code prefilled (Req 1.6).
      *
-     * BUILT FROM A PATH STRING, NOT FROM `route('join', ...)`, AND THAT IS A
-     * DEPENDENCY DECISION RATHER THAN A PREFERENCE. `GET /join/{join_code?}` is
-     * registered by task 5.6, which comes *after* this one, so `route('join', ...)`
-     * would throw `RouteNotFoundException` on every waiting Game today — turning
-     * the first prop this class ever produces into a 500. The two alternatives were
-     * worse: registering the route here would put HTTP wiring inside `App\Games`
-     * and pre-empt a later task, and emitting a relative path would break
-     * Requirement 1.6's "a URL", since a Join_Link is pasted into another browser
-     * where a path means nothing.
+     * BUILT FROM THE NAMED ROUTE, WHICH IT COULD NOT BE WHEN THIS CLASS WAS
+     * WRITTEN. Task 5.5 came before task 5.6, so `GET /join/{join_code?}` did not
+     * exist and `route('join', ...)` would have thrown `RouteNotFoundException` on
+     * every waiting Game — turning the first prop this class ever produced into a
+     * 500. It was therefore built as `url('/join/'.rawurlencode($code->display()))`
+     * until 5.6 registered the route at exactly that path under exactly that name,
+     * and swapped it here. The two forms were verified to produce the identical
+     * string before the swap, and `GameRepresentationTest` still asserts the URL
+     * against `url('/join/10ABC-DEFGH')` — the *path*, not the route name — which
+     * is what would catch this route being renamed to something that resolves to a
+     * different path. A Join_Link that a player has already pasted into a message
+     * does not follow a route rename, so the path is the thing the test pins.
      *
-     * WHAT TASK 5.6 MUST DO. Register the route at exactly the path `join/{join_code?}`
-     * and name it `join`. Once it exists, swapping this method's body for
-     * `route('join', $code->display())` is a one-line change that must produce the
-     * same string; `RepresentationTest`'s assertion on the shape of this URL is what
-     * would catch a path that drifted. Doing that swap is optional — this form is
-     * correct on its own — but the path must not move without this method moving
-     * with it.
+     * Rejected then and still rejected: registering the route from inside
+     * `App\Games`, which would put HTTP wiring in a namespace that knows nothing
+     * about HTTP; and emitting a relative path, which would break Requirement 1.6's
+     * "a URL", since a Join_Link is pasted into another browser where a path means
+     * nothing.
      *
-     * `url()` resolves against the current request's root, falling back to
-     * `APP_URL`, so the host is the one the player is actually on.
-     * `rawurlencode()` is a no-op for Crockford base32 and the hyphen, all of which
-     * are unreserved in a path segment; it is applied anyway so that a change to
-     * `JoinCode::ALPHABET` cannot silently produce a malformed URL.
+     * `route()` resolves against the current request's root, falling back to
+     * `APP_URL`, so the host is the one the player is actually on, and it encodes
+     * the parameter itself — a no-op for Crockford base32 and the hyphen, all of
+     * which are unreserved in a path segment, but no longer this method's business
+     * if `JoinCode::ALPHABET` ever changes.
      */
     private static function joinUrlFor(JoinCode $code): string
     {
-        return url('/join/'.rawurlencode($code->display()));
+        return route('join', $code->display());
     }
 
     /**
