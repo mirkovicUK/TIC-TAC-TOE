@@ -54,6 +54,22 @@
             "@php artisan config:clear --ansi @no_additional_args",
             "@php artisan test"
         ],
+        "lint": [
+            "pint --test"
+        ],
+        "lint:fix": [
+            "pint"
+        ],
+        "analyse": [
+            "@analyse:app",
+            "@analyse:domain"
+        ],
+        "analyse:app": [
+            "phpstan analyse --configuration=phpstan.neon --no-progress --memory-limit=512M"
+        ],
+        "analyse:domain": [
+            "phpstan analyse --configuration=phpstan-domain.neon --no-progress --memory-limit=512M"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
