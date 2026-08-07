@@ -415,10 +415,13 @@ it('exposes the join code and join url only while waiting for an opponent', func
 /*
  * `rematchGameId` IS PRESENT WHENEVER A REMATCH EXISTS (Req 7.12).
  *
- * `CreateRematch` is task 7.1 and does not exist yet, so the rematch row is
- * inserted here directly — which is the only way this field can be covered at all,
- * and covering it now is better than leaving a field of the shape untested until
- * its producer is written. The row is inserted the way ADR-010 says a rematch is:
+ * THE REMATCH ROW IS INSERTED DIRECTLY RATHER THAN THROUGH `CreateRematch`, AND
+ * THAT IS NOW A CHOICE RATHER THAN A NECESSITY. It was written before task 7.1
+ * existed; `CreateRematch` exists now, and this test still builds the row by hand,
+ * because what is under test is the SERIALISER's treatment of a back-reference —
+ * `$game->rematch?->id` — and routing that through the service would make a
+ * representation test fail when the rematch service broke. `RematchTest` covers the
+ * producer. The row is inserted the way ADR-010 says a rematch is:
  * `active`, `join_code` NULL, both token slots NULL, `rematch_of_game_id` pointing
  * back at the preceding Game.
  *

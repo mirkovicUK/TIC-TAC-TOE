@@ -63,8 +63,9 @@ use function Pest\Laravel\post;
  * the session id (`StartSession` re-reads it from a cookie the test client does not
  * send), so the id to resume by is re-captured AFTER every POST rather than once.
  *
- * WHAT IS DELIBERATELY NOT HERE. Requirement 7.1 and 7.13 are `RematchControl.tsx`,
- * which is task 7.2 and does not exist yet. Requirement 7.12 — `rematchGameId` in
+ * WHAT IS DELIBERATELY NOT HERE. Requirements 7.1 and 7.13 are `RematchControl.tsx`
+ * (task 7.2), which is a client component and therefore not a PHP test's ground —
+ * its assertions are task 6.7's Vitest suite. Requirement 7.12 — `rematchGameId` in
  * the representation — is `GameRepresentation`'s and is asserted in
  * `GameRepresentationTest`. Requirement 7.7's negative half, that a session holding
  * no preceding token establishes no continuity, is the `not_authorised` case below;

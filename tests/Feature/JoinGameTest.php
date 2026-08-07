@@ -34,10 +34,16 @@ use Illuminate\Support\Str;
  * full — plus the two claims that are about the *mechanism* rather than about a
  * path: that the losing request leaves no credential anywhere, and that the claim
  * is one guarded statement with no read between the lookup and the write.
- * Task 5.8 writes the join race of `ConcurrencyTest`, which is Property 13's
- * exclusivity claim over two sessions in sequence; task 5.7 extends this file
- * rather than creating it, and task 5.6 asserts the transport — the 303 to
- * `/join` and the flashed outcome, neither of which `App\Games` knows about.
+ * `ConcurrencyTest` holds the join race (task 5.8), which is Property 13's
+ * exclusivity claim over two sessions in sequence, and `EntryRoutesTest` holds the
+ * transport (task 5.6) — the 303 to `/join` and the flashed outcome, neither of
+ * which `App\Games` knows about.
+ *
+ * A PREDICTION IN AN EARLIER DRAFT OF THIS PARAGRAPH TURNED OUT WRONG, and it is
+ * corrected rather than quietly bumped: it said task 5.7 would extend this file. It
+ * did not. 5.7 found this file already covered its four listed behaviours and added
+ * nothing here, spending itself on `CreateGameTest` instead, where the one real gap
+ * was — that no test asserted the raw Player_Token stays out of a response body.
  */
 
 uses(RefreshDatabase::class);

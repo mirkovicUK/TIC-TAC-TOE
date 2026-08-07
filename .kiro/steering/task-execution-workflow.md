@@ -37,6 +37,14 @@ A passing test is not evidence. The test must be shown capable of failing.
 - **Never weaken an assertion or change production behaviour to make a test pass.** A test that reveals a defect is a finding to report, not an obstacle.
 - **Leave nothing behind.** No `dd()`, `dump()`, `console.log`, commented-out experiment or scratch file. Scratch work belongs in `/tmp` or is deleted.
 
+## Check whether the comments you are relying on have expired
+
+Add this to every dispatch prompt, and check it on review. A docblock that justifies a decision by what did not exist at the time has a shelf life, and nothing fails when it runs out.
+
+The pattern is specific enough to grep for: `does not exist yet`, `until task`, `once task X exists`, `arrives at task`, `task N.x`, `is still absent`. When a task completes something another file was waiting on, that file's justification becomes false while its decision usually stays right — so **rewrite it to keep the decision and state the current reason**, rather than bumping a task number or deleting the paragraph. If the decision no longer holds either, that is a finding to report.
+
+Two rounds of this have already been needed: three production docblocks dating the rate limiters to "task 10.x" after 9.4 attached them, and five test docblocks justifying themselves by the absence of routes, `CreateRematch` and `RematchControl` after all three shipped. One of those five was worse than stale — it *predicted* that task 5.7 would extend `JoinGameTest`, and 5.7 touched a different file entirely. A prediction that turned out wrong is worth correcting visibly, with the correction stated, rather than edited into looking like it was right all along.
+
 Why this is written so heavily: a batch of seventeen assertions once asserted nothing at all, and the explanation of why that was harmless was itself inverted. `docs/ai-direction.md` records it.
 
 ## When the sub-agent reports back

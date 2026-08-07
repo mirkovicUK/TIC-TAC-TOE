@@ -30,14 +30,15 @@ use function Pest\Laravel\withoutExceptionHandling;
 /*
  * Task 5.3 — the `ResolveActingPlayer` middleware.
  *
- * MIDDLEWARE-LEVEL TESTS ARE POSSIBLE WITHOUT TASK 5.6, and this file is them.
- * The application's own game-scoped routes do not exist yet — 5.6 defines
- * `GET /games/{game}`, 6.2 the move route, 7.x the rematch route — but a route is
- * not a prerequisite for testing a middleware: routes can be declared in the test
- * itself, and declaring them here is better than waiting for 5.6 in one specific
- * way. These routes carry handlers that RECORD WHETHER THEY RAN, which is what
- * makes the Requirement 3.9 short-circuit observable at all. A real controller
- * could only be observed by what it returned.
+ * THIS FILE DECLARES ITS OWN ROUTES RATHER THAN USING THE APPLICATION'S, AND STILL
+ * SHOULD. It was written before any game-scoped route existed, which is no longer
+ * the reason: `GET /games/{game}` (5.6), the move route (6.2) and the rematch route
+ * (7.1) are all registered now, and this file goes on declaring its own because the
+ * handlers it declares RECORD WHETHER THEY RAN. That is what makes the Requirement
+ * 3.9 short-circuit observable at all — a real controller can only be observed by
+ * what it returned, so a refusal and a controller that ran and then refused are
+ * indistinguishable through it. `EntryRoutesTest` and the group-5 onwards feature
+ * tests cover the real routes; what is pinned here is the middleware.
  *
  * The routes are declared with `->middleware('web')` as well as the alias, because
  * the middleware reads the session (through `PlayerTokens`) and because the `web`

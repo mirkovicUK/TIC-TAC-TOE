@@ -40,9 +40,10 @@ use Illuminate\Support\Str;
  *
  *   - Task 6.6's `SubmitMoveTest` owes the behavioural sweep — the win transition
  *     across *every* completed line including the double diagonal, and the
- *     rejection sweep asserted through the HTTP surface once task 6.2 exists,
- *     which is the only place a payload carrying a `mark` field can be shown to be
- *     ignored (Req 3.6). There is no payload in this file to ignore.
+ *     rejection sweep asserted through the HTTP surface — both delivered, now that
+ *     6.2's route and 6.6's file exist. That surface is the only place a payload
+ *     carrying a `mark` field can be shown to be ignored (Req 3.6), and there is no
+ *     payload in this file to ignore.
  *   - Task 6.8's `ConcurrencyTest` owes the one assertion this file cannot make:
  *     two calls sharing ONE snapshot, with the Move_List asserted to have gone
  *     from n to n+1. That is Property 14 and the only mechanical guard on the
