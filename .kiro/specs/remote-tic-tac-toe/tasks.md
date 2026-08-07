@@ -198,7 +198,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Creation assigns X and a token; the join happy path flips to `active` and assigns O; the creator's own code returns X unchanged; an unmatched code and a full game are rejected
     - _Requirements: 1.1, 1.5, 2.1, 2.4, 2.5_
 
-  - [ ] 5.8 Write the join-race half of `ConcurrencyTest` — sequential, no parallelism, no sleeps
+  - [x] 5.8 Write the join-race half of `ConcurrencyTest` — sequential, no parallelism, no sleeps
     - **Property 13**
     - Create a waiting Game, call `JoinGame` from session A then session B; A gets `O`, B gets `game_full` by the affected-row count taking the loser path naturally
     - Previously the first half of task 12.3. It depends only on `JoinGame` (5.4), so it belongs beside the code it guards rather than six waves later
