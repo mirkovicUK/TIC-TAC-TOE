@@ -8,15 +8,17 @@ use App\Domain\TicTacToe\Mark;
 use App\Models\Game;
 
 /**
- * Row 1 of `GameResolver`'s visibility table: the Game a request named, and the
- * Mark the Player_Token in that request's session is bound to on it.
+ * A Game, and the Mark the Player_Token in the requesting session is bound to on
+ * it: row 1 of `GameResolver`'s visibility table, and the accepted half of
+ * `JoinGame`.
  *
- * The existence of an instance of this class is the statement "this request is
- * authorised as a Player of this Game". It is the only thing `GameResolver`
- * returns that carries a Game at all — every rejection is a bare
- * `VisibilityOutcome` case with no fields — so a caller holding one has already
- * passed the authorisation check by virtue of holding it, and a caller that has
- * not cannot reach a Game through the resolver's return value.
+ * The existence of an instance of this class is the statement "this session is an
+ * authorised Player of this Game, holding a Player_Token bound to this Mark". It
+ * is the only thing `GameResolver` returns that carries a Game at all — every
+ * rejection is a bare `VisibilityOutcome` case with no fields, and every
+ * `JoinGame` rejection a bare `JoinOutcome` case — so a caller holding one has
+ * already passed the authorisation check by virtue of holding it, and a caller
+ * that has not cannot reach a Game through either return value.
  *
  * IT DOES NOT CARRY A `GameSnapshot`, AND THAT IS DELIBERATE. A snapshot would be
  * convenient for two of the three consumers, and it is still the wrong thing to
@@ -50,9 +52,22 @@ final readonly class ResolvedPlayer
 {
     /**
      * The constructor is public because there is nothing to guard: the pair is
-     * only meaningful together, and `GameResolver` is the only producer — it
-     * constructs one solely on the branch where `PlayerTokens::resolve()` returned
-     * a Mark for this row. Nothing else in the application constructs one, and a
+     * only meaningful together, and there are exactly TWO producers, both of which
+     * have established the fact before constructing one.
+     *
+     *   - `GameResolver` constructs one solely on the branch where
+     *     `PlayerTokens::resolve()` returned a Mark for this row — the fact
+     *     *observed*.
+     *   - `JoinGame` constructs one on its two accepted paths: after its guarded
+     *     UPDATE claimed the O slot and `PlayerTokens::remember()` put the matching
+     *     token in the session, and on its short-circuit, where the Mark comes from
+     *     the same `PlayerTokens::resolve()` call the resolver makes (Req 2.4, 2.5)
+     *     — the fact *established*. Either way, a `GameResolver::resolve()` call
+     *     made immediately afterwards in that session would construct an equal
+     *     instance from the persisted row, which is what makes the reuse honest
+     *     rather than merely convenient.
+     *
+     * Nothing else in the application constructs one, and nothing else should: a
      * hand-built instance would be an unauthorised request claiming to be an
      * authorised one, which is why `ResolveActingPlayer` is the only thing that
      * ever puts one where a controller can read it.

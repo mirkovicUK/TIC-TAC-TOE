@@ -171,7 +171,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 3.3, 3.4, 3.9, 3.10, 9.6, 13.6, 13.7, 13.8_
     - _Properties: 7_
 
-  - [ ] 5.4 Implement `JoinGame` as a conditional UPDATE
+  - [x] 5.4 Implement `JoinGame` as a conditional UPDATE
     - Single `UPDATE ... WHERE id = ? AND state = 'waiting_for_opponent' AND o_token_hash IS NULL`, setting `state`, `o_token_hash`, `version_counter = version_counter + 1`, `last_activity_at`; the affected-row count decides the outcome — 1 claims the slot, 0 is `game_full`
     - Compute the hash before the statement; if the update loses, discard the raw token so no orphan credential exists
     - Short-circuits first: a session already holding a valid token for the game gets the game back with its bound mark, no second player, state and Version_Counter unchanged (this covers the creator pasting their own code); an unmatched code is `not_recognised`
@@ -412,7 +412,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - `bootstrap/app.php`'s pre-existing `ordered_imports` failure fixed by running Pint over it rather than hand-editing. It had been failing since the scaffold and would have turned CI red on the `quality` job's first run
     - _Requirements: 12.3, 11.9_
 
-  - [ ] 14.2 Add the `quality` CI job
+  - [x] 14.2 Add the `quality` CI job
     - On push and on pull request: `composer install`, `pint --test`, static analysis, `pest --exclude-group=browser` (which includes the enumeration). Composer and npm caches keyed on their lock files. Fails the workflow if any check fails
     - If task 3.6 measured the enumeration beyond the budget, split it into its own job here rather than reducing its coverage
     - _Requirements: 12.9_
