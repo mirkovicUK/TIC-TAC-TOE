@@ -171,7 +171,15 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    // Req 10.11 asks for `Secure` WHERE the Application is served over HTTPS, so this
+    // follows the scheme actually served rather than being fixed here: `false` locally,
+    // where `php artisan serve` speaks plain HTTP and a `Secure` cookie would never be
+    // sent back at all, and `true` in the hosted stack, which terminates TLS at Caddy
+    // (task 13.2 sets it there, from the outcome of task 2.2). The framework left this
+    // key defaulting to null, which the session middleware coerces to false; the
+    // explicit `false` says that plain-HTTP local development is the intended reading
+    // rather than an accident of a missing variable.
+    'secure' => (bool) env('SESSION_SECURE_COOKIE', false),
 
     /*
     |--------------------------------------------------------------------------
@@ -184,7 +192,12 @@ return [
     |
     */
 
-    'http_only' => env('SESSION_HTTP_ONLY', true),
+    // Req 10.11's `HttpOnly`. The framework default is already `true` and is left alone
+    // on purpose: nothing in this application reads the session cookie from JavaScript —
+    // the client receives its state through Inertia props, and the CSRF value it does
+    // read is a separate `XSRF-TOKEN` cookie — so there is no reason to relax it. Kept
+    // as an env-overridable key so `.env.example` can record the intended value.
+    'http_only' => (bool) env('SESSION_HTTP_ONLY', true),
 
     /*
     |--------------------------------------------------------------------------
@@ -201,6 +214,19 @@ return [
     |
     */
 
+    // Req 10.11's SameSite attribute, at the framework's `lax` default by decision.
+    //
+    // WHY `lax` SUFFICES, AND WHY `strict` WOULD BE WRONG HERE. Every state-changing
+    // request in this application — create, join, move, rematch — is a same-site POST
+    // issued by a page the Application served, so `lax` withholds the cookie from exactly
+    // the cross-site POSTs that would be forgeries. The only cross-site entry point is a
+    // Join_Link, which is a top-level GET navigation: `lax` sends the cookie on it,
+    // `strict` would not. Under `strict` a player following a Join_Link pasted into a chat
+    // client would arrive without their Player_Session, and since the session holds the
+    // only copy of their Player_Tokens (Req 9.1) they would look like a stranger to every
+    // game they already hold. That is a behavioural regression, not extra safety — the
+    // forgery protection is `PreventRequestForgery`, origin-first with a token fallback
+    // (Reqs 10.9, 10.10), and this attribute is defence in depth behind it.
     'same_site' => env('SESSION_SAME_SITE', 'lax'),
 
     /*

@@ -70,6 +70,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - If issuance is refused, retry against `<elastic-ip>.nip.io` — a separate registered domain and therefore a separate rate-limit bucket. One line of Caddyfile changes
     - If TLS cannot be obtained at all, serve plain HTTP with `SESSION_SECURE_COOKIE=false`. This breaks no criterion: Requirement 10.11 conditions the Secure attribute on the Application being served over HTTPS
     - Record which hostname and which scheme were obtained; task 13.2 and the README consume that decision
+    - **The hostname was recorded and the scheme was not — found while doing task 9.3, and it is an outstanding item rather than a closed one.** `deploy/.provisioned.env` (untracked) carries `HOST=18-175-88-107.sslip.io`; nothing in the repository records whether the ACME issuance actually succeeded, the `docs/aws-infra.md` checklist is unticked, and `https://` on that host now refuses on 443 because step 8 brought the placeholder stack down — which is consistent with either outcome and settles nothing. **Establish it at task 13.2 from the evidence that survives: list `/data/caddy/certificates` in the `caddy-data` volume.** A certificate there means issuance succeeded, so `SESSION_SECURE_COOKIE=true`; nothing there means the plain-HTTP fallback, so `false`, which breaches no criterion because Requirement 10.11 conditions `Secure` on HTTPS being served. Task 15.1's honest account of the exposure depends on the same finding
     - _Requirements: 10.11, 12.4_
     - _Design: ADR-009_
 
@@ -302,7 +303,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 10.6, 10.8_
     - _Design: Deployment, trusted proxy range_
 
-  - [ ] 9.3 Set the Player_Session cookie attributes
+  - [x] 9.3 Set the Player_Session cookie attributes
     - `HttpOnly`, `SameSite=Lax`, and `Secure` only where the Application is served over HTTPS (`SESSION_SECURE_COOKIE` follows the outcome of task 2.2). `Lax` suffices because every state change is a same-site POST and the only cross-site entry point is a Join_Link, which is a top-level GET
     - _Requirements: 10.11_
 
