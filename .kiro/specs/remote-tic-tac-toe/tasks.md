@@ -180,7 +180,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Properties: 13_
     - _Design: ADR-006_
 
-  - [ ] 5.5 Implement `GameRepresentation`
+  - [x] 5.5 Implement `GameRepresentation`
     - The one serialiser producing `props.game` in the exact shape the design lists; `board`, `markToMove`, `winningLines` and the terminal result come from `Analysis`, `state`/`version`/`winningMark`/`rematchGameId` from the row
     - `joinCode` and `joinUrl` only while `waiting_for_opponent`; no token value anywhere; the whole prop omitted for any request that fails `GameResolver`
     - Returned in full on every state request irrespective of any version the client presents — no ETag, no 304 path
