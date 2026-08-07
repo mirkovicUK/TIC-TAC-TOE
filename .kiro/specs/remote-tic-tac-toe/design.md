@@ -675,6 +675,8 @@ The one thing the client must *not* do is send a version and expect a short answ
 
 `useOpponentIdle(game)` ticks a local timer every 5 seconds and returns `true` when the game is `active`, `isYourTurn` is false, and `now - lastMoveAt >= 60s` (Req 9.4). While `active` and not your turn but under the threshold, the banner shows "waiting for your opponent" (Req 9.3). No server involvement: the server already sends `lastMoveAt`.
 
+**A null `lastMoveAt` is quiet, and Requirement 9.4 was amended to say so.** The column behind it is the most recent Move's timestamp, absent for an empty Move_List, and the only other origin — when the Game became `active` — is deliberately not part of the representation. So the threshold is unmeasurable there rather than merely unmet, and the criterion now carries an "at least one Move has been accepted" clause. The accepted consequence is that a Creator who joins and never opens leaves the Joiner waiting with no warning; it is stated as a known limitation in the README under Requirement 12.13. Requirement 9.3's waiting indication still shows throughout, so the Joiner is not left with a blank banner.
+
 ---
 
 ## Data Models

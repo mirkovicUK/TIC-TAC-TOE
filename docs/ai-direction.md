@@ -193,9 +193,23 @@ Not everything below was an error; these are choices where the reasoning matters
 - Exactly one browser test
 - No continuous deployment, and what would be built if there were
 
-## A requirement narrowed rather than met
+## Requirements narrowed rather than met
 
-One acceptance criterion was amended rather than satisfied, and it belongs here as a scoping decision rather than among the corrections above. Requirement 12.6 originally asked this documentation to comprise three things: the spec documents, the significant prompts issued, and the corrections made to the generated output. The prompts component was dropped against the brief's "no more than a few hours" budget, and the criterion now names only the two components actually delivered.
+Two acceptance criteria were amended rather than satisfied, and they belong here as scoping decisions rather than among the corrections above.
+
+### The opponent-idle indication now begins only once a Move has been accepted
+
+Requirement 9.4 asked the Web_Client to indicate that an opponent may have stopped playing when a Game is `active`, the Mark_To_Move is not the viewer's, and no Move has been accepted for at least 60 seconds. Read literally, that is satisfiable on an empty Board: nobody has moved, so "no Move for 60 seconds" becomes true a minute after the join.
+
+**It was surfaced by implementing it rather than by reading it.** Task 6.5's brief was to build the hook, and the sub-agent reported the case rather than resolving it: `lastMoveAt` is the most recent Move's timestamp and is null for an empty Move_List, so the elapsed time is not merely unknown but *unrepresentable* client-side — the only other origin, when the Game became `active`, is deliberately not part of the representation. The hook therefore stayed quiet, which matched the task text but left the criterion arguably unmet.
+
+The ruling was to narrow the criterion: it now carries an "at least one Move has been accepted" clause, and the consequence is stated as a known limitation under a new Requirement 12.13, which task 15.1's README must carry. What the amendment buys is that the criterion now says what the implementation does, and says it for a reason a reviewer can check.
+
+**The alternative was available and was not taken.** Adding a "became active at" timestamp to the representation would have satisfied the original wording, at the cost of a new column or a derived value, a new prop, a server change, and a second clock for the client to reason about — for a warning that a Joiner staring at an empty board they cannot play does not especially need. Requirement 9.3's "waiting for your opponent" indication shows throughout either way, so the Joiner is never left with a blank banner; what they lose is the escalation after a minute.
+
+**Note the shape it shares with an entry above.** "An idle indication that fired on your own turn" records the same vacuity caught on the *other* screen: an early draft told the Creator their opponent may have stopped playing while the Application was in fact waiting on the Creator's own first Move. Closing that one added the Mark_To_Move clause; closing this one added the accepted-Move clause. The same defect had two faces and needed both.
+
+### The AI-direction record comprises two components rather than three Requirement 12.6 originally asked this documentation to comprise three things: the spec documents, the significant prompts issued, and the corrections made to the generated output. The prompts component was dropped against the brief's "no more than a few hours" budget, and the criterion now names only the two components actually delivered.
 
 The reasoning is the part worth keeping. An unmet criterion that a reviewer can find by reading your own specification is worse than a narrower criterion honestly stated. The choice was between satisfying it cheaply and amending it openly; leaving it quietly unsatisfied was not one of the options. Requirement 12.8 — recording where the generated output was wrong — is untouched and still in force, and this file satisfies it.
 

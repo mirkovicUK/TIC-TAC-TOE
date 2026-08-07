@@ -249,7 +249,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Validates: Requirements 3.6, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 5.5, 6.2, 6.4**
 
   - [ ] 6.7* Write Vitest tests for the two hooks and the rendering criteria
-    - `useGamePolling`: interval selection, stop on rematch discovery, stop on unmount. `useOpponentIdle`: quiet at 59 s, indicating at 61 s
+    - `useGamePolling`: interval selection, stop on rematch discovery, stop on unmount. `useOpponentIdle`: quiet at 59 s, indicating at 61 s, and **quiet with a null `lastMoveAt` however long has elapsed** — the amended Requirement 9.4's clause, and the case that would otherwise warn the Joiner on an empty board
     - Component assertions for the join-code panel, the draw and win banners, the turn indication, and the board's disabled condition in a terminal state
     - _Requirements: 1.6, 1.7, 6.5, 6.6, 6.7, 8.1, 8.5, 8.6, 9.3, 9.4_
 
@@ -436,8 +436,9 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - That access to a Game cannot be recovered after loss of the Player_Session, and that this follows from the deliberate absence of user accounts
     - That the instance has no inbound SSH and shell access is via Systems Manager Session Manager — a deliberate decision, not an omission. One line; ADR-009 carries the reasoning
     - How to invoke `games:sweep` on a schedule as the production means of deleting eligible Games, with the crontab line from 13.3
+    - **A known limitation (Req 12.13): the opponent-idle indication begins only once a Move has been accepted, so a Creator who joins a Game and never returns leaves the Joiner waiting with no warning.** Requirement 9.4 was narrowed to say so during task 6.5 — `lastMoveAt` is absent for an empty Move_List and the only other origin is not part of the representation — and the amendment is recorded in `docs/ai-direction.md` under "Requirements narrowed rather than met". Requirement 9.3's waiting indication still shows throughout, so state what the Joiner does see as well as what they do not
     - **The scheme the hosted instance actually serves, from the outcome of task 2.2.** WHERE that outcome was plain HTTP, give an honest account of the exposure rather than only the citation: Requirement 10.11 conditions the Secure attribute on the Application being served over HTTPS, so the criterion is *met* rather than waived; `HttpOnly` and `SameSite=Lax` still apply; and what is actually at risk is that the session cookie travels in clear, carrying a per-Game play token with no account behind it and a retention window of at most seven days. State that bounded exposure plainly instead of citing the conditional and moving on
-    - _Requirements: 10.11, 12.1, 12.2, 12.3, 12.4, 12.8, 12.10, 12.12_
+    - _Requirements: 10.11, 12.1, 12.2, 12.3, 12.4, 12.8, 12.10, 12.12, 12.13_
 
   - [ ] 15.2 Write the decision records under `docs/decisions/`
     - One file per ADR 001 to 010, each stating the decision, the alternatives considered and the reason. ADR-001 (polling as the state-synchronisation transport) is the record Requirement 12.11 mandates specifically

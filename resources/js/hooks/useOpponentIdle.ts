@@ -42,7 +42,11 @@ export const IDLE_TICK_MS = 5000;
  * fake clock — the caller supplies the clock.
  *
  * `lastMoveAt` IS NULL WHEN THE MOVE_LIST IS EMPTY (`GameRepresentation::lastMoveAtOf`)
- * AND THAT CASE IS QUIET. There is no Move to measure 60 seconds from, and the only
+ * AND THAT CASE IS QUIET, WHICH REQUIREMENT 9.4 NOW STATES OUTRIGHT. The criterion was
+ * amended to carry an "at least one Move has been accepted" clause after this hook was
+ * built, so the null case is conformant rather than a judgement call; the accepted
+ * consequence — a Creator who never returns leaves the Joiner unwarned — is a stated
+ * known limitation (Req 12.13). There is no Move to measure 60 seconds from, and the only
  * other origin available — when the Game became `active` — is not a prop, so the
  * elapsed time is not merely unknown but unrepresentable here. Treating a null as an
  * elapsed eternity would announce "your opponent may have stopped playing" to the

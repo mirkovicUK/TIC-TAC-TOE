@@ -189,7 +189,9 @@ The following are explicit non-goals. They are recorded here so that their absen
 1. THE Game_Service SHALL persist every Game and its Move_List durably, so that a Game survives a restart of the Application.
 2. WHEN a Player_Session holding a valid Player_Token requests a previously created Game that has not been deleted under Requirement 13, THE Game_Service SHALL return the current state of that Game irrespective of the time elapsed since the last accepted Move.
 3. WHILE a Game has a Game_State of `active` and the Mark_To_Move does not belong to the viewing Player, THE Web_Client SHALL display an indication that the Application is waiting for the opponent to move.
-4. WHILE a Game has a Game_State of `active`, the Mark_To_Move does not belong to the viewing Player, and no Move has been accepted for at least 60 seconds, THE Web_Client SHALL display an indication that the opponent may have stopped playing.
+4. WHILE a Game has a Game_State of `active`, the Mark_To_Move does not belong to the viewing Player, at least one Move has been accepted, and no Move has been accepted for at least 60 seconds, THE Web_Client SHALL display an indication that the opponent may have stopped playing.
+
+   The "at least one Move has been accepted" clause narrows this criterion and was added deliberately. The elapsed time is measured from the most recent accepted Move, which the Web_Client receives as `lastMoveAt`; that value is absent for a Game whose Move_List is empty, and the only other origin — when the Game became `active` — is not part of the representation. Without the clause the criterion would be read as vacuously satisfied on an empty Board, which is the defect recorded in `docs/ai-direction.md` under "An idle indication that fired on your own turn", one screen over: the Joiner would be told their opponent may have stopped playing the instant the page opened, before the Creator had had any opportunity to move. The consequence accepted here — a Creator who never returns leaves the Joiner waiting with no warning — is stated as a known limitation under criterion 13 of Requirement 12.
 5. WHILE a Game has not been deleted under Requirement 13, THE Game_Service SHALL retain that Game in its current Game_State when a Player stops sending requests.
 6. IF a Player_Session presents no Player_Token for a Game, presents a Player_Token that is invalid or expired, or presents a Player_Token bound to a Game_Id other than that of the requested Game, THEN THE Web_Client SHALL display the same indication stating that the viewer is not a Player in that Game.
 
@@ -245,6 +247,7 @@ The following are explicit non-goals. They are recorded here so that their absen
 10. THE README SHALL state that access to a Game cannot be recovered after loss of the Player_Session, and SHALL state that this limitation follows from the deliberate absence of user accounts.
 11. THE Application repository SHALL contain a decision record covering the choice of state-synchronisation transport, stating the decision taken, the alternatives considered, and the reason for that decision.
 12. THE README SHALL state how to invoke the command required by criterion 3 of Requirement 13 on a schedule as the production means of deleting Games that are Eligible_For_Expiry.
+13. THE README SHALL state, as a known limitation, that the opponent-idle indication of criterion 4 of Requirement 9 begins only once a Move has been accepted, so a Creator who joins a Game and never returns leaves the Joiner waiting with no warning.
 
 ### Requirement 13: Game Retention and Expiry
 
