@@ -129,7 +129,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - `id` derives from no database sequence
     - _Requirements: 1.2, 1.4, 6.1, 6.2, 7.4, 7.8, 8.3, 13.1, 13.2_
 
-  - [ ] 4.2 Migration for `moves`
+  - [x] 4.2 Migration for `moves`
     - `id`, `game_id` (`ON DELETE CASCADE`), `cell_index`, `sequence_index`, `created_at`
     - **No `mark` column and no `mark` CHECK.** Mark is the parity of Sequence_Index; a stored mark could only agree with the unique index or corrupt it
     - `CHECK (cell_index BETWEEN 0 AND 8)`, `CHECK (sequence_index BETWEEN 0 AND 8)`, unique `(game_id, sequence_index)`, unique `(game_id, cell_index)` — the two indexes give Requirements 5.1, 5.2 as persisted invariants and cap the Move_List at nine rows by pigeonhole
