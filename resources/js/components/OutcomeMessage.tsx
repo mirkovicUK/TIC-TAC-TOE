@@ -6,7 +6,7 @@ import { outcomeMessage } from '@/lib/outcomes';
  * IT TAKES THE SHARED PROP, NOT THE GAME. `outcome` is the one prop
  * `HandleInertiaRequests` shares, set by every 303 that rejects an authorised
  * Player's action — `game_not_started`, `game_ended`, `not_your_turn`,
- * `invalid_move`, `conflict` (task 6.2) and later `invalid_state` (task 7). The
+ * `invalid_move`, `conflict` (task 6.2) and `invalid_state` (task 7.1). The
  * GET that follows the redirect carries the outcome together with the current
  * Game_State, Move_List and Version_Counter, so the message and the board the
  * player is looking at are from the same response (Req 5.5).

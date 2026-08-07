@@ -52,8 +52,8 @@ final readonly class ResolvedPlayer
 {
     /**
      * The constructor is public because there is nothing to guard: the pair is
-     * only meaningful together, and there are exactly TWO producers, both of which
-     * have established the fact before constructing one.
+     * only meaningful together, and there are exactly THREE producers, each of which
+     * has established the fact before constructing one.
      *
      *   - `GameResolver` constructs one solely on the branch where
      *     `PlayerTokens::resolve()` returned a Mark for this row — the fact
@@ -66,6 +66,14 @@ final readonly class ResolvedPlayer
      *     made immediately afterwards in that session would construct an equal
      *     instance from the persisted row, which is what makes the reuse honest
      *     rather than merely convenient.
+     *   - `CreateRematch` (task 7.1) constructs one for the REMATCH, not for the
+     *     Game it was handed: by the time it does, the minted hash is in that row's
+     *     slot for the swapped Mark and the raw value is in the session, so the same
+     *     "an equal instance would be resolved from the persisted row" test holds.
+     *     Its Mark is the one place a `ResolvedPlayer`'s Mark is not read straight
+     *     off a token — it is `$precedingMark->opponent()` (Req 7.3) — and the pair
+     *     is still established rather than asserted, because the token it names was
+     *     minted into that slot two statements earlier.
      *
      * Nothing else in the application constructs one, and nothing else should: a
      * hand-built instance would be an unauthorised request claiming to be an

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CreateGameController;
+use App\Http\Controllers\CreateRematchController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\JoinFormController;
 use App\Http\Controllers\JoinGameController;
@@ -9,9 +10,9 @@ use App\Http\Controllers\SubmitMoveController;
 use Illuminate\Support\Facades\Route;
 
 /*
- * The five routes of task 5.6 followed by task 6.2's move route, in the order the
- * design's HTTP-surface table lists them. `POST /games/{game}/rematch` (task 7.x)
- * and the Health_Endpoint (task 10.x) are deliberately absent.
+ * The five routes of task 5.6, task 6.2's move route and task 7.1's rematch route,
+ * in the order the design's HTTP-surface table lists them. Only the
+ * Health_Endpoint (task 10.1) is still deliberately absent.
  *
  * NO `throttle:` MIDDLEWARE IS ATTACHED YET, AND THAT IS A DECISION RATHER THAN
  * AN OMISSION. The design's table puts `throttle:create-game` on `POST /games`,
@@ -77,3 +78,28 @@ Route::get('/games/{game}', ShowGameController::class)
 Route::post('/games/{game}/moves', SubmitMoveController::class)
     ->middleware('acting.player')
     ->name('games.moves.store');
+
+/*
+ * Task 7.1 — create or enter the Rematch. Same `acting.player` middleware as the
+ * two routes above, and here it carries the whole of Requirement 7.11: a session
+ * holding no Player_Token for the PRECEDING Game is refused `not_authorised`
+ * before `CreateRematch` is reached, so that criterion needs no code in the
+ * service (Req 3.9).
+ *
+ * `{game}` IS THE PRECEDING GAME, NOT THE REMATCH — the Rematch has no id until
+ * this request either finds or creates it, which is why the design's outcome table
+ * routes the `invalid_state` rejection back to this same id while the accepted
+ * path redirects to a different one.
+ *
+ * THE DESIGN'S LIMITER TABLE APPLIES NO NAMED LIMITER TO THIS ROUTE, so unlike the
+ * three routes carrying a deferred `throttle:` this one is not waiting on task
+ * 9.4. The endpoint is idempotent and converges on one row (Req 7.8), so a
+ * repeated POST re-mints a token for a caller who already holds one and creates
+ * nothing.
+ *
+ * `CreateRematchController` type-hints `Request` and not `App\Models\Game`, which
+ * is what keeps route-model binding away from this third `{game}` route.
+ */
+Route::post('/games/{game}/rematch', CreateRematchController::class)
+    ->middleware('acting.player')
+    ->name('games.rematch.store');

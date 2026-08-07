@@ -262,7 +262,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 14.9**
 
 - [ ] 7. Subsequent Game (Rematch)
-  - [ ] 7.1 Implement `CreateRematch` and its route
+  - [x] 7.1 Implement `CreateRematch` and its route
     - Reject a non-terminal preceding game with `invalid_state`; a session with no token for the preceding game is already `not_authorised` from `GameResolver`
     - In a transaction: find the rematch by `rematch_of_game_id`; if absent insert one with `state = 'active'`, empty Move_List, `join_code = NULL`, `version_counter = 0`, **both token slots NULL**, and increment the *preceding* game's Version_Counter so the opponent's next poll sees it. A unique-index violation means a concurrent request won — catch it and re-read
     - **Mint the requesting session's token at request time**, bound to `$precedingMark->opponent()`; the swap is derived, never stored. Minting is not a state-changing operation for versioning and does not touch `last_activity_at` on the preceding game

@@ -2,22 +2,24 @@
  * The outcome vocabulary, client side: one map from an outcome value to the copy a
  * player is shown.
  *
- * THE VALUES MIRROR THE SERVER'S THREE OUTCOME ENUMS EXACTLY — `MoveOutcome`
+ * THE VALUES MIRROR THE SERVER'S FOUR OUTCOME ENUMS EXACTLY — `MoveOutcome`
  * (`game_not_started`, `game_ended`, `not_your_turn`, `invalid_move`, `conflict`),
- * `JoinOutcome` (`game_full`, `not_recognised`) and `VisibilityOutcome`
- * (`not_authorised`, `game_expired`, `not_recognised`). `not_recognised` appears once
+ * `JoinOutcome` (`game_full`, `not_recognised`), `VisibilityOutcome`
+ * (`not_authorised`, `game_expired`, `not_recognised`) and `RematchOutcome`
+ * (`invalid_state`). `not_recognised` appears once
  * because the server spells it once: `JoinOutcome::NotRecognised` and
  * `VisibilityOutcome::NotRecognised` deliberately share one backing value and one
  * client-facing message, and which of them was raised is carried by the transport
  * rather than by the string.
  *
- * TWO OUTCOMES IN THE DESIGN'S TABLE ARE ABSENT, AND THEIR ABSENCE IS DATED RATHER
- * THAN PERMANENT. `invalid_state` (Req 7.10) arrives with the rematch outcome enum in
- * task 7, and `rate_limited` (Req 10.6, 10.7) comes from framework middleware in task
- * 10 rather than from an enum in `App\Games`. Neither value can be flashed by any code
- * that exists today, so neither is listed: this file mirrors the vocabulary the server
- * can currently produce, and adding a key for an outcome nothing raises would make the
- * mirror unfalsifiable. `FALLBACK` below is what keeps the interim honest.
+ * ONE OUTCOME IN THE DESIGN'S TABLE IS STILL ABSENT, AND ITS ABSENCE IS DATED RATHER
+ * THAN PERMANENT. `rate_limited` (Req 10.6, 10.7) comes from framework middleware in
+ * task 10 rather than from an enum in `App\Games`, so no code that exists today can
+ * flash it: this file mirrors the vocabulary the server can currently produce, and
+ * adding a key for an outcome nothing raises would make the mirror unfalsifiable.
+ * `FALLBACK` below is what keeps the interim honest. `invalid_state` was listed here
+ * as similarly deferred until task 7.1 added `RematchOutcome`, which is the code that
+ * raises it, and it moved into the map in the same change.
  *
  * A MISSING CASE IS A COMPILE ERROR. `MESSAGES` is typed `Record<Outcome, string>`
  * over the union derived from `OUTCOME_VALUES`, so adding a value to that list without
@@ -48,6 +50,8 @@ export const OUTCOME_VALUES = [
     'not_your_turn',
     'invalid_move',
     'conflict',
+    // RematchOutcome
+    'invalid_state',
 ] as const;
 
 export type Outcome = (typeof OUTCOME_VALUES)[number];
@@ -64,6 +68,8 @@ const MESSAGES: Record<Outcome, string> = {
     // Requirement 5.5: the board rendered alongside this message is the state the
     // server returned with the conflict, not the one this client submitted against.
     conflict: 'Your opponent got there first. This is the current board.',
+    // Requirement 7.10: a rematch was requested for a game that has not finished.
+    invalid_state: 'This game is still in play, so there is no rematch to start yet.',
 };
 
 const FALLBACK = 'That action could not be completed.';
