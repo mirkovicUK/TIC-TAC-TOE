@@ -2,9 +2,6 @@
 
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\DB;
-use Tests\TestCase;
-
-uses(TestCase::class);
 
 /*
  * Task 1.4 / ADR-004. The four PRAGMAs are asserted against a temporary

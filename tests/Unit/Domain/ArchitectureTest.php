@@ -430,13 +430,16 @@ it('calls no autoloaded framework helper function anywhere in the domain layer',
  * What carries the claim instead is that THIS FILE IS ONE OF THE FILES THE CLAIM
  * IS ABOUT. It sits in `tests/Unit/Domain`, so Pest picks its base class by
  * exactly the process it uses for its three siblings — the project's Pest
- * configuration, which is global. There is no `tests/Pest.php`, so that base
- * class is the default `PHPUnit\Framework\TestCase`; add a `tests/Pest.php`
- * applying `Tests\TestCase` to `Unit`, and every file in this directory would
+ * configuration, which is global. `tests/Pest.php` scopes its one `uses()`
+ * directive to `Feature`, so `Unit` is left on the default
+ * `PHPUnit\Framework\TestCase` — the base class here follows from that scoping,
+ * not from the config file being absent. Widen the directive to `Unit`, or drop
+ * the `->in()` so it applies globally, and every file in this directory would
  * start booting the application — including this one, and this assertion is what
  * would fail. That is the mechanism by which Claim 2 could break without anyone
  * touching a domain test file, and reflecting on this file's own generated class
- * covers it.
+ * covers it. `tests/Pest.php` carries the matching warning at the point where
+ * the edit would be made.
  *
  * Plainly, what this does NOT cover: a per-file opt-in inside one sibling, such
  * as a `uses()` call or an `extends`. Nothing about this class's ancestry can see
