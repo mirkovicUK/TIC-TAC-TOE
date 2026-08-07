@@ -70,7 +70,7 @@ Defects that survived generation because each half was locally plausible.
 
 ## Inconsistencies the implementation surfaced
 
-Everything above was found by reading. This one was found by building, and it is the only entry of its kind so far. It is recorded separately because the failure mode is different: no document was wrong, two documents were individually right and jointly unsatisfiable, and no amount of re-reading either one would have shown it.
+Everything above was found by reading. This one was found by building, and so were the three that follow it. It is recorded separately because the failure mode is different: no document was wrong, two documents were individually right and jointly unsatisfiable, and no amount of re-reading either one would have shown it.
 
 ### `PlayerTokens` could not satisfy both the design and task 5.4
 
@@ -126,6 +126,48 @@ Seven of thirty-two hex nibbles varied. About 28 bits, not 74 — and the varyin
 The claim was measured because a sub-agent reported the discrepancy in passing rather than adopting the design's figure, and it was then checked independently before the design was changed. The correction is not that the design chose the wrong id type: Requirement 1.2 asks for "a cryptographically secure random source **or a time-ordered random source**" and forbids deriving any part from "a monotonically increasing **database** sequence", and UUIDv7 satisfies both clauses exactly. Requirement 1.2 also asks for "non-sequential and non-guessable", and that half is now stated as partly unmet within a millisecond rather than glossed.
 
 **What makes this worth an entry is that the correction improved the argument rather than weakening it.** The paragraph's conclusion — that the visibility decision closes no meaningful hole — was resting on the id being hard to guess, which turns out to be partly false. It now rests on the Game_Id not being a credential at all: guessing one correctly yields `not_authorised`, because authorisation comes from the Player_Token and nothing else, and that token is 256 bits from `random_bytes()` with no counter and no structure. That was always the design's actual position. The wrong justification had been doing work the right one does better.
+
+### The corrected Game_Id paragraph sent a correctly guessed id to the wrong row
+
+Smaller than the two above, and included for its shape: the fix for one defect carried a fresh factual error, and what caught it was the implementation of the next task.
+
+**What the two halves said.** `GameResolver` implements a seven-row visibility table deciding whether a request may see a Game. Row 5 is "a Game row exists and the request presents no token bound to it" → `not_authorised`. Row 6 is "no Game row, no Expiry_Record, no token presented" → `not_recognised`. The prose justifying the table — the paragraph rewritten when the 74-bit claim recorded above was withdrawn — now rested the argument on a Game_Id not being a credential, so that guessing one correctly gains nothing. In saying so it stated that a correctly guessed id "reaches **row 6**".
+
+**Why they cannot both hold.** A correctly guessed Game_Id is, by definition, an id whose row exists. That is row 5, `not_authorised`. Row 6 is the case where there is no row at all, which is what an *incorrectly* guessed id reaches. The prose had the two cases the wrong way round while the table had them right, and neither half looks wrong read alone.
+
+**How it was handled, and by whom.** The sub-agent implementing task 5.3 was building the seven-row table out of that same design section and could not reconcile the prose with the table it was implementing. It reported the discrepancy rather than implementing either reading — the right call, because picking one would have buried the error in code instead of surfacing it. The human confirmed that the table was authoritative and the prose wrong, and had the design amended.
+
+**What makes this worth an entry.** The error was harmless to the code, because the implementation followed the table. But it sat in the *justification*, which is the part a reviewer reads to decide whether the design is trustworthy, and a security argument that names the wrong outcome is not a small blemish even when nothing downstream depends on it. The mechanism that caught it was also not review: two people had read that paragraph after it was corrected and both passed it. What caught it was something trying to build from it, which is the same mechanism as every other entry in this section.
+
+### Seventeen assertions asserted nothing, and the explanation of why that was harmless was the inverse of the truth
+
+The most useful entry here, and the least flattering. The defect in the tests is ordinary. What followed it was not: a confidently stated, unmeasured, and exactly inverted account of a library's behaviour, offered as reassurance that nothing needed doing.
+
+**What the two halves said.** Four test files asserted that secrets never appear in responses, in this form:
+
+```php
+expect($body)->not->toContain($secret, 'the response leaks the raw token');
+```
+
+Read as English that says the body does not contain the secret, with a sentence explaining what a failure means. Pest's `toContain()` takes no message argument. Its signature is `toContain(mixed ...$needles)`, so the explanation was not a message — it was a second needle.
+
+**Why they cannot both hold.** Measured against the Pest source: the positive form loops the needles and calls `assertStringContainsString` on each, so it passes only if **all** of them are present, and `not` passes whenever the positive form throws anywhere. So `not->toContain($secret, $message)` means "at least one of these two strings is absent". The message sentence never appears in a JSON payload. **The assertion therefore passed unconditionally, whether or not the secret leaked.** Seventeen assertions of this shape, across four files, were the evidence for the two requirements that most needed evidence: Requirement 8.7, that no Player_Token value appears anywhere, and Requirement 3.10, that no game state appears in a rejection.
+
+Before that measurement the orchestrator had told the human the opposite — that the negated form asserts both strings are absent, therefore stricter than intended, therefore incapable of a false pass, therefore a legibility wart to tidy at leisure. Stated as fact, twice, without measuring anything. It was the exact inverse of what the library does.
+
+**How it was handled, and by whom.** A sub-agent implementing task 5.4 noticed the variadic signature in passing, used `str_contains()` in the tests it was writing, and flagged the existing ones. The misdiagnosis above is what nearly closed the matter there. What reopened it was not a code review. The human asked why the falsification step — break the code, watch the test fail, restore it — had drifted out of the process, and asked for the outstanding items to be cleared. Measuring the claim was a consequence of restoring that habit.
+
+All seventeen were then converted and each falsified individually: break the specific thing the assertion guards, observe the failure, confirm the intended message is visible, restore the break. An independent verifier that had not written the change produced the decisive demonstration — it left a real raw-token leak in `PlayerTokens::issue()`, reverted **only** the test file to its previous form, and ran it. The test passed. A live credential leak, and the assertion written to catch exactly that did not notice.
+
+**What makes this worth an entry.** Four things, and the first is the least comfortable.
+
+**Two AI failures, of different kinds, and the second was worse.** Writing the fragile assertion is an ordinary mistake of the sort a suite exists to absorb. Explaining it away with a confident, unmeasured, inverted account of the library was the failure that nearly ended the matter — and the wrong diagnosis was *reassuring*, which is precisely what made it dangerous. Had it been accepted, seventeen vacuous assertions would have stayed in a suite whose entire claim is that it tests what it says it tests.
+
+**What caught it was a question about method, not about code.** Nobody spotted the semantics, the human included. The human noticed that a *habit* had lapsed — that sub-agents had stopped breaking code to confirm a test could fail — and asked why. That recovered a defect no amount of reading the assertions would have found, because they read perfectly well; the sentence in the second argument even makes them read better than the correct form does.
+
+**Why a green suite was not evidence.** Every one of these seventeen assertions had been green from the day it was written, which is exactly what a vacuous assertion looks like. There is no way to distinguish a test that passes because the system is correct from one that passes because it asks nothing, except by making the system wrong and checking that the test objects.
+
+**The process change that followed**, kept as a standing rule rather than a one-off. For each new test: break the specific thing it guards, watch it fail, restore. Then a second agent that did not write the change re-verifies independently, re-deriving some of the falsifications itself. The verifier is a different agent for a stated reason — the author of a test is the worst available judge of whether it can fail, having already decided what it means.
 
 ## Decisions recorded rather than corrected
 
