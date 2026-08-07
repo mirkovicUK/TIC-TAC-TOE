@@ -107,7 +107,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Use Eris for the unbounded shapes if it resolved; otherwise Pest datasets over the hand-picked sample described in Notes, item 2
     - **Validates: Requirements 11.5, 14.8**
 
-  - [ ] 3.6 Write `EnumerationTest` — the exhaustive walk
+  - [x] 3.6 Write `EnumerationTest` — the exhaustive walk
     - **Properties 1, 2, 3, 4** checked at every node of the reachable game tree, depth-first from the empty Move_List, with the oracle from 3.3 deciding terminality and the winning-line set
     - Assert `terminals === 255_168`. **This count carries no convention ambiguity** — a mismatch means the engine and the oracle disagree with the accepted combinatorial result. Stop and debug; do not adjust the expectation
     - Assert `nodes === 549_946`. **The convention is settled: the root counts.** Increment the node counter on entry to each node, the empty Move_List included; 549,946 is the count under that convention, established by a full walk. A first run reporting 549,945 means the root was not counted — a harness bug with a known fix, not a rules defect and not a convention left to the implementer. Fix the root accounting and leave the engine alone; do not adjust the expectation. Stated this plainly so that a correct 549,946 is not mistaken for a discrepancy worth hunting
@@ -115,7 +115,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Sampling a subset of the tree is not a mitigation and is not acceptable** — Requirement 14.2 requires exhaustive enumeration, and the two counts are what make the walk a check against external ground truth
     - **Validates: Requirements 14.2, 11.2, 11.3, 11.7, 11.8, 6.1, 6.2, 6.3, 6.4**
 
-  - [ ] 3.7 Write `ArchitectureTest`
+  - [x] 3.7 Write `ArchitectureTest`
     - **Property 6: The domain layer is pure**
     - Assert `App\Domain\TicTacToe` references no `Illuminate\*`, no `App\Models\*` and no `App\Http\*`, and that the domain unit tests extend a plain PHPUnit `TestCase` rather than booting the framework
     - **Validates: Requirements 11.1, 11.9, 14.1**
