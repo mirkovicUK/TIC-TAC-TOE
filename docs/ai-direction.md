@@ -8,7 +8,9 @@ This file records how AI tooling was used to build Remote Tic-Tac-Toe, and — m
 
 The specification was produced through an AI-assisted, spec-driven workflow: a requirements document in EARS form, a technical design, and an implementation plan, each reviewed and revised before the next was written. Implementation follows the plan.
 
-The workflow's value was not that the first draft was good. It was that a written specification is reviewable in a way that a half-built application is not, and every defect listed below was found by reading a document rather than by debugging code.
+The workflow's value was not that the first draft was good. It was that a written specification is reviewable in a way that a half-built application is not, and almost every defect listed below was found by reading a document rather than by debugging code.
+
+The exception is recorded under "Inconsistencies the implementation surfaced", and it is instructive for the opposite reason: some incompatibilities are invisible to review because neither half is wrong on its own. They only appear when something tries to satisfy both at once.
 
 ## Corrections
 
@@ -65,6 +67,43 @@ Defects that survived generation because each half was locally plausible.
 **Winning lines described in the singular.** Two criteria referred to "the completed winning line". A single move can complete two lines at once, and the position is reachable in legal play: `X0, O1, X2, O3, X6, O5, X8, O7, X4` completes both diagonals on X's final move. Found by reasoning about what the exhaustive enumeration would encounter. Both criteria are now plural.
 
 **Game-tree figures described as positions.** The enumeration's node count, 549,946, counts reachable move sequences, not distinct board positions — of which there are 5,478. The figure was right and the noun was wrong.
+
+## Inconsistencies the implementation surfaced
+
+Everything above was found by reading. This one was found by building, and it is the only entry of its kind so far. It is recorded separately because the failure mode is different: no document was wrong, two documents were individually right and jointly unsatisfiable, and no amount of re-reading either one would have shown it.
+
+### `PlayerTokens` could not satisfy both the design and task 5.4
+
+**What the two halves said.** The design specified a three-method credential class, of which the relevant one was:
+
+```php
+/** Mints a token, stores its hash on the game's mark slot, puts the raw value in the session. */
+public function issue(Game $game, Mark $mark): void;
+```
+
+Task 5.4, describing how a second player claims the O slot, said:
+
+> Compute the hash before the statement; if the update loses, discard the raw token so no orphan credential exists
+
+**Why they cannot both hold.** `JoinGame` claims the O slot with a conditional `UPDATE ... WHERE id = ? AND state = 'waiting_for_opponent' AND o_token_hash IS NULL`, and the affected-row count is what decides between claiming the slot and answering `game_full`. The hash has to be *inside* that statement, so it must exist before the statement runs. But whether the request won is only known after it runs. `issue()` writes the session unconditionally, so by the time the outcome is known the credential already exists in the browser's session — and "discard the raw token" has become a retraction rather than an absence. An orphan credential would exist, briefly, and its non-existence would depend on a cleanup step running.
+
+Neither statement is wrong. The design's surface was simply under-specified for a caller with a losing path, and nothing about reading either document reveals that, because the incompatibility lives in the interaction.
+
+**How it was handled, and by whom.** The sub-agent implementing task 5.1 hit the contradiction, and did not resolve it. It implemented the signature exactly as the design specified, recorded the tension in the code's own docblock, and reported that task 5.4 would need a decision between two options — splitting `issue()`, or having `JoinGame` retract the session key on the losing path. That restraint was the correct behaviour and is worth naming: inventing a third option and quietly shipping it would have left the design describing a class that no longer existed.
+
+The decisions that followed were the human's, and there were three.
+
+**First, that it be resolved before proceeding rather than carried.** The gap could have been deferred to task 5.4, which is where it would have bitten. It was not, and that is the more disciplined choice — a known contradiction carried through four intervening tasks is a contradiction that gets rediscovered under time pressure.
+
+**Second, a rejected proposal, and the reasoning that rejected it.** The initial instinct was to implement task 5.4 out of order, on the ground that building the thing that has the problem is the surest way to settle it. That is usually right and was wrong here: task 5.4 *normalises* join codes, while task 5.2 *generates* them, so implementing the joiner first would have forced the alphabet, the ambiguous-character folding and the display format to be decided inside the consumer and then matched by the producer. It would also have meant building "join a game" before "create a game" existed, with tests hand-assembling rows the real creation path would later produce differently. The proposal was withdrawn once that cost was stated.
+
+**Third, which of the two fixes to take.** The options were a structural one — separate minting from remembering, so the session is never written on a losing path — and a procedural one, where `JoinGame` writes the session and then forgets the key if the update loses. The procedural option is functionally adequate: it is all one request, single-threaded, and no other request observes the intermediate state. The structural one was chosen anyway, on the stated ground that a guarantee holding by construction beats one holding because someone remembered the cleanup. That is the same reasoning that produced the token scheme's location-binding in the first place, applied consistently.
+
+**What was built.** `mint()` returns a `MintedToken` and has no side effects; `remember()` is the session write alone; `issue()` survives as the composition of both, because `CreateGame` inserts a fresh row with no competing writer and therefore no losing path. `JoinGame` mints, runs its guarded statement, and calls `remember()` only on the winning branch — so no orphan credential exists because nothing wrote one, not because something cleaned one up. The design's skeleton was amended to match, including a note that task 7.1's `CreateRematch` will want the same primitives for the same reason.
+
+**A smaller decision inside that one.** `mint()` returns a two-property value object rather than a raw string plus a public `hashOf()` helper. Both strings are `string` to PHP and to PHPStan, and `JoinGame` interpolates one of them into `SET o_token_hash = ?` — so a transposition would write the secret into the database, which is the exact disclosure Requirement 8.7 exists to prevent, at the exact point Requirement 3.1's binding is established, with no type checker objecting. Named properties make the mistake visible at the call site. The object's docblock is also explicit about what it does *not* protect: `readonly` prevents mutation, not disclosure, and `raw` is public, so `var_dump` or `json_encode` would print it. What protects the secret is that no instance is ever handed to a serialiser.
+
+**Why this was surfaced at all.** Worth recording, because it is a property of how the work was directed rather than of the tooling. The standing instructions throughout were to reason about review feedback rather than accept it, to report before changing, and to say plainly when something in the spec was wrong or unimplementable rather than working around it silently. A sub-agent told to satisfy its brief would have shipped something that satisfied the brief. One told that flagging a contradiction is part of the job flagged it.
 
 ## Decisions recorded rather than corrected
 
