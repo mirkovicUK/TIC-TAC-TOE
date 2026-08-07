@@ -3,21 +3,27 @@
 declare(strict_types=1);
 
 use App\Domain\TicTacToe\Mark;
+use App\Games\GameSnapshot;
 use App\Games\GameState;
 use App\Games\JoinCode;
 use App\Games\JoinGame;
 use App\Games\JoinOutcome;
+use App\Games\MoveAccepted;
+use App\Games\MoveOutcome;
 use App\Games\PlayerTokens;
 use App\Games\ResolvedPlayer;
+use App\Games\SubmitMove;
 use App\Models\Game;
+use App\Models\Move;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 
 // Feature: remote-tic-tac-toe, Property 13: Joining is exclusive
+// Feature: remote-tic-tac-toe, Property 14: A Move conflict resolves to one Move
 //
-// Validates: Requirements 2.7, 14.9
+// Validates: Requirements 2.7, 5.1, 5.2, 5.3, 5.4, 5.5, 14.9
 //
 /*
  * Task 5.8 — the join race, written the way Requirement 14.9 requires it to be
@@ -276,4 +282,216 @@ it('assigns O to the first of two distinct sessions and refuses the second with 
         ->and(concurrencyTokenKeys())->toBe([$game->id], "the winner's session does not hold a Player_Token for the Game it joined")
         ->and($tokens->resolve($stored, $tokenA))->toBe(Mark::O, "the loser's join unbound the winner's Player_Token, locking the O Player out of their own Game (Req 3.1)")
         ->and($stored->x_token_hash)->toBe($before['x_token_hash'], 'the X Player was disturbed by the join race');
+});
+
+/*
+ * Task 6.8 — THE MOVE CONFLICT (Req 5.1–5.5, Req 14.9, Property 14).
+ *
+ * Written under the same constraint as the join race above, and faithful for the
+ * same kind of reason — but the mechanism is a different one, so the argument has
+ * to be made again rather than inherited.
+ *
+ * WHY TWO SEQUENTIAL CALLS ARE THE CONCURRENT CASE HERE. `SubmitMove::handle()` is
+ * a pure function of `($observed, $actingMark, $cellIndex)` and issues no `SELECT`
+ * at all: every guard reads the `GameSnapshot` it was handed. So a second call
+ * given the SAME snapshot observes precisely what a genuinely concurrent second
+ * request observes — the state as it was read, without the first Move — and derives
+ * the same `sequence_index = n` from it. The first insert commits; the second
+ * violates the unique index on `(game_id, sequence_index)` and is refused. The
+ * loser path is taken by the same mechanism and through the same branch, not
+ * simulated: nothing is spawned, nothing sleeps, and no assertion depends on an
+ * ordering the scheduler chooses.
+ *
+ * This is also the realistic production trigger, since Mark_To_Move is fixed by
+ * parity and only one Player is ever authorised at a given Sequence_Index: it is
+ * one Player double-submitting, which is why both calls act as `X`.
+ *
+ * WHAT THIS ADDS THAT `SubmitMoveMechanismTest` DOES NOT. That file already maps
+ * BOTH unique indexes to `conflict`, by writing a competing `moves` row by hand
+ * after the snapshot is taken. That is the narrow claim about the mechanism. The
+ * claim here is the one it cannot make: TWO CALLS OVER ONE SNAPSHOT, with the
+ * Move_List asserted to have gone from n to n+1.
+ *
+ * TWO OF THE CRITERIA IN THIS FILE'S `Validates` LINE ARE NOT EXERCISED BELOW, and
+ * saying so is cheaper than letting a reader assume otherwise. Requirement 5.2's
+ * Cell-index uniqueness is deliberately kept OUT of the way here — the two calls
+ * target different Cells precisely so that the Sequence_Index is the only thing
+ * that collides — and it is asserted by `SubmitMoveMechanismTest`'s cell-index
+ * case. Requirement 5.5 is a Web_Client obligation: the `conflict` is delivered
+ * with the current state by the 303 and the fresh GET that follows it (task 6.2),
+ * and the rendering of that state is a client test's claim, not this file's.
+ *
+ * THE MOVE-COUNT ASSERTION IS THE POINT, AND IT IS THE MORE IMPORTANT OF THE TWO.
+ * "Exactly one of the two is accepted" is the whole of Requirement 5.3, and it is a
+ * claim about the table rather than about a return value — it holds whichever
+ * rejection path the second call takes, so it survives a change of rejection
+ * vocabulary and it catches a lost unique index, which a `conflict`-only assertion
+ * would too but for the wrong reason. It is asserted on ROWS READ BACK AS A LIST OF
+ * PAIRS rather than as a Sequence_Index-keyed map, because a map cannot count: with
+ * `moves_game_sequence_unique` dropped, both calls commit a row at Sequence_Index 2
+ * and a keyed map collapses the two into one, reporting the three entries the
+ * assertion wants to see. That was verified by dropping the index: as a list the
+ * assertion fails with four rows, as a map it passed.
+ *
+ * AND THE SNAPSHOT IS ASSERTED TO HAVE STAYED PUT. `$observed->game` is a live
+ * Eloquent model, so `$game->refresh()` inside `handle()` is one line away and
+ * changes no outcome in any single-request test — the re-read returns the state the
+ * snapshot already holds. It is the one edit that would retire this whole path: the
+ * second call would then observe the committed first Move, fail the turn guard and
+ * answer `not_your_turn`, and Requirement 5.3's exclusivity would move out of the
+ * unique index and into application code that cannot enforce it. Two assertions
+ * below catch it — the `conflict` outcome itself, and the observed model's
+ * Version_Counter still reading its pre-Move value. Both were verified by making
+ * that edit, and the second is worth a word: it bites HERE and could not bite in a
+ * single-call test, because a refresh at the top of `handle()` reads the row before
+ * the write and so leaves the value unchanged. It is the SECOND call refreshing,
+ * after the first has committed, that moves it — verified both ways round.
+ *
+ * WHAT THE MOVE-COUNT ASSERTION DOES *NOT* CATCH, since the distinction is easy to
+ * misplace. Under that same re-read the Move_List still goes from n to n + 1: one
+ * Move is still accepted and the second still refused, only with the wrong
+ * vocabulary and by the wrong mechanism. So the count assertion is what catches a
+ * LOST UNIQUE INDEX, and the outcome assertion is what catches the re-read; neither
+ * subsumes the other, which is why both are here and why the count assertion is not
+ * the sole guard. The re-read also reddens the query-log and empty-statement-log
+ * assertions in `SubmitMoveMechanismTest` — eighteen of its cases, verified — that
+ * being the other of the two guards `SubmitMove`'s docblock names.
+ */
+
+/**
+ * A saved `active` Game with both token slots occupied and `$cellIndices` recorded
+ * as a contiguous Move_List from zero, the way a join followed by that many
+ * accepted Moves would leave the two tables.
+ *
+ * Built on `concurrencyWaitingGame()` rather than beside it, so there is one place
+ * in this file that knows how to make a Game row. The Version_Counter is
+ * `1 + count($cellIndices)`: one for the join (Req 2.6) and one per accepted Move
+ * (Req 4.7), so "it moved exactly once more" below is asserted against a value a
+ * real Game would carry rather than against a round number.
+ */
+function concurrencyActiveGame(int ...$cellIndices): Game
+{
+    $game = concurrencyWaitingGame();
+    $game->state = GameState::Active;
+    $game->o_token_hash = (new PlayerTokens)->mint()->hash;
+    $game->version_counter = 1 + count($cellIndices);
+    $game->save();
+
+    foreach (array_values($cellIndices) as $position => $cellIndex) {
+        $move = new Move;
+        $move->game_id = $game->id;
+        $move->cell_index = $cellIndex;
+        $move->sequence_index = $position;
+        $move->save();
+    }
+
+    return $game;
+}
+
+/**
+ * The persisted Move_List as a LIST of `(sequence_index, cell_index)` pairs, in
+ * insertion order within a Sequence_Index.
+ *
+ * A list and not a `[sequence_index => cell_index]` map, and that is the difference
+ * between an assertion that counts and one that cannot. Two Moves committed at the
+ * same Sequence_Index — what happens if `moves_game_sequence_unique` is ever lost —
+ * occupy one key in a map and two entries here. `orderBy('id')` breaks the tie by
+ * insertion order so the duplicate pair is reported in the order it was written.
+ *
+ * @return list<array{sequence_index: int, cell_index: int}>
+ */
+function concurrencyMoveRowsOf(string $gameId): array
+{
+    $rows = DB::table('moves')
+        ->where('game_id', $gameId)
+        ->orderBy('sequence_index')
+        ->orderBy('id')
+        ->get();
+
+    return array_values(array_map(
+        static fn (object $row): array => [
+            'sequence_index' => (int) $row->sequence_index,
+            'cell_index' => (int) $row->cell_index,
+        ],
+        $rows->all(),
+    ));
+}
+
+/*
+ * Preconditions are asserted rather than assumed, because each is a way this test
+ * could pass while testing nothing:
+ *
+ *   - The Game is `active` and its observed Move_List holds exactly n = 2 Moves. A
+ *     waiting or terminal Game would refuse both calls at guard 1 or 2, and the
+ *     Move_List would go from n to n with no Move accepted at all — which
+ *     `toHaveCount(3)` catches, but only after a reader has worked out why.
+ *   - `X` is the Mark_To_Move on the observed snapshot, so both calls are made by
+ *     the Player entitled to Sequence_Index 2. If `O` were to move, both would
+ *     answer `not_your_turn` and the second's refusal would say nothing about
+ *     Requirement 5.3.
+ *   - Both target Cells are free and distinct, so the second call is refused by the
+ *     Sequence_Index it shares with the first and not by the Cell — the Cell-index
+ *     violation is a real path (Req 5.2) but it is `SubmitMoveMechanismTest`'s, and
+ *     conflating the two here would leave this test passing if the sequence index
+ *     stopped being derived from the observed list.
+ */
+it('accepts exactly one of two moves submitted from one snapshot and refuses the second with conflict', function () {
+    $submit = new SubmitMove;
+
+    $game = concurrencyActiveGame(0, 3);
+
+    // ---- ONE READ. This snapshot, and only this snapshot, is handed to both calls
+    // below — which is what makes them a model of two concurrent requests.
+    $observed = GameSnapshot::of($game);
+
+    $before = concurrencyRowOf($game->id);
+    $movesBefore = concurrencyMoveRowsOf($game->id);
+
+    expect($before['state'])->toBe(GameState::Active->value, 'the fixture Game is not active, so both Moves would be refused by a state guard and no conflict is being tested (Req 5.3)')
+        ->and($movesBefore)->toBe([
+            ['sequence_index' => 0, 'cell_index' => 0],
+            ['sequence_index' => 1, 'cell_index' => 3],
+        ], 'the fixture Move_List is not the two Moves this test reasons about')
+        ->and($observed->moveList->count())->toBe(2, 'the observed Move_List does not hold n = 2 Moves, so the Sequence_Index the two calls derive is not the one asserted below')
+        ->and($observed->analysis->markToMove)->toBe(Mark::X, 'X is not the Mark_To_Move, so both calls would be refused as not_your_turn and neither would reach the insert (Req 3.5)')
+        ->and($observed->analysis->board->isOccupied(4))->toBeFalse('cell 4 is occupied, so the first call would be refused as invalid_move')
+        ->and($observed->analysis->board->isOccupied(6))->toBeFalse('cell 6 is occupied, so the second call would be refused as invalid_move rather than as a conflict (Req 5.4)');
+
+    // ---- Two Moves from that one snapshot, different Cells, both deriving
+    // sequence_index = 2. One Player double-submitting, which is the realistic
+    // trigger: the Mark_To_Move at Sequence_Index 2 is X and nobody else is
+    // authorised to take it.
+    $first = $submit->handle($observed, Mark::X, 4);
+
+    $afterFirst = concurrencyRowOf($game->id);
+
+    $second = $submit->handle($observed, Mark::X, 6);
+
+    $movesAfter = concurrencyMoveRowsOf($game->id);
+    $after = concurrencyRowOf($game->id);
+
+    expect($first)->toBeInstanceOf(MoveAccepted::class, 'the first of two Moves from one snapshot was refused, so there is no winner and the loser path below means nothing (Req 5.3)')
+        ->and($first instanceof MoveAccepted ? $first->sequenceIndex : null)->toBe(2, 'the accepted Move was not recorded at the length of the observed Move_List (Req 4.2)')
+        // THE ASSERTION THIS TASK EXISTS FOR: the Move_List went from n to n+1.
+        // Requirement 5.3 is "exactly one of the two is accepted", and this is that
+        // claim, read from the table.
+        ->and($movesAfter)->toHaveCount(3, 'the Move_List did not go from n = 2 to n + 1 = 3, so it is not true that exactly one of the two Moves was accepted (Req 5.1, 5.3)')
+        ->and($movesAfter)->toBe([
+            ['sequence_index' => 0, 'cell_index' => 0],
+            ['sequence_index' => 1, 'cell_index' => 3],
+            ['sequence_index' => 2, 'cell_index' => 4],
+        ], "the persisted Move_List is not the observed list with the winner's Cell appended at n (Req 4.2, 5.1)")
+        ->and($second)->toBe(MoveOutcome::Conflict, 'the second Move from the same snapshot was not refused with conflict, so the collision was not settled by the unique index on (game_id, sequence_index) (Req 5.1, 5.4)')
+        // Property 12 and Requirement 5.3 together: one committed state-changing
+        // operation, so one increment. `n + 2` would mean both Moves were accepted;
+        // `n` would mean neither was.
+        ->and($after['version_counter'])->toBe($before['version_counter'] + 1, 'the Version_Counter moved other than exactly once, so it is not true that exactly one Move was committed (Req 4.7, 5.3, Property 12)')
+        ->and($after)->toBe($afterFirst, 'the refused Move changed the Game row, so its transaction did not roll back (Req 5.4, Property 9)')
+        ->and($after['last_activity_at'])->toBeGreaterThan($before['last_activity_at'], 'the accepted Move did not move last_activity_at, so nothing was committed at all')
+        // The no-re-query invariant, from the other side: the model inside the
+        // snapshot still reads what it read. A `$game->refresh()` in `handle()` —
+        // one line, no outcome changed in any single-request test — makes this and
+        // the `conflict` assertion above fail together, and it is the edit that
+        // would retire this path entirely.
+        ->and($observed->game->version_counter)->toBe($before['version_counter'], 'SubmitMove refreshed the observed Game model, so the second call did not see the state a concurrent second request would see (Req 5.3)');
 });

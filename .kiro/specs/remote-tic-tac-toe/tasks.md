@@ -253,11 +253,11 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Component assertions for the join-code panel, the draw and win banners, the turn indication, and the board's disabled condition in a terminal state
     - _Requirements: 1.6, 1.7, 6.5, 6.6, 6.7, 8.1, 8.5, 8.6, 9.3, 9.4_
 
-  - [ ] 6.8 Write the move-conflict half of `ConcurrencyTest` — sequential, no parallelism, no sleeps
+  - [x] 6.8 Write the move-conflict half of `ConcurrencyTest` — sequential, no parallelism, no sleeps
     - **Property 14**
     - Read *one* `GameSnapshot`, then call `SubmitMove` twice from that same snapshot with different cells. Both derive `sequence_index = n`; the first commits and the second violates the unique index
     - **Assert the Move_List went from n to n+1, not merely that the second outcome was `conflict`.** The move-count assertion is the more important of the two: "exactly one accepted" is the actual guarantee of Requirement 5.3, and it holds whichever rejection path the second call takes — so it catches a re-read creeping into `SubmitMove` or a lost unique index, which a loose outcome assertion would let through
-    - **This is the only mechanical guard on 6.1's no-re-query purity invariant**, which is why it sits here rather than in group 12. A re-read introduced while building 6.2 or 6.6 would pass every other test in the suite: 6.6's scenarios are all single-request, and every one of them still passes when a re-query returns the same state the snapshot already holds
+    - **This is one of the two mechanical guards on 6.1's no-re-query purity invariant**, which is why it sits here rather than in group 12. An earlier draft of this bullet claimed it was the only one and that a re-read "would pass every other test in the suite"; that was measured while writing this task and is false. Adding `$game->refresh()` to `handle()` fails this test *and* eighteen cases in `SubmitMoveMechanismTest` — its no-`SELECT` query-log assertion and every rejection's empty-statement-log assertion — which is exactly the two guards `SubmitMove`'s own docblock names. What remains true, and is this task's reason for existing, is that 6.6's scenarios are all single-request and every one of them still passes under a re-read that returns the state the snapshot already holds. Note also that the move-count assertion does *not* catch a re-read: the list still goes n → n+1, one Move accepted and one refused, with the wrong vocabulary. The count assertion catches a lost unique index; the `conflict` assertion catches the re-read
     - Previously the second half of task 12.3. Not optional; Requirement 14.9 mandates it
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 14.9**
 
