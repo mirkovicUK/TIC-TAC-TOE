@@ -22,6 +22,26 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
         ]);
 
+        // TRUSTED PROXY RANGE `*`, AND THE PRECONDITION THAT MAKES IT ACCEPTABLE.
+        // Caddy proxies to php-fpm over FastCGI, so without this the request source is
+        // Caddy's container address and `$request->ip()` never sees a client. The range
+        // cannot name Caddy: Compose does not fix its subnet unless the subnet is
+        // declared, and `TrustProxies` matches on IPs and CIDRs rather than on service
+        // names, so there is no address to write down ahead of time. `'*'` is the
+        // alternative to declaring a static subnet, and it is acceptable ONLY because
+        // port 9000 is not published to the host — the one thing on the network able to
+        // reach php-fpm is the `web` container. Trusting any peer means anything that
+        // CAN reach php-fpm may spoof its own client address and defeat every IP-keyed
+        // limit, so PUBLISHING 9000, OR ADDING A SECOND SERVICE ABLE TO REACH `app`,
+        // INVALIDATES THIS REASONING and forces the declared-subnet option instead.
+        //
+        // What it buys: `join`, `create-game` and `state` are keyed on the
+        // Rate_Limit_Subject, whose IP branch is reachable because no state-changing
+        // request is guaranteed to carry an established session. Without this they
+        // collapse into single global buckets keyed on Caddy's address (Req 10.6, 10.8).
+        // `move` is unaffected — it is keyed on the presented token's hash.
+        $middleware->trustProxies(at: '*');
+
         // `ResolveActingPlayer` is an ALIAS and is deliberately NOT appended to
         // the global or `web` stacks. It resolves the `{game}` route parameter
         // through `GameResolver`, so it only makes sense on a route that names

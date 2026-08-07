@@ -296,7 +296,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Add a one-line comment in `bootstrap/app.php` recording that the defaults are deliberate and pointing at the design's HTTP surface section, so the absence of configuration reads as a decision rather than an omission
     - _Requirements: 10.9, 10.10_
 
-  - [ ] 9.2 Configure `TrustProxies` to trust the `web` container
+  - [x] 9.2 Configure `TrustProxies` to trust the `web` container
     - Trusted range `*`. Justification to record in the ADR and in the code comment: Compose does not fix its subnet unless it is declared and `TrustProxies` matches on IPs and CIDRs rather than service names, and `*` is acceptable **only** because port 9000 is not published — the one thing on the network that can reach php-fpm is the `web` container. Publishing 9000 or adding a second service able to reach `app` invalidates the reasoning
     - Without this, `join`, `create-game` and `state` all collapse into single global buckets keyed on Caddy's address; `move` is unaffected because it is keyed on the token hash
     - _Requirements: 10.6, 10.8_
@@ -397,7 +397,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Services `app` and `web`, `restart: unless-stopped`, named volume `sqlite-data` mounted at the database directory (the `sessions` table lives in the same file, so a Player_Session survives a restart)
     - Declare `caddy-data` as an **external** volume with the fixed name `caddy-data` (`external: true`, `name: caddy-data`) and mount it at `/data` on the `web` service. **This is the same volume created in task 2.2**, so the certificate obtained days earlier is reused rather than re-requested; a plain named declaration would resolve to `<repo>_caddy-data` and silently start from empty storage
     - The asymmetry between the two volumes is deliberate, so do not "tidy" them into agreement: `sqlite-data` stays project-scoped because only this stack mounts it and its contents are rebuildable with `php artisan migrate`, whereas `caddy-data` is external because it crosses a project boundary and its contents cannot be regenerated on demand — re-issuance depends on a rate limit shared with strangers
-    - **Port 9000 is not published** — the justification for the `*` trusted range in 9.2 depends on it
+    - **Port 9000 is not published, and the `app` service declares no `ports:` key at all** — the justification for the `*` trusted range in 9.2 depends on it. Task 9.2 confirmed against the vendor source that `'*'` expands to `['0.0.0.0/0', '::/0']` (`TrustProxies::setTrustedProxyIpAddressesToTheCallingIp()`), so the application will believe `X-Forwarded-For` *and* `X-Forwarded-Proto` from any peer able to open a FastCGI connection. Nothing in the suite fails if this is violated — 9.5's assertion passes either way — so the constraint holds only if it is honoured here. A `ports: - "9000:9000"` line added for local debugging and left in is the specific way this gets lost
     - Compose healthcheck hitting `/health` through the local FPM socket; note in a comment that it resolves to a different limiter key than a browser request
     - Caddyfile for the hostname obtained in task 2.2, with automatic HTTPS and the `nip.io`/plain-HTTP fallbacks noted; set `SESSION_SECURE_COOKIE` to match the scheme actually served
     - _Requirements: 9.1, 10.11, 12.2, 12.4_
@@ -405,6 +405,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
 
   - [ ] 13.3 Deploy and schedule the sweep
     - `docker compose up -d --build` on the instance; confirm the app answers over the hostname from 2.1 and that `/health` reports the persistence layer reachable
+    - **NEGATIVE check, after the stack is up: `sudo ss -ltnp | grep 9000` finds nothing, and `docker compose ps` shows no published port on `app`.** This is the only point at which 9.2's trusted-proxy precondition is actually observed rather than asserted — `docs/aws-infra.md` carries the same check for the pre-deployment instance, and this is its post-deployment twin
     - Add the host crontab entry `17 3 * * * cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep`; no scheduler process runs inside the application
     - _Requirements: 12.4, 12.12_
 
