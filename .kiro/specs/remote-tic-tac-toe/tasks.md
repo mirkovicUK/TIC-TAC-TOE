@@ -194,7 +194,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Denial-of-visibility outcomes render an Inertia error page carrying only the outcome; join-form rejections are a 303 back to `/join` with the outcome flashed
     - _Requirements: 1.6, 1.7, 2.2, 2.3, 3.7, 9.6_
 
-  - [ ] 5.7* Write `CreateGameTest` and `JoinGameTest`
+  - [x] 5.7* Write `CreateGameTest` and `JoinGameTest`
     - Creation assigns X and a token; the join happy path flips to `active` and assigns O; the creator's own code returns X unchanged; an unmatched code and a full game are rejected
     - _Requirements: 1.1, 1.5, 2.1, 2.4, 2.5_
 
@@ -206,7 +206,9 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Validates: Requirements 2.7, 14.9**
 
 - [ ] 6. Play a Game: moves, and end-of-game signalling
-  - [ ] 6.1 Implement `SubmitMove`
+  - [x] 6.1 Implement `SubmitMove`
+    - **Delivered as `SubmitMove`, `MoveAccepted`, `MoveOutcome` and `SubmitMoveMechanismTest`.** `MoveResult` is the union `MoveAccepted|MoveOutcome` written inline: PHP has no union type aliases, and a marker interface would give a rejection a supertype it does not need and let a caller hold an unnarrowed result. Two things named below are deliberately deferred rather than done — the `move.accepted` / `move.rejected` / `game.finished` / `game.invariant_violation` log records, which belong to `GameEventLogger` in 10.2 as its sole writer, and the mapping of `CorruptMoveListException` to a 500, which is the framework default and needs no code
+    - **The no-re-query invariant is a convention, not a structural guarantee — do not let a later reader believe otherwise.** `$observed->game` is a live Eloquent model on a live connection, `final readonly` pins the reference and not the model's state, and `$game->refresh()` at the top of `handle()` compiles and runs while changing no *outcome* in any single-request scenario. It is guarded in exactly two places: the query-log assertions in `SubmitMoveMechanismTest` (one INSERT and one UPDATE on the accepted path, an empty statement log on every rejection) and task 6.8. Both docblocks were corrected to say this after an earlier draft claimed the parameter made a re-read impossible
     - Signature `handle(GameSnapshot $observed, Mark $actingMark, mixed $cellIndex): MoveResult`
     - **Invariant: a pure function of `($observed, $actingMark, $cellIndex)` that SHALL NOT re-query the database for Game state.** Every guard reads `$observed` only; nothing between the first guard and the insert issues a `SELECT`. This is load-bearing twice: in production it makes Requirement 5.3's exclusivity a persisted invariant settled by the unique index rather than a checked-then-hoped-for one, and in the suite it is what makes the sequential test of Requirement 14.9 a faithful model of the concurrent case. A re-read would turn the second call into `not_your_turn`, silently retire the conflict path, and move the production guarantee into application code that cannot enforce it
     - Guards in order: `waiting_for_opponent` → `game_not_started`; terminal → `game_ended`; `markToMove !== $actingMark` → `not_your_turn` (any `mark` in the payload ignored outright); non-integer, out of range, or occupied → `invalid_move`. Turn ownership is checked before cell validity, on purpose
@@ -237,10 +239,14 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Ticks every 5 s; returns true when the game is `active`, `isYourTurn` is false, and `now - lastMoveAt >= 60s`. Under the threshold the banner shows the waiting-for-opponent indication. No server involvement — `lastMoveAt` is already a prop
     - _Requirements: 9.3, 9.4_
 
-  - [ ] 6.6* Write `SubmitMoveTest`
-    - Happy path appends at the right Sequence_Index and bumps the Version_Counter; the win transition records the mark and every completed line; the nine-move draw; each rejection leaves the Move_List, Game_State, winning Mark and Version_Counter untouched
+  - [ ] 6.6 Write `SubmitMoveTest` — through the HTTP surface
+    - **No longer optional, and the reason is Requirement 3.6.** Task 6.1 shipped `SubmitMoveMechanismTest`, which covers the four guards, their order, the absence of any `SELECT`, both unique indexes mapping to `conflict`, and the corruption rollback — so the service-level mechanism is already guarded and must not simply be re-asserted here. What it cannot cover is that a `mark` supplied in the request payload is ignored outright: `SubmitMove::handle()` takes the acting Mark as a parameter and has no payload in scope, so within that file the claim is structural and unfalsifiable. Substituting `Mark::forSequenceIndex($sequenceIndex)` for `$actingMark` leaves the whole of `SubmitMoveMechanismTest` green — verified — because the turn guard makes the two provably equal. **This task is the only place in the plan where Requirement 3.6 has an assertion at all**, and skipping it would leave the criterion with no coverage anywhere, which is the same reason 4.5 and 9.5 are not optional
+    - Post a Move as the Player whose turn it is not, with a payload naming their *own* Mark, and assert the outcome is `not_your_turn`; post as the Player to move with a payload naming the *opponent's* Mark, and assert the Move is recorded under the token's Mark. Both are needed: the first shows a payload Mark cannot grant a turn, the second that it cannot change the Mark recorded
+    - Post `cell_index` as `'4'`, as `'banana'` and as an array, and assert `invalid_move` rather than a 422 — the assertion that task 6.2's controller hands the decoded value over uncast rather than through `->integer()` or a Form Request
+    - The win transition across **all eight** Winning_Lines and the double-diagonal position, each asserting `state`, `winning_mark` and the full `winningLines` set; the nine-move draw. `SubmitMoveMechanismTest` pins one line and the draw only
+    - Each rejection asserted to leave the Move_List, Game_State, winning Mark and Version_Counter untouched, and to arrive with the current state alongside the outcome (Req 5.5) — which is a claim about the redirect and therefore only makeable here
     - **Property 9: Rejected requests change nothing** and **Property 12: the Version_Counter increments exactly once per committed state-changing operation**
-    - **Validates: Requirements 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 6.2, 6.4**
+    - **Validates: Requirements 3.6, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 5.5, 6.2, 6.4**
 
   - [ ] 6.7* Write Vitest tests for the two hooks and the rendering criteria
     - `useGamePolling`: interval selection, stop on rematch discovery, stop on unmount. `useOpponentIdle`: quiet at 59 s, indicating at 61 s
@@ -461,7 +467,9 @@ These are recorded as notes rather than tasks because each has a fallback that c
 
 ### Optional sub-tasks
 
-`*` marks a sub-task that can be skipped for a faster MVP. Test sub-tasks are marked optional **except** where Requirement 14 makes the test itself part of the deliverable — 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7, 14.8 and 14.9 — except `MiddlewareConfigurationTest`, which is the only mechanical guard on two configuration decisions no behavioural test would notice, and except the schema-constraint test in 4.5, which is the only coverage Requirement 5.6 has anywhere in the plan. Those are requirements of the artefact, not conveniences.
+`*` marks a sub-task that can be skipped for a faster MVP. Test sub-tasks are marked optional **except** where Requirement 14 makes the test itself part of the deliverable — 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7, 14.8 and 14.9 — except `MiddlewareConfigurationTest`, which is the only mechanical guard on two configuration decisions no behavioural test would notice, except the schema-constraint test in 4.5, which is the only coverage Requirement 5.6 has anywhere in the plan, and except `SubmitMoveTest` in 6.6, which is the only coverage Requirement 3.6 has anywhere in the plan. Those are requirements of the artefact, not conveniences.
+
+The common shape of the three exceptions is worth naming, because it is the test to apply before starring anything else: a test is not optional when it is the *sole* assertion of a criterion, and that is easy to miss when the criterion looks structurally guaranteed by the code. Requirement 5.6's nine-Move cap and Requirement 3.6's ignored payload Mark both look self-evident from the implementation — the pigeonhole on two unique indexes in one case, a parameter with no payload in scope in the other — and in both cases the assertion that would catch a regression lives nowhere else.
 
 ### The midpoint
 

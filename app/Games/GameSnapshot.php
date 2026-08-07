@@ -18,9 +18,20 @@ use App\Models\Game;
  * WHY THIS TYPE EXISTS. `SubmitMove::handle(GameSnapshot $observed, ...)` is a
  * pure function of its arguments and issues no `SELECT` for Game state between
  * its first guard and its insert. This class is what makes that invariant
- * expressible: with an observed snapshot as a parameter there is nothing for a
- * guard to re-read, whereas a `handle(Game $game, ...)` signature would leave
- * every guard one `$game->moves()->get()` away from breaking it silently.
+ * *stateable*: the observed state arrives as a named parameter, so "read only
+ * `$observed`" is a rule a reader can check by eye and a reviewer can point at,
+ * whereas a `handle(Game $game, ...)` signature would not even name the thing the
+ * guards are supposed to be reading.
+ *
+ * IT DOES NOT MAKE A BREACH IMPOSSIBLE, and the difference matters. `$observed->game`
+ * is a live Eloquent model on a live connection, so `$game->refresh()`,
+ * `$game->moves` and `Game::find($game->id)` are each one call away from inside
+ * `SubmitMove`; `final readonly` pins the three references and says nothing about
+ * the model's state. Nor does the private constructor prevent a re-read — it
+ * prevents an *inconsistent snapshot*, which is a different guarantee (see below).
+ * The invariant is held by convention in `SubmitMove` and guarded mechanically in
+ * exactly two places: the query-log assertions in `SubmitMoveMechanismTest`, and
+ * task 6.8's two calls over one snapshot.
  *
  * The invariant is load-bearing twice over.
  *
