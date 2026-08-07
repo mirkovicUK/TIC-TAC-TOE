@@ -137,7 +137,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 5.1, 5.2, 5.6, 11.4_
     - _Properties: 10_
 
-  - [ ] 4.3 Migration for `expiry_records`
+  - [x] 4.3 Migration for `expiry_records`
     - `game_id` primary key, `deleted_at`, index on `deleted_at`. No Move_List, no Join_Code, no Player_Token, no foreign key
     - _Requirements: 13.3, 13.4_
 
