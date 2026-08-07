@@ -16,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Forgery protection stays at Laravel 13's defaults by decision, not omission:
+        // no `allowSameSite()`, no `useOriginOnly()`. See design section 3, HTTP surface.
         $middleware->web(append: [
             HandleInertiaRequests::class,
         ]);

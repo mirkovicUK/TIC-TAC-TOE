@@ -289,7 +289,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
   - **Everything below this line improves the submission rather than enabling it.** Groups 9 to 11 satisfy the operational requirements; group 12 completes the mandated verification; groups 13 to 15 produce the hosted instance and the documentation
 
 - [ ] 9. Application security and rate limiting
-  - [ ] 9.1 Confirm the forgery-protection defaults are in force and add no configuration
+  - [x] 9.1 Confirm the forgery-protection defaults are in force and add no configuration
     - The amended Requirements 10.9 and 10.10 are satisfied by Laravel 13's defaults: `PreventRequestForgery` verifies origin first and falls through to token verification. Task 1.2 settled this against the vendor source; there is nothing to configure
     - Confirm neither `PreventRequestForgery::allowSameSite()` nor `PreventRequestForgery::useOriginOnly()` is called anywhere in `bootstrap/app.php` or a service provider
     - **`useOriginOnly(true)` must not be enabled.** It would make every non-same-origin request throw rather than fall through to the token check, and would suppress the `XSRF-TOKEN` cookie Inertia relies on. Someone reading the middleware later may mistake it for the stricter and therefore better option; for this application it is not
