@@ -546,6 +546,8 @@ The middleware doing this in Laravel 13 is **`PreventRequestForgery`**. `Validat
 
 One consequence for testing follows directly from the order of checks: `handle()` calls `runningUnitTests()` before both the origin and the token check, so the entire middleware short-circuits in the test environment. That is what makes Requirement 14.3's exclusion of the forgery rejection from test coverage correct rather than merely convenient — the path cannot be exercised without defeating the framework's own test affordance.
 
+**Decision: the Health_Endpoint is `GET /health`, and the scaffolded `withRouting(health: '/up')` in `bootstrap/app.php` goes when the endpoint is implemented (task 10.1).** Until then the repository has two health routes: this design's `/health` and the framework's `/up`, which the scaffold registered. Whoever implements the endpoint removes the `health:` argument rather than shipping both. Three facts settle which path survives. Nothing outside this document names one — `deploy/Caddyfile`, `deploy/compose.placeholder.yaml` and `docs/aws-infra.md` carry no health-check target — so neither path has a deployment referencing it and the usual reason to defer to an incumbent does not apply. The framework's route cannot satisfy Requirement 10 on any URI: it dispatches `DiagnosingHealth` and renders an HTML view, answering JSON only when the caller asks for it and reporting `up`/`down` rather than the reachability of the persistence layer, which it never queries. Requirements 10.1 and 10.2 name the body — the persistence layer reported reachable or unreachable, with the success status reserved for the reachable case — so the handler is ours to write either way. And `withRouting()` registers the health route *before* the `web` group, so a same-URI route in `routes/web.php` would never match: adopting `/up` would mean editing that same argument for no saving. What is given up by dropping it is `PreventRequestsDuringMaintenance::except()` on the path, which is inert here because maintenance mode is never enabled.
+
 `GET /health` carries no middleware at all — no session, no CSRF, and no throttle — while performing one database query per request. Requirement 10 defines it as unauthenticated, so this is not a defect, but the absence of a throttle on a public endpoint that queries per request is a deliberate acceptance rather than an oversight: a `throttle` could be added later, and the Compose healthcheck's fixed low interval sits well inside any reasonable threshold.
 
 #### Request shapes
@@ -1089,10 +1091,14 @@ Vitest for the two hooks: `useGamePolling` (2000 ms while waiting or active, 500
 
 Two jobs on push and pull request (Req 12.9):
 
-1. **quality** — `composer install`, `pint --test`, static analysis, `pest --exclude-group=browser` (includes the enumeration).
+1. **quality** — `composer install`, `pint --test`, static analysis, `npm ci`, `npm run build`, `pest --exclude-group=browser` (includes the enumeration).
 2. **browser** — `npm ci`, `npm run build`, `npx playwright install --with-deps chromium`, `pest --group=browser`.
 
-Both must pass. Composer and npm caches are keyed on their lock files.
+Both must pass. Composer and npm caches are keyed on their lock files. `.github/workflows/ci.yml` (task 14.2) is the ground truth; the `browser` job arrives with task 14.3, since a `--group=browser` selection with no such test yet exits 1.
+
+The front-end build in the **quality** job is not a stray copy of the browser job's. `resources/views/app.blade.php` carries `@vite(...)` and `public/build` is gitignored, so any Feature test rendering the root view throws `Vite manifest not found` unless the assets have been built. Measured, not assumed: with `public/build` moved aside, `tests/Feature/ExampleTest.php` fails and the run exits 1. Node is therefore installed and the assets built before `pest`, which makes that job's npm cache load-bearing rather than decorative — which is what Requirement 12.9's caching clause is for.
+
+The rejected alternative was a test-environment `@vite` bypass, keeping the quality job PHP-only. It is a few lines and it is the worse trade: rendering the root view is the only check in the suite that the application boots and Inertia renders, and bypassing `@vite` in tests deletes that check to save an `npm ci`. The build steps stay in the job rather than being worked around.
 
 ---
 
