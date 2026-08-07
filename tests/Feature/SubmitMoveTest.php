@@ -67,7 +67,7 @@ use function Pest\Laravel\post;
  * is task 6.8's `ConcurrencyTest`, and a single request cannot reach it.
  * `not_authorised`, which `acting.player` settles before this controller runs and
  * which `ResolveActingPlayerTest` and `EntryRoutesTest` cover (Req 3.9).
- * `rate_limited`, which is framework middleware at task 10.x.
+ * `rate_limited`, which is framework middleware attached at task 9.4 and asserted at 9.6.
  */
 
 uses(RefreshDatabase::class);

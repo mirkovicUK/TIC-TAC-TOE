@@ -70,7 +70,7 @@ use Illuminate\Support\Facades\DB;
  *     and an accepted join at 303 → the game page, and that mapping is task 5.6's.
  *     Nothing in `App\Games` knows what an HTTP status is.
  *   - **A rate limit.** `throttle:join` is route middleware (Req 10.6), applied at
- *     task 10.x. A limiter inside a service would be untestable from the transport
+ *     task 9.4, which has now applied it. A limiter inside a service would be untestable from the transport
  *     and would fire on a path no HTTP request took.
  */
 final class JoinGame

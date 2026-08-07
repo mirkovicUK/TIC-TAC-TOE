@@ -307,7 +307,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - `HttpOnly`, `SameSite=Lax`, and `Secure` only where the Application is served over HTTPS (`SESSION_SECURE_COOKIE` follows the outcome of task 2.2). `Lax` suffices because every state change is a same-site POST and the only cross-site entry point is a Join_Link, which is a top-level GET
     - _Requirements: 10.11_
 
-  - [ ] 9.4 Define the four named rate limiters and attach them to the routes
+  - [x] 9.4 Define the four named rate limiters and attach them to the routes
     - `join` 20/60s per Rate_Limit_Subject, `move` 60/60s per presented token hash, `state` 120/60s per subject, `create-game` 20/60s per subject (the last is beyond the requirements and is flagged in code as deliberate)
     - Limiter keys use a hash of the session id, not the id itself, so session identifiers reach neither cache keys nor logs. Rate_Limit_Subject is the session where one exists and the IP otherwise
     - `GET /health` carries no middleware at all — no session, no CSRF, no throttle — which is a deliberate acceptance recorded in the design

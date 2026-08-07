@@ -14,19 +14,34 @@ use Illuminate\Support\Facades\Route;
  * in the order the design's HTTP-surface table lists them. Only the
  * Health_Endpoint (task 10.1) is still deliberately absent.
  *
- * NO `throttle:` MIDDLEWARE IS ATTACHED YET, AND THAT IS A DECISION RATHER THAN
- * AN OMISSION. The design's table puts `throttle:create-game` on `POST /games`,
- * `throttle:join` on `POST /join` and `throttle:state` on `GET /games/{game}`.
- * Those are NAMED limiters, defined with `RateLimiter::for()` at task 10.x, and
- * `ThrottleRequests` resolves the name at REQUEST time: a route referencing a
- * limiter nobody has defined throws `RuntimeException: Rate limiter [join] is not
- * defined.` on the first request through it. Attaching them now would therefore
- * make every route in this file 500 until task 10.x runs — trading a missing
- * control for a broken application — and defining the limiters here would
- * pre-empt that task's real content, which is the Rate_Limit_Subject (session
- * where one exists, IP otherwise, keyed on a hash of the session id) and the four
- * thresholds. Task 10.x adds `->middleware('throttle:...')` to the three routes
- * below at the moment the limiters exist.
+ * THE FOUR `throttle:` MIDDLEWARE ARE NOW ATTACHED (task 9.4), AND THE NAMES ARE
+ * RESOLVED AT REQUEST TIME RATHER THAN HERE. `throttle:create-game` on
+ * `POST /games`, `throttle:join` on `POST /join`, `throttle:state` on
+ * `GET /games/{game}` and `throttle:move` on `POST /games/{game}/moves`, which is
+ * the design's limiter table in full. Each names a limiter defined with
+ * `RateLimiter::for()` in `App\Providers\AppServiceProvider::boot()`, where the
+ * thresholds and the Rate_Limit_Subject live; nothing about either is visible from
+ * this file, and that is the shape of the framework's API rather than a choice.
+ *
+ * THE COUPLING IS UNCHECKED UNTIL THE REQUEST ARRIVES, so keep the two files in
+ * step. `ThrottleRequests::handle()` looks the name up in the `RateLimiter`
+ * singleton and, finding nothing, throws `MissingRateLimiterException: Rate
+ * limiter [join] is not defined.` — a 500 on the first request through the route,
+ * with no boot-time or route-caching warning of any kind. Renaming a limiter in
+ * the provider, or adding a `throttle:` here for a limiter that does not exist,
+ * breaks the route silently until something exercises it. Task 9.5's
+ * `MiddlewareConfigurationTest` and task 9.6's `RateLimitTest` are what notice.
+ *
+ * ORDER MATTERS ON THE TWO ROUTES THAT CARRY BOTH: `throttle:` is listed BEFORE
+ * `acting.player`, as the design's table lists it. The framework's middleware
+ * priority list places `ThrottleRequests` above `SubstituteBindings` but says
+ * nothing about `ResolveActingPlayer`, so declaration order is what decides, and
+ * throttle-first is the arrangement worth having — a flood is refused before it
+ * costs a `GameResolver` query, and the 429 is reached without the request needing
+ * to be about a Game that exists.
+ *
+ * `POST /games/{game}/rematch` CARRIES NO LIMITER, per the design's table. See the
+ * note on that route below.
  *
  * ROUTE-MODEL BINDING IS KEPT AWAY FROM `{game}`. No `Route::model()` and no
  * `Route::bind()` for that name appears here or anywhere else, and
@@ -41,7 +56,17 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', HomeController::class)->name('home');
 
-Route::post('/games', CreateGameController::class)->name('games.store');
+/*
+ * `throttle:create-game` IS REQUIRED BY NO CRITERION AND IS DELIBERATE. Twenty
+ * creations per Rate_Limit_Subject per minute, flagged as an addition in the
+ * design's limiter table and in the provider that defines it. This is the cheapest
+ * endpoint on the surface to abuse — it needs no prior Game, no established
+ * session and no token, and it inserts a row — so it gets the same threshold as
+ * `join` even though nothing demands one.
+ */
+Route::post('/games', CreateGameController::class)
+    ->middleware('throttle:create-game')
+    ->name('games.store');
 
 /*
  * The Join_Link target, and the one route whose PATH AND NAME ARE BOTH LOAD-BEARING.
@@ -57,10 +82,24 @@ Route::post('/games', CreateGameController::class)->name('games.store');
  */
 Route::get('/join/{join_code?}', JoinFormController::class)->name('join');
 
-Route::post('/join', JoinGameController::class)->name('join.store');
+/*
+ * `throttle:join` — Requirement 10.6, twenty per Rate_Limit_Subject per minute.
+ * The twentieth request passes and the twenty-first is refused; task 9.6 asserts
+ * that boundary and nothing here restates it.
+ */
+Route::post('/join', JoinGameController::class)
+    ->middleware('throttle:join')
+    ->name('join.store');
 
+/*
+ * `throttle:state` — Requirement 10.8, one hundred and twenty per subject per
+ * minute, which is four times the polling rate Requirement 8.1 demands. The margin
+ * is deliberate and its limit is known: Rate_Limit_Subject is the Player_Session
+ * while the polling rate is per Game, so one session polling four Games in four
+ * tabs reaches the threshold. The design records that as accepted.
+ */
 Route::get('/games/{game}', ShowGameController::class)
-    ->middleware('acting.player')
+    ->middleware(['throttle:state', 'acting.player'])
     ->name('games.show');
 
 /*
@@ -68,15 +107,20 @@ Route::get('/games/{game}', ShowGameController::class)
  * authorisation is settled before `cell_index` is read at all (Req 3.9), and the
  * refusal is a thrown `GameNotVisibleException` that no later step can un-refuse.
  *
- * `throttle:move` (Req 10.7) is still absent for the reason given at the head of
- * this file: the named limiter does not exist until task 10.x, and referencing it
- * now would make every request to this route a 500.
+ * `throttle:move` IS THE ONE LIMITER NOT KEYED ON THE Rate_Limit_Subject.
+ * Requirement 10.7 counts per PRESENTED Player_Token — sixty per minute — so the
+ * limiter reads the token this session holds for this `{game}` and keys on its
+ * hash. It runs BEFORE `acting.player`, which means it reads that token itself
+ * rather than taking it from the resolved player; the session is available either
+ * way, because `StartSession` is group middleware and sits above `ThrottleRequests`
+ * in the framework's priority list. A request presenting no token for this Game
+ * falls back to the subject, so the route is never unlimited.
  *
  * `SubmitMoveController` type-hints `Request` and not `App\Models\Game`, which is
  * what keeps route-model binding away from this second `{game}` route.
  */
 Route::post('/games/{game}/moves', SubmitMoveController::class)
-    ->middleware('acting.player')
+    ->middleware(['throttle:move', 'acting.player'])
     ->name('games.moves.store');
 
 /*
@@ -91,11 +135,12 @@ Route::post('/games/{game}/moves', SubmitMoveController::class)
  * routes the `invalid_state` rejection back to this same id while the accepted
  * path redirects to a different one.
  *
- * THE DESIGN'S LIMITER TABLE APPLIES NO NAMED LIMITER TO THIS ROUTE, so unlike the
- * three routes carrying a deferred `throttle:` this one is not waiting on task
- * 9.4. The endpoint is idempotent and converges on one row (Req 7.8), so a
- * repeated POST re-mints a token for a caller who already holds one and creates
- * nothing.
+ * THE DESIGN'S LIMITER TABLE APPLIES NO NAMED LIMITER TO THIS ROUTE, and task 9.4
+ * left it that way rather than inventing a fifth limiter the design does not name.
+ * The endpoint is idempotent and converges on one row (Req 7.8), so a repeated POST
+ * re-mints a token for a caller who already holds one and creates nothing. It is
+ * also unreachable without a valid Player_Token for the preceding Game, so the
+ * flood a limiter would stop is one an authorised player aims at their own row.
  *
  * `CreateRematchController` type-hints `Request` and not `App\Models\Game`, which
  * is what keeps route-model binding away from this third `{game}` route.

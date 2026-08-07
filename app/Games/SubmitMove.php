@@ -98,7 +98,7 @@ use Illuminate\Support\Facades\DB;
  *     that delivers the current state with it (Req 5.5), are task 6.2's. Nothing
  *     in `App\Games` knows what an HTTP status is.
  *   - **A rate limit.** `throttle:move` is route middleware keyed on the presented
- *     token's hash (Req 10.7), applied at task 10.x.
+ *     token's hash (Req 10.7), applied at task 9.4.
  *   - **Validation of `cell_index` by a Form Request.** The design is explicit
  *     that a non-integer or out-of-range Cell must produce `invalid_move` rather
  *     than a 422 validation payload, which is why the parameter is `mixed` and the
