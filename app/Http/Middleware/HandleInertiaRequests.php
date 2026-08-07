@@ -29,24 +29,17 @@ class HandleInertiaRequests extends Middleware
     /**
      * Define the props that are shared by default.
      *
-     * `outcome` IS THE ONE SHARED PROP, AND IT IS THE WHOLE FLASH MECHANISM.
-     * Every rejection the design answers with a redirect — `not_recognised` and
-     * `game_full` back to `/join` (task 5.6), and `game_not_started`,
-     * `game_ended`, `not_your_turn`, `invalid_move`, `conflict` and
-     * `invalid_state` back to the game page (tasks 6.2 and 7.x) — is a 303 with
-     * `->with('outcome', $outcome->value)`. Reading it here means the page
-     * components take it as a prop rather than reaching for the session, and
-     * means one mechanism serves both redirect families instead of one per page.
+     * `outcome` is the one shared prop, and the whole flash mechanism: every
+     * rejection the design answers with a redirect is a 303 carrying
+     * `->with('outcome', $outcome->value)`, so reading it here lets one mechanism
+     * serve both redirect families and lets pages take it as a prop rather than
+     * reaching for the session. It is the bare value, not `flash.outcome` or a
+     * nested bag — a bag invites a second key, and the second key is where a
+     * Game_State or a Join_Code ends up.
      *
-     * DELIBERATELY NOT `flash.outcome` OR A NESTED BAG. The prop is the outcome
-     * value and nothing else, so the two denial-of-visibility pages and the two
-     * redirect families all key off one string; a bag invites a second key, and
-     * the second key is where a Game_State or a Join_Code ends up.
-     *
-     * IT IS A CLOSURE so that it is evaluated per response rather than at
-     * middleware time, which is what lets a partial reload (`only: ['game']`)
-     * leave it out entirely — a poll must not consume a flashed outcome the page
-     * has not rendered yet.
+     * It is a CLOSURE so it is evaluated per response rather than at middleware
+     * time, which lets a partial reload (`only: ['game']`) leave it out: a poll
+     * must not consume a flashed outcome the page has not rendered yet.
      *
      * @see https://inertiajs.com/shared-data
      *
@@ -63,11 +56,10 @@ class HandleInertiaRequests extends Middleware
     /**
      * The flashed outcome value, or null.
      *
-     * Narrowed to `?string` here rather than at every call site: the session bag
-     * is typed `mixed`, and the four page components that render this prop are
-     * TypeScript files that cannot narrow it. A non-string under that key would
-     * mean something other than a controller wrote it, and the honest answer to
-     * that is null rather than whatever it was.
+     * Narrowed to `?string` here rather than at every call site: the session bag is
+     * typed `mixed` and the page components are TypeScript files that cannot narrow
+     * it. A non-string under that key means something other than a controller wrote
+     * it, and null is the honest answer to that.
      */
     private function flashedOutcome(Request $request): ?string
     {

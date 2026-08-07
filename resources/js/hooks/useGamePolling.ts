@@ -7,19 +7,19 @@ import type { GameProps } from '@/pages/Game';
  * refreshed (Req 8.1, 8.2, 8.5, 8.6). The design's "Polling lifecycle" block carries
  * the rationale; what follows is only what the code cannot tell you.
  *
- * TWO `usePoll` CALLS RATHER THAN ONE WITH A COMPUTED INTERVAL, AND THIS IS NOT
- * CEREMONY. `usePoll`'s effect has an empty dependency array
- * (`node_modules/@inertiajs/react/dist/index.esm.js`, `usePoll`), and `Poll` assigns
- * `this.interval` in its constructor and arms `setInterval(…, this.interval)` in
- * `start()` with no path that reassigns it (`@inertiajs/core`). A single call therefore
- * pins the rate to first render, which puts a page opened terminal and later live
- * outside Requirement 8.1's ceiling. Do not "simplify" this back into one call.
+ * Two `usePoll` calls rather than one with a computed interval. `usePoll`'s effect has an
+ * empty dependency array (`node_modules/@inertiajs/react/dist/index.esm.js`, `usePoll`),
+ * and `Poll` assigns `this.interval` in its constructor and arms
+ * `setInterval(…, this.interval)` in `start()` with no path that reassigns it
+ * (`@inertiajs/core`). A single call therefore pins the rate to first render, which puts a
+ * page opened terminal and later live outside Requirement 8.1's ceiling. Do not
+ * "simplify" this back into one call.
  *
- * THE EFFECT IS KEYED ON THE MODE STRING, NOT ON THE POLL OBJECTS. `start()` calls
- * `stop()` first and re-arms the timer, so an effect running every render would reset
- * the countdown before it elapsed and the Game would never poll at all — a silent total
- * failure. The `usePoll` return objects are new every render and so are deliberately
- * absent from the dependencies; their `start`/`stop` close over a stable ref.
+ * The effect is keyed on the mode string, not on the poll objects. `start()` calls `stop()`
+ * first and re-arms the timer, so an effect running every render would reset the countdown
+ * before it elapsed and the Game would never poll at all — a silent total failure. The
+ * `usePoll` return objects are new every render and so are deliberately absent from the
+ * dependencies; their `start`/`stop` close over a stable ref.
  *
  * Unmount needs nothing here: `usePoll` returns `() => pollRef.current?.destroy()` from
  * its own effect, which is the "navigates away" half of Requirement 8.6.
@@ -29,9 +29,9 @@ import type { GameProps } from '@/pages/Game';
  * closure, so a poll cannot consume an outcome the page has not rendered yet — see
  * `HandleInertiaRequests::share()`. Widening this would break that.
  *
- * `keepAlive` is not passed, so it stays at the library default — which THROTTLES a
- * hidden tab rather than stopping it: `tick()` fires every tenth tick while
- * `document.hidden`, one request per 20 s live and per 50 s terminal.
+ * `keepAlive` is not passed, so it stays at the library default — which throttles a hidden
+ * tab rather than stopping it: `tick()` fires every tenth tick while `document.hidden`, one
+ * request per 20 s live and per 50 s terminal.
  */
 
 /** Req 8.1: `waiting_for_opponent` or `active`, inside the 2-second ceiling. */
@@ -45,9 +45,8 @@ export type PollMode = 'live' | 'terminal' | 'stopped';
 /**
  * Which poll, if any, should be running for `game`.
  *
- * Exported and pure so the decision can be asserted without a browser. The Rematch
- * check comes first and is unconditional, so a Rematch stops the loop whatever `state`
- * says (Req 8.6).
+ * Exported and pure so the decision can be asserted without a browser. The Rematch check
+ * is unconditional, so a Rematch stops the loop whatever `state` says (Req 8.6).
  */
 export function pollModeFor(game: GameProps): PollMode {
     if (game.rematchGameId !== null) {
@@ -60,15 +59,13 @@ export function pollModeFor(game: GameProps): PollMode {
 /**
  * Poll `GET /games/{id}` for `game`, and return the mode that is running.
  *
- * There is no `stop()` for a caller to call: every reason to stop is a fact about the
- * props, decided by `pollModeFor`, and a caller that could stop the loop by hand would
- * be a second place the stop condition lived.
+ * There is deliberately no `stop()` for a caller to call: every reason to stop is a fact
+ * about the props, decided by `pollModeFor`.
  */
 export default function useGamePolling(game: GameProps): PollMode {
     const mode = pollModeFor(game);
 
-    // `autoStart` is read once, on mount, so it says which poll should be running when
-    // the page opens and nothing more. The effect below owns the transitions.
+    // `autoStart` is read once, on mount; the effect below owns every transition after it.
     const live = usePoll(LIVE_INTERVAL_MS, { only: ['game'] }, { autoStart: mode === 'live' });
     const terminal = usePoll(TERMINAL_INTERVAL_MS, { only: ['game'] }, { autoStart: mode === 'terminal' });
 

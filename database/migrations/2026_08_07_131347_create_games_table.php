@@ -10,43 +10,31 @@ return new class extends Migration
     /**
      * Run the migrations.
      *
-     * The table itself is issued as one raw `CREATE TABLE`. Laravel's fluent
-     * Blueprint cannot express a CHECK constraint, and SQLite has no
-     * `ALTER TABLE ... ADD CONSTRAINT`, so a `Schema::create` followed by raw
-     * CHECK additions is not available: the constraints have to be present in
-     * the original statement. The indexes are added afterwards through the
-     * schema builder, which expresses them faithfully.
+     * The table is one raw `CREATE TABLE` because the fluent Blueprint cannot
+     * express a CHECK constraint and SQLite has no
+     * `ALTER TABLE ... ADD CONSTRAINT`, so the CHECKs must be present in the
+     * original statement. The indexes follow through the schema builder.
      */
     public function up(): void
     {
-        // Note on a constraint that is deliberately ABSENT, and must stay absent:
+        // No CHECK requires `x_token_hash IS NOT NULL`, or requires either token slot
+        // to be populated in any state, and none may be added. Under ADR-010 tokens
+        // are minted per request, so a rematch is inserted with BOTH slots NULL, and
+        // the mark swap of Requirement 7.3 lets the first requester populate
+        // `o_token_hash` while `x_token_hash` is still NULL. Such a constraint would
+        // reject the `CreateRematch` insert outright. Reachability of every Game is
+        // carried instead by `join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL`.
         //
-        // There is NO CHECK requiring `x_token_hash IS NOT NULL` (nor any CHECK
-        // requiring either token slot to be populated in any state). One was
-        // present in an earlier draft of the design and is recorded there as
-        // REMOVED. Under ADR-010 tokens are minted per request, so a rematch is
-        // inserted with BOTH token slots NULL, and the mark swap of Requirement
-        // 7.3 means the first requester may populate `o_token_hash` while
-        // `x_token_hash` is still NULL. Any such constraint would reject the
-        // `CreateRematch` insert outright. Reachability of every Game is carried
-        // instead by `join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL`.
+        // `state <> 'waiting_for_opponent' OR o_token_hash IS NULL` is one-directional
+        // on purpose: it forbids an occupied O slot while a Game waits for an opponent,
+        // and must never be rewritten to require an occupied O slot in any other state.
+        // A rematch is inserted directly in `active` with `o_token_hash` NULL, which
+        // makes the antecedent false.
         //
-        // Note on the direction of the waiting-state constraint:
-        //
-        // `state <> 'waiting_for_opponent' OR o_token_hash IS NULL` is
-        // one-directional on purpose. It forbids an *occupied* O slot while a
-        // Game waits for an opponent; it must never be rewritten so as to
-        // require an occupied O slot in any other state. A rematch is inserted
-        // directly in `active` with `o_token_hash` NULL, which makes the
-        // antecedent false and the constraint trivially satisfied.
-        //
-        // Note on the self-reference:
-        //
-        // `ON DELETE RESTRICT`, not CASCADE and not SET NULL, so that deletion
-        // order is explicit in the sweep command rather than implicit in the
-        // schema: a live rematch can never be destroyed as a side effect of
-        // expiring its parent, and a missed step in the sweep surfaces as a
-        // loud constraint failure instead of silent data loss.
+        // The self-reference is `ON DELETE RESTRICT`, not CASCADE and not SET NULL, so
+        // that deletion order is explicit in the sweep command: a live rematch can
+        // never be destroyed as a side effect of expiring its parent, and a missed step
+        // surfaces as a constraint failure instead of silent data loss.
         DB::statement(<<<'SQL'
             CREATE TABLE games (
                 id                 TEXT    NOT NULL PRIMARY KEY,   -- UUIDv7; derives from no database sequence

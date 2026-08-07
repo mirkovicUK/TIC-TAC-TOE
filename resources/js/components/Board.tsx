@@ -5,49 +5,31 @@ import type { GameProps } from '@/pages/Game';
 /*
  * The nine Cells, and the one place a Move is submitted.
  *
- * THE DISABLED CONDITION IS `!isYourTurn || state !== 'active'`, AND BOTH HALVES ARE
- * REQUIRED. `markToMove` is total over Move_List length by Requirement 4.1 — it is
- * defined in a Terminal_State too, where it names who *would* have moved next — and
- * `GameRepresentation` emits it unconditionally, with `isYourTurn` as
- * `markToMove === yourMark` and nothing more. Two consequences, and each is what one
- * half of the condition is for:
+ * The disabled condition is `!isYourTurn || state !== 'active'` and both halves are
+ * required, because `markToMove` is total over Move_List length (Req 4.1) and stays
+ * defined in a Terminal_State, where it names who *would* have moved next:
  *
- *   - On a board X won at Sequence_Index 4, `markToMove` is `O`, so `isYourTurn` is
- *     TRUE for the O Player. `!isYourTurn` alone would leave that finished board
- *     clickable.
- *   - While `waiting_for_opponent` the Move_List is empty, so `markToMove` is `X`
- *     and `isYourTurn` is TRUE for the Creator, who is the only person who can see
- *     the page at all. `!isYourTurn` alone would leave that board clickable too.
+ *   - On a board X won at Sequence_Index 4, `markToMove` is `O`, so `isYourTurn` is TRUE
+ *     for the O Player, and `!isYourTurn` alone leaves a finished board clickable.
+ *   - While `waiting_for_opponent` the Move_List is empty, so `markToMove` is `X` and
+ *     `isYourTurn` is TRUE for the Creator, the only person who can see the page.
  *
- * In both cases the server is safe — `SubmitMove` answers `game_ended` and
- * `game_not_started` respectively and changes nothing — so the defect is not a
- * corrupted board but a UI that appears to accept a click and then flashes an error,
- * which is worse than an inert board. Worth stating at the line rather than in a
- * commit message, because the single browser test (task 12.5) stops at asserting the
- * winning Mark and the highlight and never clicks a terminal board, so nothing in the
- * suite would catch the second half being dropped.
+ * The mirror-image mistake is `state !== 'active'` alone, which lets either Player move on
+ * the other's turn. In every case the server refuses and nothing is corrupted, but the
+ * board would offer a move that cannot be made. Nothing in the suite would catch it: the
+ * browser test never clicks a terminal board.
  *
- * The mirror-image mistake is `state !== 'active'` alone, which would let either
- * Player move on the other's turn; the server answers `not_your_turn` and again
- * nothing breaks, but the board would offer a move that cannot be made.
+ * Winning cells are the flattened `winningLines` (Req 6.5), because a double win is
+ * reachable in legal play and Requirement 6.3 has the server send *every* completed line;
+ * the Set removes the duplicate at the intersection.
  *
- * WINNING CELLS ARE THE FLATTENED `winningLines` (Req 6.5). `winningLines` is a list
- * of lines and each line is its three Cell_Indexes, because a double win is reachable
- * in legal play and Requirement 6.3 has the server send *every* completed line.
- * Flattening is what makes a double line highlight both: a cell is highlighted if it
- * appears in any line, and the Set removes the duplicate at the intersection.
+ * `router.post` rather than `useForm`: a form's `data` would be local state this component
+ * would have to keep in step with the board, and `router.post` carries the CSRF token the
+ * same way (Req 10.9). `cell_index` is the whole payload — the acting Mark comes from the
+ * Player_Token in the session and a `mark` in the body would be ignored (Req 3.6).
  *
- * `router.post` RATHER THAN `useForm`. Nine cells are nine values of one field, so a
- * form's `data` would be state this component would have to set before posting and
- * then keep in step with the board — the local state `Game.tsx` deliberately does not
- * have. `router.post` goes through the same Inertia request path as `useForm().post()`
- * and therefore carries the CSRF token the same way (Req 10.9). `cell_index` is the
- * whole payload: the acting Mark comes from the Player_Token in the session, and a
- * `mark` in the body would be ignored (Req 3.6), so none is sent.
- *
- * `preserveScroll` keeps the page where it is; there is no `only` here because the
- * response to a Move is a 303 and the following GET is a full visit carrying the
- * flashed outcome as well as the game prop.
+ * There is no `only` here because the response to a Move is a 303 and the following GET is
+ * a full visit carrying the flashed outcome as well as the game prop.
  */
 
 type BoardProps = {

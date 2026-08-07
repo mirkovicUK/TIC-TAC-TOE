@@ -8,53 +8,25 @@ import useGamePolling from '@/hooks/useGamePolling';
 import useOpponentIdle from '@/hooks/useOpponentIdle';
 
 /*
- * `GET /games/{game}` — the game page.
+ * `GET /games/{game}` — the game page. It renders from props and holds no local state: a
+ * Move is a POST, the server answers 303, and the following GET brings back the board the
+ * server derived. That is why a conflict (Req 5.5) needs no reconciliation here.
  *
- * IT RENDERS FROM PROPS AND HOLDS NO LOCAL STATE AT ALL. The board is
- * `props.game.board`, the banner is derived from `state`, `isYourTurn`,
- * `markToMove` and `winningMark`, the winning highlight is the flattened
- * `winningLines`, and the refusal message is the shared `outcome` prop. There is no
- * client-side copy of the board and no optimistic placement: a Move is a POST, the
- * server answers 303, and the following GET brings back the board the server
- * derived. That is what makes the two players' screens agree, and it is why a
- * conflict (Req 5.5) needs no reconciliation here — the response after the redirect
- * *is* the current state.
+ * `outcome` comes from `usePage` because it is shared by `HandleInertiaRequests` rather
+ * than being one of this page's own props; `Join.tsx` reads it the same way.
  *
- * `usePage` FOR `outcome`, PROPS FOR THE GAME. `outcome` is the one prop
- * `HandleInertiaRequests` shares, so it is not in this page's own props; `Join.tsx`
- * reads it the same way.
+ * The board is rendered in every state, including `waiting_for_opponent`: `Board.tsx`'s
+ * disabled condition covers all three inert cases, and a grid that appeared and
+ * disappeared would move the join panel and the banner under a player's cursor as the
+ * Game starts. `StatusBanner` and `RematchControl` likewise gate themselves, so do not
+ * add a state check around them here.
  *
- * THE BOARD IS RENDERED IN EVERY STATE, INCLUDING `waiting_for_opponent`. The
- * disabled condition in `Board.tsx` covers all three inert cases — waiting, the
- * opponent's turn, and a finished Game — so there is nothing to gate here, and a
- * grid that appears and disappears would move the join panel and the banner under a
- * player's cursor as the Game starts. While waiting, the Creator sees an empty
- * inert board beside the code to send.
+ * `useGamePolling` is called for its effect; the mode it returns is there to be asserted
+ * in a test, not rendered.
  *
- * `opponentIdle` COMES FROM `useOpponentIdle` AND NOTHING HERE COMPUTES IT.
- * Requirement 9.3's waiting-for-opponent indication is already rendered — it is the
- * `active` and not-your-turn branch of `StatusBanner`, which needs no clock — and
- * Requirement 9.4's "may have stopped playing" is the branch this flag selects. The
- * 60-second decision, and the timer that makes it change without a visit, live in the
- * hook.
- *
- * `RematchControl` IS MOUNTED UNCONDITIONALLY AND GATES ITSELF, like `StatusBanner` and
- * unlike `JoinCodePanel`. Requirements 7.1 and 7.13 are the same control in two states —
- * "play again" while the Game is terminal, "go to the rematch" once `rematchGameId` is
- * present — and both post to the preceding Game's `/rematch`, so the state rule and the
- * reason a link would be wrong sit together in that file rather than half here.
- *
- * `useGamePolling` IS CALLED FOR ITS EFFECT AND ITS RETURN IS IGNORED. It reads the
- * game prop, chooses the interval and stops itself when a Rematch appears (Req 8.1,
- * 8.5, 8.6); the mode it returns is there to be asserted in a test, not to be rendered.
- * Nothing about the loop is visible here, which is the point — the page still renders
- * only from props, and a poll is just another visit delivering new ones.
- *
- * `GameProps` IS THE WHOLE SHAPE `GameRepresentation` PRODUCES, and it is exported
- * because it is the client's half of that contract — `Board.tsx` and
- * `StatusBanner.tsx` import it rather than redeclaring the fields they read. It is
- * a type-only import in both, so nothing at runtime imports a page from a
- * component.
+ * `GameProps` is exported because it is the client's half of the `GameRepresentation`
+ * contract — `Board.tsx` and `StatusBanner.tsx` import it type-only rather than
+ * redeclaring the fields they read, so nothing at runtime imports a page from a component.
  */
 
 export type GameProps = {

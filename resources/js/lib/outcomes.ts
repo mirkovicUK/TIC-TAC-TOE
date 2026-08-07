@@ -1,40 +1,19 @@
 /*
- * The outcome vocabulary, client side: one map from an outcome value to the copy a
- * player is shown.
+ * The outcome vocabulary, client side: one map from an outcome value to the copy a player
+ * is shown. The values mirror the server's `MoveOutcome`, `JoinOutcome`,
+ * `VisibilityOutcome` and `RematchOutcome`. `not_recognised` appears once because
+ * `JoinOutcome::NotRecognised` and `VisibilityOutcome::NotRecognised` deliberately share
+ * one backing value and one message; which was raised is carried by the transport.
  *
- * THE VALUES MIRROR THE SERVER'S FOUR OUTCOME ENUMS EXACTLY — `MoveOutcome`
- * (`game_not_started`, `game_ended`, `not_your_turn`, `invalid_move`, `conflict`),
- * `JoinOutcome` (`game_full`, `not_recognised`), `VisibilityOutcome`
- * (`not_authorised`, `game_expired`, `not_recognised`) and `RematchOutcome`
- * (`invalid_state`). `not_recognised` appears once
- * because the server spells it once: `JoinOutcome::NotRecognised` and
- * `VisibilityOutcome::NotRecognised` deliberately share one backing value and one
- * client-facing message, and which of them was raised is carried by the transport
- * rather than by the string.
+ * A missing case is a compile error: `MESSAGES` is typed `Record<Outcome, string>` over
+ * the union derived from `OUTCOME_VALUES`, so adding a value without its copy fails
+ * `tsc`. The fallback exists for a different reason — `outcome` reaches the client as a
+ * `string` from a session flash, so a value this file has never heard of is representable
+ * at runtime whatever the type says, and rendering nothing would hide a real rejection.
  *
- * ONE OUTCOME IN THE DESIGN'S TABLE IS STILL ABSENT, AND ITS ABSENCE IS DATED RATHER
- * THAN PERMANENT. `rate_limited` (Req 10.6, 10.7) comes from framework middleware in
- * task 10 rather than from an enum in `App\Games`, so no code that exists today can
- * flash it: this file mirrors the vocabulary the server can currently produce, and
- * adding a key for an outcome nothing raises would make the mirror unfalsifiable.
- * `FALLBACK` below is what keeps the interim honest. `invalid_state` was listed here
- * as similarly deferred until task 7.1 added `RematchOutcome`, which is the code that
- * raises it, and it moved into the map in the same change.
- *
- * A MISSING CASE IS A COMPILE ERROR. `MESSAGES` is typed `Record<Outcome, string>`
- * over the union derived from `OUTCOME_VALUES`, so adding a value to that list without
- * adding its copy fails `tsc` rather than falling through to the fallback at runtime.
- * The fallback exists for a different reason: `outcome` reaches the client as a
- * `string` from a session flash, so a value this file has never heard of is
- * representable at runtime whatever the type says. Rendering nothing for it would hide
- * a real rejection — the player would click, see no move and see no reason — so an
- * unrecognised value gets neutral copy instead of silence.
- *
- * `Join.tsx` AND `NotAPlayer.tsx` KEEP THEIR OWN COPY AND DO NOT IMPORT THIS. Both
- * render a rejection to someone who is *not* a Player of a Game, in the whole-page
- * form, with wording that explains what to do next; this map is the one-line form
- * shown above a board to a Player whose action was refused. Same values, different
- * reader, and folding them together would mean one string trying to serve both.
+ * `Join.tsx` and `NotAPlayer.tsx` keep their own copy and do not import this. They render
+ * a whole-page rejection to someone who is *not* a Player; this map is the one-line form
+ * shown above a board. Same values, different reader.
  */
 
 export const OUTCOME_VALUES = [

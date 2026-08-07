@@ -5,20 +5,15 @@ import type { FormEvent } from 'react';
  * `GET /join/{join_code?}` — the target of a Join_Link, and the landing place for a
  * rejected join.
  *
- * TWO INPUTS, ONE PAGE. `joinCode` is the route segment, normalised to the
- * `XXXXX-XXXXX` display form by `JoinFormController` when it could be read at all,
- * so a link opens with the field filled and the player only has to press the button.
- * `outcome` is the shared prop `HandleInertiaRequests` reads out of the flash, and it
- * arrives after a 303 from `POST /join`: `not_recognised` when the code matched no
- * Game, `game_full` when it matched one that already has two Players.
+ * Two inputs. `joinCode` is the route segment, normalised to the `XXXXX-XXXXX` display form
+ * by `JoinFormController` when it could be read at all, so a link opens with the field
+ * filled. `outcome` is the shared prop `HandleInertiaRequests` reads out of the flash, and
+ * it arrives after a 303 from `POST /join`.
  *
- * NOTHING ABOUT THE GAME IS ON THIS PAGE, and there is nothing to put here: a
- * rejected join means the caller is not a Player, so the server sent the outcome
- * value and no Game_State, Board or Move_List (Req 3.10). The two messages below are
- * the entire vocabulary this page renders. They are written out here rather than
- * imported from `lib/outcomes.ts`, which task 6.3 introduces for the outcomes of an
- * authorised Player's action — a different family, on a different page, for a
- * different reader.
+ * A rejected join means the caller is not a Player, so the server sent the outcome value and
+ * no Game_State, Board or Move_List (Req 3.10). The two messages below are written out here
+ * rather than imported from `lib/outcomes.ts`, which is the one-line form shown to an
+ * authorised Player — a different family, for a different reader.
  */
 
 const JOIN_OUTCOME_MESSAGES: Record<string, string> = {

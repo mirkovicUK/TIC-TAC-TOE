@@ -8,43 +8,23 @@ namespace App\Games;
  * The three ways `GameResolver` can refuse to show a Game: the rejection half of
  * its seven-row visibility table.
  *
- * THIS ENUM CARRIES NO DATA, AND THAT IS THE WHOLE REASON IT IS THE REJECTION
- * TYPE. Requirement 3.10 excludes the Board, the Move_List, the Game_State and
- * the Mark_To_Move from the response to any request that presents no valid
- * Player_Token, and Property 7 restates it as "a response containing no Board, no
- * Move_List, no Game_State and no Mark_To_Move". A rejection shaped as an enum
- * case makes that structural rather than disciplined: there is no `game`
- * property to read, no `snapshot()` to call and nothing for a serialiser to walk,
- * so a controller *cannot* disclose game state from a rejection, whether or not
- * its author remembered not to. Contrast the shape this deliberately is not — an
- * outcome plus a nullable `?Game` on one object — where every rejection would
- * carry the row it refused to show and the guarantee would rest on every caller
- * checking the outcome before reading the field.
+ * The cases carry no data, which is what makes Req 3.10 and Property 7 structural
+ * rather than disciplined — there is no `game` property to read, no `snapshot()` to
+ * call and nothing for a serialiser to walk. Do not replace this with an outcome
+ * plus a nullable `?Game` on one object: every rejection would then carry the row
+ * it refused to show. `GameResolver::resolve()` returns
+ * `ResolvedPlayer|VisibilityOutcome`, a union with no common supertype, so a caller
+ * must narrow with `instanceof` before reading anything.
  *
- * `GameResolver::resolve()` therefore returns `ResolvedPlayer|VisibilityOutcome`,
- * a genuine union: the success and rejection shapes have no common supertype and
- * no fields in common, so a caller must narrow with `instanceof` before it can
- * read anything at all, and static analysis rejects the code that forgets to.
+ * Several table rows collapse onto one case deliberately: rows 6 and 7 both answer
+ * `NotRecognised`, so no value could separate "no Game and a tombstone" from "no
+ * Game and nothing", and `NotAuthorised` is the single value for all three failure
+ * modes of Req 9.6, which is what lets the Web_Client render one message.
  *
- * TWO OF THE SEVEN ROWS ANSWER `NotRecognised` FOR DIFFERENT DATABASE STATES,
- * and the cases here are what makes that indistinguishable rather than merely
- * equal: rows 6 and 7 return this same case, so there is no second value a
- * caller could compare, log or render that would separate "no Game and a
- * tombstone" from "no Game and nothing". Likewise `NotAuthorised` is the single
- * value for all three failure modes of Requirement 9.6 — no token, unrecognised
- * token, token bound to another Game — which is what lets the Web_Client render
- * one message for all of them.
- *
- * THE HTTP STATUS IS DELIBERATELY NOT HERE. The design is explicit that
- * distinctness is carried by the *value* and that the status is how the transport
- * expresses it; 403, 404 and 410 therefore live in
+ * The HTTP status is not here: 403, 404 and 410 live in
  * `App\Http\Exceptions\GameNotVisibleException`, on the transport side of the
- * boundary, so that nothing in `App\Games` needs to know what an HTTP status is.
- *
- * The backing values are the outcome vocabulary spelled exactly as the design's
- * outcome table spells it. Task 12.1 asserts all eleven rejection outcomes of the
- * application are pairwise distinct (Property 16); three of them are these, and
- * they are distinct from one another by being distinct cases of one enum.
+ * boundary. Backing values are the design's outcome vocabulary; task 12.1 asserts
+ * all eleven rejection outcomes are pairwise distinct (Property 16).
  */
 enum VisibilityOutcome: string
 {

@@ -12,67 +12,48 @@ use App\Domain\TicTacToe\Outcome;
  * statement "this Move is in the `moves` table and the `games` row now describes
  * the Move_List that includes it".
  *
- * FOUR FIELDS, AND THEY ARE THE FOUR THINGS A CALLER CANNOT RECOVER WITHOUT A
- * QUERY. `SubmitMove` derives the Sequence_Index from the observed Move_List and
- * the Outcome from the appended one, and both are gone the moment `handle()`
- * returns — so a caller wanting either would have to re-read, which is the one
- * thing this whole design is arranged to avoid. The Mark and the Cell_Index are
- * here for the same reason they are on the design's `move.accepted` log record:
- * they are what was written, reported by the writer.
+ * The four fields are the four things a caller cannot recover without a query.
+ * `SubmitMove` derives the Sequence_Index from the observed Move_List and the
+ * Outcome from the appended one, and both are gone once `handle()` returns.
  *
- * `Outcome` RATHER THAN `GameState` PLUS `?Mark`. The transaction writes two
- * columns, `state` and `winning_mark`, and both are functions of this one value:
- * `GameState::fromOutcome($result->outcome)` is the state that was written and
- * `$result->outcome->winner()` is the Mark. Carrying the two columns instead would
- * mean carrying a pair that can disagree, in a type whose whole purpose is to
- * report what a single `match` derived. It is also the exact field the design's
- * `game.finished` record needs — its `result` is `won_by_x`, `won_by_o` or
- * `drawn`, which is `Outcome`'s backing value — and `isTerminal()` is how task
- * 10.x will know whether to emit that record at all.
+ * `Outcome` rather than `GameState` plus `?Mark`: the transaction writes `state`
+ * and `winning_mark`, and both are functions of this one value
+ * (`GameState::fromOutcome()`, `Outcome::winner()`), so carrying the two columns
+ * would carry a pair that can disagree. It is also the field the design's
+ * `game.finished` record needs, whose `result` is `Outcome`'s backing value.
  *
- * IT CARRIES NO `Version_Counter`, AND NOT FOR WANT OF USEFULNESS. The increment
- * is `version_counter = version_counter + 1`, an expression the database
- * evaluates (Req 4.7), so the resulting value is not known in PHP without a
- * `SELECT`. Adding one after the commit would not breach the purity invariant —
- * that forbids reads between the first guard and the insert — but it would be a
- * query on the write path serving nothing: task 6.2's controller answers a 303,
- * and the GET that follows re-reads the row and reports the Version_Counter
- * through `GameRepresentation` (Req 8.3). Computing it as
- * `$observed->game->version_counter + 1` was the other option and is worse: it
- * would assert the arithmetic rather than observe it, and it would be a second
- * implementation of the increment sitting next to the real one.
+ * No Version_Counter, because the increment is `version_counter + 1` evaluated by
+ * the database (Req 4.7) and so unknown in PHP without a `SELECT`. Do not compute
+ * it as `$observed->game->version_counter + 1`: that asserts the arithmetic rather
+ * than observing it, and duplicates the increment. The GET after the 303 re-reads
+ * the row and reports it through `GameRepresentation` (Req 8.3).
  *
- * IT CARRIES NO `Game` AND NO `GameSnapshot`. A snapshot of the post-Move state
- * would cost a second Move_List read and a second `RulesEngine::analyse()` call,
- * and the caller that needs one — the GET after the redirect — builds it from the
- * committed row anyway.
+ * No `Game` and no `GameSnapshot`: a post-Move snapshot costs a second Move_List
+ * read and `RulesEngine::analyse()` call, and the GET after the redirect builds one
+ * from the committed row anyway.
  *
  * @see MoveOutcome for the rejection half of the union, and for why it is fieldless
  */
 final readonly class MoveAccepted
 {
     /**
-     * The constructor is public because there is nothing to guard, and there are
-     * exactly two producers to guard against: `SubmitMove`, which constructs one
-     * inside the committed transaction, and a test constructing an expected value
-     * to compare against. Nothing about an instance is a claim a caller could get
-     * wrong on its own — it reports a write rather than authorising one, which is
-     * what makes this different from `ResolvedPlayer`.
+     * Public because there is nothing to guard: the two producers are `SubmitMove`,
+     * inside the committed transaction, and tests building an expected value. Unlike
+     * `ResolvedPlayer`, an instance reports a write rather than authorising one.
      */
     public function __construct(
         /**
-         * The Mark of the accepted Move: the Mark bound to the presented
-         * Player_Token, and equal to `Mark::forSequenceIndex($sequenceIndex)` by
-         * the turn guard `SubmitMove` applied (Req 3.2, 11.4). Never from a
-         * payload (Req 3.6).
+         * The Mark bound to the presented Player_Token, equal to
+         * `Mark::forSequenceIndex($sequenceIndex)` by the turn guard (Req 3.2,
+         * 11.4). Never from a payload (Req 3.6).
          */
         public Mark $mark,
         /** The Cell the Move occupies, in 0..8. */
         public int $cellIndex,
         /**
-         * The length of the Move_List before acceptance (Req 4.2) — the value
-         * written to `moves.sequence_index`, and the value whose uniqueness
-         * within the Game settled the conflict this Move did not lose.
+         * The length of the Move_List before acceptance (Req 4.2) — written to
+         * `moves.sequence_index`, and the value whose uniqueness within the Game
+         * settled the conflict this Move did not lose.
          */
         public int $sequenceIndex,
         /**

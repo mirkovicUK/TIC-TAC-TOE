@@ -2,30 +2,18 @@
  * One of the nine Cells: its occupant, whether it is part of a completed
  * Winning_Line, and whether it can be played.
  *
- * IT IS A `<button>`, WHICH IS THE ACCESSIBILITY DECISION THE REST FOLLOWS FROM. A
- * div with an `onClick` would be invisible to the keyboard and unnamed to a screen
- * reader; a button is focusable, activates on Enter and Space, and takes an
- * accessible name from `aria-label`.
+ * `aria-disabled` rather than the native `disabled` attribute, deliberately. A natively
+ * disabled button leaves the tab order, so on a finished board — or on any board while it
+ * is the opponent's turn — a keyboard user would find the nine cells gone and could not
+ * read the result off them. The cost is that the attribute does not block activation, so
+ * the click handler checks `disabled` itself: that check is the real gate and the attribute
+ * is what tells the player about it. `Board.tsx` owns the condition.
  *
- * `aria-disabled` RATHER THAN THE NATIVE `disabled` ATTRIBUTE, deliberately. A
- * natively disabled button is removed from the tab order, so on a finished board —
- * or on any board while it is the opponent's turn — a keyboard user would find the
- * nine cells simply gone and could not read the result off them. `aria-disabled`
- * keeps every cell reachable and announced, and has the state announced with it, so
- * the unavailability is conveyed to assistive technology rather than only by the
- * dimmed styling. The cost is that the attribute does not block activation, so the
- * click handler checks `disabled` itself; that check is the real gate and the
- * attribute is what tells the player about it. `Board.tsx` owns the condition.
+ * The winning-line highlight is in the label as well as the colour (Req 6.5), for a player
+ * who is not reading the colour.
  *
- * THE WINNING-LINE HIGHLIGHT IS IN THE LABEL AS WELL AS IN THE COLOUR (Req 6.5).
- * A ring and a background tell a sighted player which three cells won; the label
- * suffix is the same fact for a player who is not reading the colour. This is also
- * why a double win needs nothing special here — `Board.tsx` flattens every
- * completed line, so a cell in either line arrives with `winning` true.
- *
- * THE GLYPH IS `aria-hidden`. The occupant is already in the accessible name, and
- * leaving the text node exposed would have a screen reader read "top left, X" and
- * then "X" again.
+ * The glyph is `aria-hidden` because the occupant is already in the accessible name;
+ * exposing the text node would have a screen reader read "top left, X" and then "X" again.
  */
 
 const POSITIONS = [

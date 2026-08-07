@@ -4,17 +4,14 @@ import { useState } from 'react';
  * The Join_Code and a copyable Join_Link, shown while a Game is
  * `waiting_for_opponent` (Req 1.6, 1.7).
  *
- * IT TAKES THE TWO STRINGS, NOT THE WHOLE GAME PROP. `GameRepresentation` sets
- * `joinCode` and `joinUrl` only while the Game is waiting and nulls both afterwards,
- * so the state gate lives on the server and the caller renders this panel or does
- * not. Passing the game object would put that decision in two places.
+ * It takes the two strings rather than the game prop: `GameRepresentation` sets `joinCode`
+ * and `joinUrl` only while the Game is waiting and nulls both afterwards, so the state gate
+ * lives on the server and the caller renders this panel or does not.
  *
- * THE LINK IS SHOWN AS TEXT IN A READ-ONLY FIELD AS WELL AS BEING COPYABLE. The
- * Clipboard API needs a secure context, so `navigator.clipboard` is absent over plain
- * HTTP — which the deployment explicitly allows as a fallback if TLS could not be
- * obtained. A field the player can select by hand is what makes the panel work there,
- * and `readOnly` rather than `disabled` is what keeps it selectable and reachable by
- * keyboard.
+ * The link is also shown as text in a read-only field because the Clipboard API needs a
+ * secure context, so `navigator.clipboard` is absent over plain HTTP — which the deployment
+ * allows as a fallback if TLS could not be obtained. `readOnly` rather than `disabled` is
+ * what keeps that field selectable and reachable by keyboard.
  *
  * The waiting indication (Req 1.7) is here rather than in the page's status banner
  * because it is the same fact as the code: this panel exists exactly while there is

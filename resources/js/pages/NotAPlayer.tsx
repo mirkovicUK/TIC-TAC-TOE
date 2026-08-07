@@ -5,16 +5,13 @@ import { Head, Link } from '@inertiajs/react';
  * `game_expired`, rendered by the `GameNotVisibleException` handler in
  * `bootstrap/app.php`.
  *
- * ONE PROP, AND IT IS THE ONLY THING THE SERVER SENT. There is no `game` prop on this
- * page and there is nothing this component could do with one: a request that fails
- * `GameResolver` gets the Board, the Move_List, the Game_State and the Mark_To_Move
- * excluded from its response (Req 3.7, 3.10), and the exception the handler renders
- * from carries a `VisibilityOutcome` and nothing else.
+ * The outcome is the only prop, and there is no `game` prop to add: a request that fails
+ * `GameResolver` has the Board, Move_List, Game_State and Mark_To_Move excluded from its
+ * response (Req 3.7, 3.10).
  *
- * ALL THREE `not_authorised` MODES SHARE ONE MESSAGE, because they share one outcome
- * value: no Player_Token, a token bound to nothing, and a token bound to another Game
- * are indistinguishable by design (Req 9.6). The server does not tell them apart, so
- * this page cannot and must not.
+ * All three `not_authorised` modes share one message because they share one outcome value:
+ * no Player_Token, a token bound to nothing, and a token bound to another Game are
+ * indistinguishable by design (Req 9.6), so this page must not tell them apart either.
  *
  * The keys are the outcome values from `App\Games\VisibilityOutcome`. The fallback
  * exists because `outcome` reaches this page as a string: a value not in the map means

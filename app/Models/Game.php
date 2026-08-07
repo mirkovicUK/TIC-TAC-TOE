@@ -17,13 +17,11 @@ use Illuminate\Support\Carbon;
  * business rules — those live in `App\Games`, and the rules of play live in
  * `App\Domain\TicTacToe`, which is forbidden from knowing this class exists.
  *
- * WHAT THIS MODEL DOES NOT DO, AND MUST NOT START DOING: it does not generate
- * its own `id`. Requirement 1.2 requires a Game_Id that derives from no
- * monotonically increasing database sequence, and `CreateGame` owns the
- * generation of it. A `booted()` hook or a `HasUuids` trait here would mint the
- * id as a side effect of `save()`, which would put identity generation in two
- * places at once and make `CreateGame`'s contract ambiguous — a caller could no
- * longer tell whether the id it supplied is the id that was stored.
+ * This model does not generate its own `id`, and must not start: `CreateGame`
+ * owns Game_Id generation (Req 1.2). A `booted()` hook or a `HasUuids` trait
+ * would mint the id as a side effect of `save()`, splitting identity generation
+ * across two places and leaving a caller unable to tell whether the id it
+ * supplied is the id that was stored.
  *
  * @property string $id UUIDv7, supplied by CreateGame (Req 1.2)
  * @property string|null $join_code NULL on a rematch
@@ -44,12 +42,10 @@ final class Game extends Model
     /**
      * The primary key is a UUIDv7 in a TEXT column, not an integer sequence.
      *
-     * Both this and `$keyType` are required, and for different reasons: without
-     * `$incrementing = false` Eloquent treats the insert as producing a
-     * generated id and discards the one supplied, and without
-     * `$keyType = 'string'` it casts the key to an integer on the way out — a
-     * UUID would come back as `0`. Either omission fails quietly rather than
-     * loudly.
+     * Both this and `$keyType` are needed, for different reasons: without
+     * `$incrementing = false` Eloquent discards the supplied id as though the
+     * insert generated one, and without `$keyType = 'string'` it casts the key to
+     * an integer on the way out, so a UUID returns as `0`. Both fail quietly.
      *
      * @var bool
      */
@@ -59,28 +55,16 @@ final class Game extends Model
     protected $keyType = 'string';
 
     /**
-     * `state` and `winning_mark` are cast to the enums that name their legal
-     * values, which the two CHECK constraints on this table already enforce at
-     * the storage layer. The cast makes the same statement in PHP: a guard reads
-     * `$game->state === GameState::WaitingForOpponent` rather than comparing
-     * strings, and `$game->winning_mark = $analysis->winner()` assigns a
-     * `?Mark` straight from the engine with no `->value` in between.
+     * `state` and `winning_mark` cast to the enums that name their legal values,
+     * which the two CHECK constraints on this table already enforce in storage.
      *
-     * Casting `winning_mark` to `Mark` creates a reference from `App\Models`
-     * into `App\Domain\TicTacToe`. That is the permitted direction — the
-     * architecture test forbids the domain naming `App\Models`, `App\Http` or
-     * `Illuminate`, and says nothing about the reverse — and it is the right
-     * direction here: the domain stays a library that knows nothing of
-     * persistence, while the persistence layer is free to speak the domain's
-     * vocabulary. The alternative, storing a bare `'x'`/`'o'` string and
-     * converting at every read site, would put `Mark::from()` in
-     * `GameRepresentation`, in `CreateRematch` and in every test that asserts a
-     * winner, and each of those is a place the conversion could be forgotten.
+     * Casting `winning_mark` to `Mark` points from `App\Models` into the domain,
+     * which is the permitted direction: the domain may not name the persistence
+     * layer, and the reverse is fine. Storing a bare string instead would scatter
+     * `Mark::from()` across every read site.
      *
-     * The three timestamps are cast explicitly, including the two Eloquent
-     * already treats as dates, so that all three read the same way and
-     * `last_activity_at` — which Eloquent knows nothing about — is not the odd
-     * one out.
+     * All three timestamps are cast explicitly, including the two Eloquent already
+     * treats as dates, so `last_activity_at` is not the odd one out.
      *
      * @return array<string, string>
      */
@@ -97,10 +81,9 @@ final class Game extends Model
     }
 
     /**
-     * The Move_List rows of this Game, unordered here on purpose: ordering is
-     * `ORDER BY sequence_index`, and it is applied where the snapshot is read
-     * (`GameSnapshot::of`) rather than hidden in the relationship, so the one
-     * read that matters states its own ordering.
+     * The Move_List rows of this Game, unordered on purpose: `GameSnapshot::of`
+     * applies `ORDER BY sequence_index` where the read happens rather than hiding
+     * it in the relationship.
      *
      * @return HasMany<Move, $this>
      */
@@ -110,20 +93,13 @@ final class Game extends Model
     }
 
     /**
-     * The Game created as a rematch *of* this one, if one exists (Req 7.4,
-     * 7.8) — the direction `CreateRematch` and `GameRepresentation` need: one
-     * looks for an existing rematch before creating one, the other reports its
-     * id as `rematchGameId`.
+     * The Game created as a rematch *of* this one, if one exists (Req 7.4, 7.8) —
+     * the direction `CreateRematch` and `GameRepresentation` need.
      *
-     * A `HasOne` and not a `HasMany`, which is not a simplification: the unique
-     * index on `rematch_of_game_id` makes at most one rematch per Game a
-     * persisted fact (Req 7.8), so the relationship states in PHP exactly what
-     * the schema enforces.
-     *
-     * The inverse (`the game this one is a rematch of`) is deliberately absent.
-     * Nothing navigates that way: `CreateRematch` is handed the preceding Game
-     * directly, and the sweep clears the back-reference with a bulk `UPDATE`
-     * rather than by traversing a relationship.
+     * `HasOne` rather than `HasMany` because the unique index on
+     * `rematch_of_game_id` makes at most one rematch per Game a persisted fact
+     * (Req 7.8). The inverse direction is deliberately absent: nothing navigates
+     * it, and the sweep clears the back-reference with a bulk `UPDATE`.
      *
      * @return HasOne<Game, $this>
      */

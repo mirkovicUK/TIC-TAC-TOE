@@ -2,31 +2,22 @@ import { useEffect, useState } from 'react';
 import type { GameProps } from '@/pages/Game';
 
 /*
- * The opponent-idle indication: whether to tell the viewing Player that their
- * opponent may have stopped playing (Req 9.4). The design's "Opponent-idle
- * indication" block carries the rationale; what follows is only what the code cannot
- * tell you.
+ * The opponent-idle indication: whether to tell the viewing Player that their opponent
+ * may have stopped playing (Req 9.4). The design's "Opponent-idle indication" block
+ * carries the rationale; what follows is only what the code cannot tell you.
  *
- * NO SERVER INVOLVEMENT, AND NONE IS NEEDED. `lastMoveAt` is already a prop of
- * `GameRepresentation`, so the threshold is arithmetic on state the page holds. The
- * tick exists only because the answer changes with the passage of time rather than
- * with an arriving prop: a page left alone crosses 60 seconds without any visit, and
- * without a timer React would have no reason to re-render.
+ * The tick exists because the answer changes with the passage of time rather than with an
+ * arriving prop: a page left alone crosses 60 seconds without any visit, so without a
+ * timer React would have no reason to re-render.
  *
- * THE THREE CONDITIONS ARE CONJOINED, AND THE `isYourTurn` ONE IS LOAD-BEARING RATHER
- * THAN DECORATIVE. An earlier draft of Requirement 9.4 asked only for "no Move
- * accepted for 60 seconds", which is vacuously true of an empty Board — so the
- * Creator was told their opponent may have stopped playing while the Application was
- * in fact waiting on the Creator's own first Move (`docs/ai-direction.md`, "An idle
- * indication that fired on your own turn"). The criterion now names the
- * Mark_To_Move, and `game.isYourTurn` is that clause. Removing it reintroduces the
- * defect.
+ * The `isYourTurn` clause is load-bearing. Without it the criterion is vacuously true of
+ * an empty Board, and the Creator is told their opponent may have stopped playing while
+ * the Application is waiting on the Creator's own first Move. Removing it reintroduces
+ * that defect (`docs/ai-direction.md`, "An idle indication that fired on your own turn").
  *
- * REQUIREMENT 9.3 IS NOT THIS HOOK'S BUSINESS. The waiting-for-opponent indication is
- * the `active` and not-your-turn branch of `StatusBanner`, which needs no clock; this
- * hook decides only the additional line Requirement 9.4 asks for, which that branch
- * shows on top of it. So "quiet" here means the banner still says it is waiting on
- * the opponent, not that it says nothing.
+ * Requirement 9.3's waiting-for-opponent indication is `StatusBanner`'s `active` and
+ * not-your-turn branch, which needs no clock. So "quiet" here means the banner still says
+ * it is waiting on the opponent, not that it says nothing.
  */
 
 /** Req 9.4: "no Move has been accepted for at least 60 seconds". */
@@ -41,23 +32,14 @@ export const IDLE_TICK_MS = 5000;
  * Exported and pure so the threshold can be asserted without a browser and without a
  * fake clock — the caller supplies the clock.
  *
- * `lastMoveAt` IS NULL WHEN THE MOVE_LIST IS EMPTY (`GameRepresentation::lastMoveAtOf`)
- * AND THAT CASE IS QUIET, WHICH REQUIREMENT 9.4 NOW STATES OUTRIGHT. The criterion was
- * amended to carry an "at least one Move has been accepted" clause after this hook was
- * built, so the null case is conformant rather than a judgement call; the accepted
- * consequence — a Creator who never returns leaves the Joiner unwarned — is a stated
- * known limitation (Req 12.13). There is no Move to measure 60 seconds from, and the only
- * other origin available — when the Game became `active` — is not a prop, so the
- * elapsed time is not merely unknown but unrepresentable here. Treating a null as an
- * elapsed eternity would announce "your opponent may have stopped playing" to the
- * Joiner the instant the page opened, before the Creator had had any opportunity at
- * all to move: the same vacuous indication recorded in `docs/ai-direction.md`, moved
- * to the other Player's screen. Quiet is the honest answer, and Requirement 9.3's
- * waiting indication still shows.
+ * A null `lastMoveAt` — an empty Move_List, per `GameRepresentation::lastMoveAtOf` — is
+ * quiet, and Requirement 9.4 was narrowed to an "at least one Move has been accepted"
+ * clause to say so. There is no Move to measure from, and the only other origin (when the
+ * Game became `active`) is not a prop. The accepted consequence — a Creator who never
+ * returns leaves the Joiner unwarned — is a stated known limitation (Req 12.13).
  *
- * An unparseable `lastMoveAt` yields NaN, and every comparison against NaN is false,
- * so a malformed timestamp falls to the quiet side too rather than needing a guard of
- * its own.
+ * An unparseable `lastMoveAt` yields NaN, and every comparison against NaN is false, so a
+ * malformed timestamp falls to the quiet side without a guard of its own.
  */
 export function opponentIsIdle(game: GameProps, now: number): boolean {
     if (game.state !== 'active' || game.isYourTurn || game.lastMoveAt === null) {
@@ -80,11 +62,9 @@ export default function useOpponentIdle(game: GameProps): boolean {
     useEffect(() => {
         const ticker = setInterval(() => setNow(Date.now()), IDLE_TICK_MS);
 
-        // Cleared on unmount, so no tick — and therefore no state update on an
-        // unmounted component — can follow it. The dependency array is empty because
-        // nothing about the interval depends on the props: re-arming it on every prop
-        // change would reset the countdown before it elapsed, which is the same hazard
-        // `useGamePolling` records for its own effect.
+        // The dependency array is empty because nothing about the interval depends on the
+        // props: re-arming it on every prop change would reset the countdown before it
+        // elapsed, which is the same hazard `useGamePolling` records for its own effect.
         return () => clearInterval(ticker);
     }, []);
 

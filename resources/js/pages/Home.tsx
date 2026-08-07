@@ -4,13 +4,11 @@ import type { FormEvent } from 'react';
 /*
  * `GET /` — the entry page: create a Game, or join one with a code.
  *
- * BOTH FORMS ARE REAL FORMS AND BOTH BUTTONS ARE BUTTONS. `useForm().post()` is
- * what carries the CSRF token (Inertia sends the `XSRF-TOKEN` cookie back as a
- * header), so a hand-rolled `fetch` here would be a 419 waiting to happen, and an
- * anchor styled as a button would not post at all. The paths are literals rather
- * than a route helper because there is no route-name package installed on the
- * client; `routes/web.php` names them and this file is the only other place they
- * appear.
+ * Both actions are real forms because `useForm().post()` is what carries the CSRF token
+ * (Inertia sends the `XSRF-TOKEN` cookie back as a header), so a hand-rolled `fetch` here
+ * would be a 419 waiting to happen. The paths are literals rather than a route helper
+ * because there is no route-name package installed on the client; `routes/web.php` names
+ * them and this file is the only other place they appear.
  *
  * The join form here and the one on `Join.tsx` are deliberately separate rather than
  * a shared component: this one starts empty and that one arrives prefilled from a

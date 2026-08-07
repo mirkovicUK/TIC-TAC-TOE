@@ -39,10 +39,9 @@ final readonly class MoveList implements \Countable, \IteratorAggregate
     }
 
     /**
-     * Accepted verbatim, including ill-formed input: sequence-index gaps,
-     * duplicates, cell indices outside 0..8 and more than nine entries all
-     * survive construction untouched, because Requirements 11.5 and 14.8
-     * require the engine to be handed exactly such lists.
+     * Ill-formed input survives construction untouched — gaps, duplicates, cell
+     * indices outside 0..8, more than nine entries — because Requirements 11.5
+     * and 14.8 require the engine to be handed exactly such lists.
      *
      * @param  list<Move>  $moves  Accepted verbatim, including ill-formed input.
      */

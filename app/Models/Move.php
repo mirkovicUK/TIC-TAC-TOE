@@ -10,10 +10,9 @@ use Illuminate\Support\Carbon;
 /**
  * One row of `moves`: a Cell_Index and a Sequence_Index, and nothing else.
  *
- * There is no `mark` attribute and no accessor for one. The Mark is the parity
- * of the Sequence_Index (Req 11.4), derived by `App\Domain\TicTacToe\Move` on the
- * domain side of the boundary. A `mark()` here would be a second implementation
- * of the same modulo, on the wrong side of it.
+ * There is no `mark` column, attribute or accessor. The Mark is the parity of the
+ * Sequence_Index (Req 11.4), derived by `App\Domain\TicTacToe\Move`; a `mark()`
+ * here would be the same modulo on the wrong side of the boundary.
  *
  * @property int $id
  * @property string $game_id
@@ -24,20 +23,12 @@ use Illuminate\Support\Carbon;
 final class Move extends Model
 {
     /**
-     * Append-only, expressed in the one place Eloquent reads it.
+     * Append-only: the table has `created_at` and no `updated_at`.
      *
-     * The table has `created_at` and NO `updated_at`, so the default behaviour —
-     * `$timestamps = true`, which writes both — would make every insert fail on
-     * a missing column. The two obvious fixes are both wrong. Setting
-     * `$timestamps = false` turns off `created_at` as well and leaves each
-     * caller to set it by hand, which is one forgotten assignment away from a
-     * NOT NULL violation. Adding an `updated_at` column to the schema would
-     * contradict the migration's append-only note.
-     *
-     * A null `UPDATED_AT` is the mechanism that says "created_at only":
-     * `HasTimestamps::updateTimestamps()` skips the updated-at write when
-     * `getUpdatedAtColumn()` returns null, and still stamps `created_at` on
-     * insert. Timestamping stays on; there is simply no second column to stamp.
+     * A null `UPDATED_AT` leaves timestamping on with no second column to stamp —
+     * Eloquent skips the updated-at write and still stamps `created_at` on insert.
+     * `$timestamps = false` would be the wrong fix: it also turns off `created_at`
+     * and leaves each caller one forgotten assignment from a NOT NULL violation.
      */
     const UPDATED_AT = null;
 
