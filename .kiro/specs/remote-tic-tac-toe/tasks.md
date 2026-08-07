@@ -278,7 +278,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 7.1, 7.13_
     - _Design: ADR-010_
 
-  - [ ] 7.3* Write `RematchTest`
+  - [x] 7.3* Write `RematchTest`
     - Both players converge on one rematch in either order; marks are swapped; each session receives its token at its own request; the preceding game's Move_List survives and its Version_Counter went up by exactly one; a non-terminal game is `invalid_state`; a tokenless session is `not_authorised`
     - **Property 15: A Rematch is unique, swapped, and entered by presenting the preceding token**
     - **Validates: Requirements 7.2, 7.3, 7.4, 7.5, 7.6, 7.8, 7.9, 7.14, 7.15**
