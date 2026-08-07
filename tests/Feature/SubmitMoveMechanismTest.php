@@ -24,46 +24,30 @@ use Illuminate\Support\Str;
 // Validates: Requirements 3.5, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 5.4, 6.2, 6.4
 //
 /*
- * Task 6.1 — `SubmitMove`, the guards and the mechanism.
+ * The mechanism half of `SubmitMove`: the four guards and their order, the absence
+ * of any `SELECT`, the two statements of the accepted path, both unique indexes
+ * mapping to `conflict`, and the corruption seam rolling its insert back.
  *
- * A Feature test necessarily: the subject inserts a row and updates a row, and the
- * claims worth making are about what reached the database. `RefreshDatabase`
- * supplies the schema that `DB_DATABASE=:memory:` otherwise leaves absent, as in
- * `JoinGameTest`.
+ * `RefreshDatabase` supplies the schema that `DB_DATABASE=:memory:` otherwise
+ * leaves absent.
  *
- * WHAT THIS FILE COVERS AND WHAT IT DELIBERATELY LEAVES TO 6.6 AND 6.8. This is
- * the *mechanism* half: the four guards and their order, the absence of any
- * `SELECT`, the two statements of the accepted path, both unique indexes mapping to
- * `conflict`, and the corruption seam rolling its insert back. It is named
- * `SubmitMoveMechanismTest` so it does not collide with two files the plan has not
- * written yet:
- *
- *   - Task 6.6's `SubmitMoveTest` owes the behavioural sweep — the win transition
- *     across *every* completed line including the double diagonal, and the
- *     rejection sweep asserted through the HTTP surface — both delivered, now that
- *     6.2's route and 6.6's file exist. That surface is the only place a payload
- *     carrying a `mark` field can be shown to be ignored (Req 3.6), and there is no
- *     payload in this file to ignore.
- *   - Task 6.8's `ConcurrencyTest` owes the one assertion this file cannot make:
- *     two calls sharing ONE snapshot, with the Move_List asserted to have gone
- *     from n to n+1. That is Property 14 and the only mechanical guard on the
- *     no-re-query invariant. The conflict test below reaches the same `catch` by
- *     a different route and does not replace it.
+ * Excluded, and where that ground lives instead: the win sweep across every line
+ * and the rejection sweep through the HTTP surface, including a payload `mark`
+ * field being ignored (Req 3.6), are `SubmitMoveTest`; two calls sharing ONE
+ * snapshot with the Move_List asserted n → n+1 (Property 14) is `ConcurrencyTest`.
+ * The conflict test below reaches the same `catch` by another route and does not
+ * replace it.
  */
 
 uses(RefreshDatabase::class);
 
 /**
- * A saved Game in `$state`, with both token slots occupied and `last_activity_at`
- * backdated so that an accepted Move visibly moves it.
+ * A saved Game in `$state`, with `last_activity_at` backdated so that an accepted
+ * Move visibly moves it.
  *
- * The token hashes are arbitrary digests rather than issued credentials, because
- * `SubmitMove` never reads them: the acting Mark arrives as a parameter, and that
- * is the whole point of the signature. They are set so the row looks like one a
- * real join produced.
- *
- * Attributes are assigned one by one because mass assignment is closed on this
- * model.
+ * The token hashes are arbitrary digests rather than issued credentials because
+ * `SubmitMove` never reads them; the acting Mark arrives as a parameter. Attributes
+ * are assigned one by one because mass assignment is closed on this model.
  */
 function submittingGame(GameState $state = GameState::Active, ?Mark $winningMark = null): Game
 {
@@ -98,7 +82,7 @@ function submittingMoves(Game $game, int ...$cellIndices): void
 
 /**
  * The four columns an accepted Move is allowed to move, read straight from the
- * table rather than through the model, so a stale in-memory instance cannot make an
+ * table rather than through the model so a stale in-memory instance cannot make an
  * assertion pass.
  *
  * @return array{state: string, winning_mark: string|null, version_counter: int, last_activity_at: string}
@@ -136,10 +120,8 @@ function submittingMoveRowsOf(string $gameId): array
 /**
  * Every SQL statement issued while `$work` runs, lower-cased and in order.
  *
- * The query log is the only way to assert an ABSENCE of queries, which is what the
- * purity invariant is: no `SELECT` anywhere between the first guard and the insert.
- * `BEGIN`/`COMMIT` are issued through PDO and do not appear here, so the log is
- * exactly the statements the subject composed.
+ * `BEGIN`/`COMMIT` are issued through PDO and do not appear in the query log, so
+ * this is exactly the statements the subject composed.
  *
  * @param  callable(): mixed  $work
  * @return list<string>
@@ -162,17 +144,10 @@ function submittingStatementsDuring(callable $work): array
 }
 
 /*
- * THE ACCEPTED MOVE (Req 4.2, 4.7).
+ * The accepted Move (Req 4.2, 4.7).
  *
- * The Sequence_Index is asserted as the length of the Move_List *before*
- * acceptance, in both places it appears: on the returned `MoveAccepted` and in the
- * `moves` row. The Version_Counter is asserted as `3 → 4` against the persisted
- * column rather than as "greater than before", since Requirement 4.7 is an
- * increment of one and `version_counter + 1` is evaluated by the database.
- *
- * `winning_mark` is asserted to still be NULL, because the CHECK pairing it with
- * `state = 'won'` means a stray write there would be a constraint failure on some
- * *other* path rather than here.
+ * The Version_Counter is asserted as `3 → 4` against the persisted column rather
+ * than as "greater than before" because Req 4.7 is an increment of exactly one.
  */
 it('appends the move at the observed sequence index and increments the version counter by exactly one', function () {
     $game = submittingGame();
@@ -185,8 +160,8 @@ it('appends the move at the observed sequence index and increments the version c
 
     expect($result)->toBeInstanceOf(MoveAccepted::class, 'a legal Move by the Player to move was not accepted');
 
-    // Narrowed for the analyser as well as the reader; the expectation above is
-    // what actually fails if the Move was refused.
+    // Narrows the type for the analyser; the expectation above is what actually
+    // fails if the Move was refused.
     if (! $result instanceof MoveAccepted) {
         throw new RuntimeException('the Move was refused, so the assertions below would say nothing');
     }
@@ -195,16 +170,12 @@ it('appends the move at the observed sequence index and increments the version c
 
     expect($result->sequenceIndex)->toBe(2, 'the Move was not recorded at the length of the Move_List before acceptance (Req 4.2)')
         ->and($result->cellIndex)->toBe(4, 'the reported Cell is not the Cell that was attempted')
-        // Deliberately NOT claiming this shows the Mark came from the acting
-        // parameter. The turn guard has already established `$actingMark ===
-        // markToMove`, so `mark: $actingMark` and `mark:
-        // Mark::forSequenceIndex($sequenceIndex)` are provably equal here and no
-        // assertion in this file can separate them — substituting one for the
-        // other leaves the whole file green, which was verified. Provenance is
-        // observable only where a payload can carry a competing `mark` (Req 3.6),
-        // and that is task 6.6 through the HTTP surface. What this asserts is the
-        // weaker, still worth having claim: the reported Mark is the Mark that was
-        // to move.
+        // This does not show the Mark came from the acting parameter: the turn
+        // guard has already established `$actingMark === markToMove`, so `mark:
+        // $actingMark` and `mark: Mark::forSequenceIndex($sequenceIndex)` are equal
+        // here and no assertion in this file separates them. Provenance is
+        // observable only where a payload can carry a competing `mark` (Req 3.6) —
+        // `SubmitMoveTest`, through the HTTP surface.
         ->and($result->mark)->toBe(Mark::X, 'the reported Mark is not the Mark that was to move')
         ->and($result->outcome)->toBe(Outcome::InProgress)
         ->and(submittingMoveRowsOf($game->id))->toBe([0 => 0, 1 => 3, 2 => 4], 'the persisted Move_List is not the observed list with the Move appended at n (Req 4.2)')
@@ -216,26 +187,15 @@ it('appends the move at the observed sequence index and increments the version c
 });
 
 /*
- * THE WIN TRANSITION (Req 6.2).
+ * The win transition (Req 6.2). X holds cells 0 and 1 and takes 2. The sweep across
+ * all eight lines and the double diagonal is `SubmitMoveTest`.
  *
- * X holds cells 0 and 1 and takes 2, completing the top row. The state and the
- * winning Mark are asserted on the ROW, because they are the two derived facts this
- * class persists rather than leaves to be re-derived — Property 11's "the persisted
- * `winning_mark` equals the derived winner" is a claim about the UPDATE here.
- *
- * Task 6.6 owes the sweep across all eight lines and the double diagonal; this
- * asserts the transition happens at all and writes both columns.
- *
- * KNOWN LIMIT OF THE TWO COLUMN ASSERTIONS, so nobody mistakes them for more than
- * they are. The CHECK on `games` pairs the two — `(state = 'won' AND winning_mark
- * IS NOT NULL) OR (state <> 'won' AND winning_mark IS NULL)` — so a mutation that
- * writes NULL to `winning_mark`, or writes `active` while a winner exists, dies on
- * a `QueryException` before either expectation below is evaluated, and the message
- * written for it never prints. Both were tried; both do fail this test, but by the
- * schema's hand rather than by this test's assertions. The claim that is genuinely
- * this test's own is the VALUE: writing the *losing* Mark satisfies the CHECK,
- * reaches the expectation, and fails with the message beside it. That is why the
- * value assertion is specific — `toBe(Mark::X->value)` rather than "not null".
+ * Limit of the two column assertions: the CHECK on `games` pairs them — `(state =
+ * 'won' AND winning_mark IS NOT NULL) OR (state <> 'won' AND winning_mark IS
+ * NULL)` — so writing NULL to `winning_mark`, or `active` alongside a winner, dies
+ * on a `QueryException` before either expectation is evaluated. The claim this test
+ * owns is the value: writing the *losing* Mark satisfies the CHECK and reaches the
+ * expectation, which is why it is `toBe(Mark::X->value)` rather than "not null".
  */
 it('sets the state to won and records the winning mark when the move completes a line', function () {
     $game = submittingGame();
@@ -252,12 +212,9 @@ it('sets the state to won and records the winning mark when the move completes a
 });
 
 /*
- * THE DRAW (Req 6.4).
- *
- * Eight Moves that complete no line, and a ninth that fills the board without
- * completing one either: X on 0, 2, 3, 7, 8 and O on 1, 4, 5, 6. Asserted with
- * `winning_mark` still NULL, which the CHECK on `games` would reject alongside
- * `state = 'drawn'` anyway — so this pins the mapping rather than the schema.
+ * The draw (Req 6.4). X on 0, 2, 3, 7, 8 and O on 1, 4, 5, 6 — a full board
+ * completing no line. As above, the CHECK on `games` reaches a non-NULL
+ * `winning_mark` before the expectation does.
  */
 it('sets the state to drawn on a ninth move that completes no line', function () {
     $game = submittingGame();
@@ -274,16 +231,15 @@ it('sets the state to drawn on a ninth move that completes no line', function ()
 });
 
 /*
- * A GAME STILL WAITING FOR AN OPPONENT (Req 4.5).
+ * A Game still waiting for an opponent (Req 4.5).
  *
- * This is also the first of the two guard-ordering assertions, and the reason
  * `game_not_started` cannot be folded into the turn guard: the Mark_To_Move on an
  * empty Move_List is `X`, so the Creator moving into their own waiting Game passes
- * every other guard and would reach the insert.
+ * every other guard and would reach the insert. The `markToMove` expectation guards
+ * that — without it a Mark_To_Move of `O` would make this pass on the turn guard.
  *
- * "Leaves the Move_List unchanged" is asserted as no `moves` row existing AND as no
- * statement being issued at all, which is the stronger claim: a refusal that wrote
- * and rolled back would satisfy the first and fail the second.
+ * Asserting no statement at all is stronger than asserting no `moves` row: a
+ * refusal that wrote and rolled back would satisfy the row claim.
  */
 it('refuses a move into a game that is still waiting for an opponent, and issues no statement', function () {
     $game = submittingGame(GameState::WaitingForOpponent);
@@ -304,12 +260,10 @@ it('refuses a move into a game that is still waiting for an opponent, and issues
 });
 
 /*
- * A GAME IN A TERMINAL_STATE (Req 4.6).
+ * A Game in a Terminal_State (Req 4.6).
  *
- * Both Terminal_States, and the guard reads the persisted Game_State as the design
- * specifies — so the fixtures carry a row whose `state` is terminal while its
- * Move_List is empty. That is not a realistic row, and it is the right fixture
- * precisely because it isolates what the guard consults: a guard reading
+ * The fixtures deliberately carry an unrealistic row — terminal `state`, empty
+ * Move_List — to isolate what the guard consults. A guard reading
  * `$observed->analysis->isTerminal()` instead would see an in-progress empty list
  * and let the Move through.
  */
@@ -334,13 +288,9 @@ it('refuses a move into a terminal game, and issues no statement', function (Gam
 ]);
 
 /*
- * THE PLAYER WHO IS NOT TO MOVE (Req 3.5).
- *
- * `O` attempting the first Move of a Game. The acting Mark is compared against the
- * derived Mark_To_Move and against nothing else, which is also the whole of
- * Requirement 3.6 as far as this class can express it: there is no payload in scope
- * for a `mark` field to be read from, so "ignored outright" is structural here and
- * is asserted through the HTTP surface at task 6.6.
+ * The Player who is not to move (Req 3.5): `O` attempting the first Move of a Game.
+ * Req 3.6's "a payload `mark` is ignored" needs a payload and lives in
+ * `SubmitMoveTest`.
  */
 it('refuses a move from the player who is not to move, and issues no statement', function () {
     $game = submittingGame();
@@ -360,26 +310,17 @@ it('refuses a move from the player who is not to move, and issues no statement',
 });
 
 /*
- * A CELL THAT IS NOT AN INTEGER OR IS OUT OF RANGE (Req 4.4).
+ * A Cell that is not an integer or is out of range (Req 4.4).
  *
- * One outcome for every shape, because the design keeps one vocabulary for one
- * condition: `'4'` is refused as surely as `'banana'`, which is what makes task
- * 6.2's obligation not to cast the payload load-bearing — a cast would turn
- * `'banana'` into `0`, a legal Cell, and record a Move in the top-left corner.
+ * `'4'` must be refused as surely as `'banana'`, which is what makes the
+ * controller's obligation not to cast the payload load-bearing — a cast would turn
+ * `'banana'` into `0`, a legal Cell.
  *
- * The boundaries either side of the range are here (`-1` and `9`) rather than only
- * a distant value, since an off-by-one in the comparison is the mistake worth
- * catching.
- *
- * KNOWN LIMIT OF THE DIAGNOSIS, not of the coverage. Loosening the guard from
- * `is_int` to `is_numeric` does fail this test for the `4.0` and `4.5` cases, but it
- * fails as a `TypeError` raised deeper in — the value passes the guard and reaches
- * the private `commit(int $cellIndex)`, whose declared type rejects it — rather than
- * as the `invalid_move` expectation below with the message written for it. So the
- * failure is loud but the first line of it points at the wrong place. Left as it is
- * on purpose: the alternative is widening `commit()`'s parameter to `mixed` to get a
- * tidier failure message, which would remove a real type boundary in production code
- * to improve a diagnostic in a test.
+ * Limit of the diagnosis, not of the coverage: loosening `is_int` to `is_numeric`
+ * fails the `4.0` and `4.5` cases as a `TypeError` from the private `commit(int
+ * $cellIndex)` rather than as the expectation below, so the first line of the
+ * failure points at the wrong place. Widening `commit()` to `mixed` would tidy the
+ * message by removing a real type boundary in production code.
  */
 it('refuses a cell that is not an integer or is outside 0..8', function (mixed $cellIndex) {
     $game = submittingGame();
@@ -409,11 +350,8 @@ it('refuses a cell that is not an integer or is outside 0..8', function (mixed $
 ]);
 
 /*
- * AN OCCUPIED CELL (Req 4.3).
- *
- * Occupancy is read from the observed Board and from nothing else. The Cell is one
- * the *opponent* holds, so the refusal cannot be explained by a Player's own Mark
- * being in the way.
+ * An occupied Cell (Req 4.3). The Cell is one the *opponent* holds, so the refusal
+ * cannot be explained by a Player's own Mark being in the way.
  */
 it('refuses a cell that is already occupied in the observed board', function () {
     $game = submittingGame();
@@ -435,16 +373,9 @@ it('refuses a cell that is already occupied in the observed board', function () 
 });
 
 /*
- * TURN OWNERSHIP IS CHECKED BEFORE CELL VALIDITY — the ordering the design records
- * as a deliberate choice.
- *
- * `X` attempts a Move when `O` is to move, targeting a Cell that is *also* invalid
- * — occupied, out of range, and not an integer in turn. Every case must answer
- * `not_your_turn`, because a Player who cannot act must not learn from the outcome
- * whether the Cell they picked was occupied.
- *
- * Swapping the two guards leaves every other test in this file passing, which is
- * why this one exists.
+ * Turn ownership is checked before Cell validity, so a Player who cannot act does
+ * not learn whether the Cell they picked was occupied. Swapping the two guards
+ * leaves every other test in this file passing, which is why this one exists.
  */
 it('reports not_your_turn rather than invalid_move when the waiting player targets a bad cell', function (mixed $cellIndex) {
     $game = submittingGame();
@@ -464,41 +395,22 @@ it('reports not_your_turn rather than invalid_move when the waiting player targe
 ]);
 
 /*
- * THE PURITY INVARIANT, ASSERTED FROM THE QUERY LOG — no `SELECT`, ever.
+ * The purity invariant, asserted from the query log: no `SELECT`, ever.
  *
- * This is the mechanical statement of task 6.1's invariant that a single call can
- * make. `SubmitMove` issues NO read at all, so the absence is total rather than
- * merely well placed: there is no ordering to reason about, only two statements on
- * the accepted path and none on any refusal.
- *
- * The absence is what matters and it is why this test is written against the log
- * rather than against behaviour. A `$game->refresh()` or a fresh
- * `GameSnapshot::of()` at the top of `handle()` changes NO outcome in any
+ * Written against the log rather than against behaviour because a `$game->refresh()`
+ * or a fresh `GameSnapshot::of()` at the top of `handle()` changes NO outcome in any
  * single-request test — the re-read returns the state the snapshot already holds —
- * and it is exactly the edit that would retire the `conflict` path. This test sees
- * it; task 6.8 sees its consequence.
+ * while retiring the `conflict` path. `ConcurrencyTest` sees the consequence.
  *
- * ONE SQL-TEXT ASSERTION, NOT SIX. An earlier draft also matched `"state" = ?`,
- * `"winning_mark" = ?`, `"last_activity_at" = ?`, `cell_index` and `sequence_index`
- * in the two statements, and asserted the INSERT contained no `mark`. All of those
- * were removed. Each was already asserted BEHAVIOURALLY on the rows above — a
- * mutation dropping any of those writes fails an assertion about what the table
- * holds, which is the claim worth making — while the SQL-text form adds only a
- * coupling to SQLite's identifier quoting, so a driver change would redden the
- * suite without any behaviour changing. The `mark` one was worse than redundant: it
- * cannot fail unless the schema regains a column, which is `SchemaConstraintTest`'s
- * business and the migration's, not this file's.
+ * Only one SQL-text assertion. Everything else the statements write is asserted
+ * behaviourally on the rows above; matching identifiers in SQL text would only
+ * couple the suite to SQLite's quoting. The exception is `version_counter + 1`:
+ * replacing `DB::raw('version_counter + 1')` with `$game->version_counter + 1`
+ * yields 4 from an observed 3 and leaves every row assertion in this file passing,
+ * so this line is the only thing in the suite that catches it (Req 4.7).
  *
- * `version_counter + 1` is the exception and is why the query log is read for text
- * at all. Replacing `DB::raw('version_counter + 1')` with `$game->version_counter +
- * 1` yields 4 from an observed 3 and leaves EVERY row assertion in this file
- * passing — it was tried, and this one line is the only thing in the suite that
- * catches it. Requirement 4.7 is about the increment being the database's
- * arithmetic rather than a read-modify-write in PHP, and no assertion about the
- * resulting value can distinguish the two from a single request.
- *
- * `toContain()` is not used for the statement shapes: it is variadic over needles
- * and takes no message, so a message passed to it becomes a second needle and the
+ * `toContain()` is avoided for the statement shapes: it is variadic over needles and
+ * takes no message, so a message passed to it becomes a second needle and the
  * assertion passes unconditionally. A named boolean instead.
  */
 it('issues no select at any point, and exactly one insert and one update for an accepted move', function () {
@@ -523,38 +435,27 @@ it('issues no select at any point, and exactly one insert and one update for an 
         ->and($updates)->toHaveCount(1, "the Game row was not transitioned by exactly one UPDATE: {$trace}")
         ->and($statements[0])->toStartWith('insert', "the UPDATE of the Game row preceded the INSERT of the Move: {$trace}");
 
-    // Req 4.7. The one SQL-text claim in the file, and the only assertion anywhere
-    // that separates "the database incremented the column" from "PHP computed the
-    // successor of a value it had already read". See the note above for why the five
-    // sibling fragment assertions were removed and this one was not.
+    // Req 4.7. Separates "the database incremented the column" from "PHP computed
+    // the successor of a value it had already read".
     expect(str_contains($updates[0], 'version_counter + 1'))->toBeTrue(
         "the Version_Counter was not incremented by an expression the database evaluates (Req 4.7): {$trace}",
     );
 });
 
 /*
- * A UNIQUE VIOLATION ON EITHER INDEX IS `conflict` (Req 5.4).
+ * A unique violation on either index is `conflict` (Req 5.4). The mechanism is a
+ * caught violation rather than a check beforehand, since a check would be a read and
+ * would race.
  *
- * Both indexes mean the same thing — another Move landed after this request read
- * its snapshot — so both map to one outcome, and the mechanism is a caught
- * violation rather than a check beforehand. A check would be a read, and it would
- * race.
+ * The competing row is written after the snapshot is taken, which is what makes each
+ * index reachable on its own: the sequence-index case takes the very Sequence_Index
+ * this request will derive, and the cell-index case sits at a Sequence_Index this
+ * request will not touch — the schema permits the gap, per `SchemaConstraintTest` —
+ * leaving the Cell as the only collision.
  *
- * The competing row is written directly, AFTER the snapshot is taken, which is what
- * makes each index reachable on its own:
- *
- *   - the sequence-index case puts the other Move at the very Sequence_Index this
- *     request will derive;
- *   - the cell-index case puts it at a Sequence_Index this request will not touch —
- *     the schema permits a gap, as `SchemaConstraintTest` establishes — leaving the
- *     Cell as the only thing that collides.
- *
- * Task 6.8 reaches the first of these the way production does, by calling the
- * subject twice from one snapshot, and asserts the Move_List went from n to n+1.
- * This test is the narrower claim that each index maps to the outcome, and that a
- * losing request leaves the Game row exactly as it found it — so the
- * Version_Counter did not move and neither did the state, which is the rollback
- * doing its work.
+ * `ConcurrencyTest` reaches the first of these the way production does. This is the
+ * narrower claim that each index maps to the outcome and that the rollback leaves
+ * the Game row as it found it.
  */
 it('maps a unique violation on either index to conflict and leaves the game row untouched', function (int $competingSequence, int $competingCell, int $attempt) {
     $game = submittingGame();
@@ -583,23 +484,20 @@ it('maps a unique violation on either index to conflict and leaves the game row 
 ]);
 
 /*
- * A CORRUPT MOVE_LIST IS AN EXCEPTION, NOT AN OUTCOME — and the transaction is what
- * makes it leave nothing behind.
+ * A corrupt Move_List raises rather than answering an outcome, and the transaction
+ * is what makes it leave nothing behind.
  *
- * The fixture is a row that no path through `SubmitMove` can produce: five Moves in
- * which X has already completed the top row, on a Game still marked `active`. The
- * guards pass — the persisted state is not terminal, `O` is to move at length five,
- * and cell 5 is free — so the insert happens and the re-analysis then rejects the
- * appended list as a Move after a completed Winning_Line.
+ * The fixture is a row no path through `SubmitMove` can produce: five Moves in which
+ * X has already completed the top row, on a Game still marked `active`. All four
+ * guards pass, so the insert happens and the re-analysis then rejects the appended
+ * list. The two expectations before the `toThrow` guard that: a non-terminal
+ * observed list or a Mark_To_Move of X would refuse earlier and never reach the
+ * corruption.
  *
- * TWO CLAIMS, AND THE SECOND IS THE ONE THAT PINS THE TRANSACTION. The first is
- * that this raises `CorruptMoveListException` rather than answering `invalid_move`,
- * which would report a corrupt row to the Player as "that Cell is not available"
- * and leave the corruption to be met again on the next request. The second is that
- * the `moves` table is unchanged afterwards: the insert has already run when the
- * exception is thrown, so only the rollback can make that true. Take the
- * transaction away and the row survives — the design's "no state change" for this
- * failure would be false, and Property 12's atomicity claim would have no guard.
+ * Answering `invalid_move` instead would report a corrupt row to the Player as "that
+ * Cell is not available". The row assertions afterwards are the transaction's claim:
+ * the insert has already run when the exception is thrown, so only the rollback can
+ * make them true (Property 12).
  */
 it('raises rather than answering invalid_move when the appended move list is corrupt, and rolls the insert back', function () {
     $game = submittingGame();
@@ -620,14 +518,11 @@ it('raises rather than answering invalid_move when the appended move list is cor
 });
 
 /*
- * THE OUTCOME VOCABULARY IS SPELLED AS THE DESIGN SPELLS IT.
- *
- * These five strings are what the design's outcome table names, what task 6.2
- * flashes, and what `lib/outcomes.ts` will key its messages on — so a rename here
- * is a silent loss of the client's message rather than a compile failure. Task
- * 12.1 asserts all eleven rejection outcomes of the application are pairwise
- * distinct (Property 16); these five are distinct from one another by being cases
- * of one enum.
+ * The outcome vocabulary is spelled as the design spells it. These five strings are
+ * what the controller flashes and what `lib/outcomes.ts` keys its messages on, so a
+ * rename here is a silent loss of the client's message rather than a compile
+ * failure. Pairwise distinctness across all eleven rejection outcomes of the
+ * application (Property 16) lives elsewhere.
  */
 it('spells the five move rejection outcomes as the design does', function () {
     expect(array_map(static fn (MoveOutcome $case): string => $case->value, MoveOutcome::cases()))->toBe([

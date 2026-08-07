@@ -22,39 +22,28 @@ use Illuminate\Support\Str;
 // Validates: Requirements 6.3, 6.7, 7.12, 8.3, 8.4, 8.7
 //
 /*
- * Task 5.5 — `GameRepresentation`, the one serialiser producing `props.game`.
+ * `GameRepresentation`, the one serialiser producing `props.game`: the exact key
+ * set, the field types, the enum backing values in the encoded JSON, the
+ * derived-versus-persisted split, the state gate on `joinCode`/`joinUrl`, the
+ * absence of any token value, and the query count.
  *
- * A Feature test necessarily: the subject reads a `games` row, its `moves` rows
- * and its rematch back-reference, and `RefreshDatabase` supplies the schema that
- * `DB_DATABASE=:memory:` otherwise leaves absent.
+ * `RefreshDatabase` supplies the schema that `DB_DATABASE=:memory:` otherwise leaves
+ * absent.
  *
- * NAMED `GameRepresentationTest` SO AS NOT TO COLLIDE WITH TASK 12.4, which writes
- * `RepresentationTest` for Property 11. The split is deliberate and the boundary is
- * worth stating, because the two files would otherwise drift into duplicates.
+ * Excluded, and where that ground lives instead: Property 11 as a property — the
+ * representation against `RulesEngine::analyse` over generated Move_Lists, and the
+ * response being identical whatever Version_Counter the request presents — is
+ * `RepresentationTest`, and the version half needs the HTTP surface.
  *
- *   - HERE: the shape as it reaches the client. The exact key set, the field types,
- *     the enum backing values in the encoded JSON, the derived-versus-persisted
- *     split as a *construction* claim, the state gate on `joinCode`/`joinUrl`, the
- *     absence of any token value, and the query count.
- *   - TASK 12.4: Property 11 as a property — the representation equals
- *     `RulesEngine::analyse` over generated Move_Lists, the persisted
- *     `winning_mark` equals the derived winner across positions, and the response
- *     is identical whatever Version_Counter the request presents. The last of those
- *     needs the HTTP surface of task 5.6 and cannot be written here at all.
- *
- * Every assertion below runs against `json_decode(json_encode(...))` rather than
- * against the PHP array, so what is verified is the shape as it reaches the client
- * — an enum object that never became a string, or a nine-entry map that became a
- * JSON object instead of an array, fails here rather than in the browser.
+ * Every assertion runs against `json_decode(json_encode(...))` rather than the PHP
+ * array, so an enum object that never became a string, or a nine-entry map that
+ * became a JSON object, fails here rather than in the browser.
  */
 
 uses(RefreshDatabase::class);
 
 /**
  * Every key of the design's `GameProps`, in the design's order.
- *
- * Named as a constant rather than inlined so that the key-set assertion and the
- * type table below cannot disagree about what the shape is.
  *
  * @return list<string>
  */
@@ -79,16 +68,12 @@ function representationKeys(): array
 }
 
 /**
- * A saved Game with `$cellIndices` played into it, as `SubmitMove` would leave it:
- * contiguous sequence indices from zero, `state` and `winning_mark` written from
- * the derivation, and both token slots occupied so that a leak of either would have
- * something to leak.
+ * A saved Game with `$cellIndices` played into it, as `SubmitMove` would leave it,
+ * with both token slots occupied so a leak of either has something to leak.
  *
- * The Game_State and the winning Mark are computed here from `RulesEngine` rather
- * than passed in, because a fixture that let a test *state* the outcome would let a
- * test state one the board does not have — and the derived-versus-persisted split
- * is the thing under examination. The one test that needs a disagreement writes the
- * column itself, afterwards.
+ * `state` and `winning_mark` are computed from `RulesEngine` rather than passed in,
+ * so no test can state an outcome the board does not have. The one test that needs
+ * the two sources to disagree writes the column itself, afterwards.
  *
  * @param  list<int>  $cellIndices
  * @return array{Game, array{x: string, o: string}}
@@ -151,9 +136,8 @@ function representationWaitingGame(): Game
  * The representation of `$game` for `$mark`, decoded from its own JSON.
  *
  * The round trip is the point: `json_encode` is what the transport does to this
- * array, and asserting on the decoded result is the only way to verify that enums
- * left as backing strings and that `board` and `winningLines` are JSON arrays
- * rather than objects.
+ * array, and the decoded result is the only place enums-as-backing-strings and
+ * `board`/`winningLines` as JSON arrays rather than objects are observable.
  *
  * @return array<string, mixed>
  */
@@ -170,17 +154,11 @@ function representationOf(Game $game, Mark $mark): array
 }
 
 /*
- * THE EXACT KEY SET, AND THE EXACT TYPES.
- *
- * Asserted as equality on the key list rather than as a series of "has a key"
- * checks, so that BOTH failure directions fail here: a missing field, and an extra
- * one. The second matters more than it looks — an extra field is how a token hash,
- * a `last_activity_at` or a `rematch_of_game_id` would arrive in the client, and no
- * assertion about the fields the design names would notice it.
- *
- * The order is asserted too. It carries no meaning to a JSON consumer, and it is
- * pinned anyway because it is free to pin and it keeps this file and the design's
- * `GameProps` block diffable by eye.
+ * The exact key set and the exact types. Equality on the key list rather than a
+ * series of "has a key" checks, so an extra field fails too — an extra field is how
+ * a token hash, a `last_activity_at` or a `rematch_of_game_id` would reach the
+ * client. Order carries no meaning to a JSON consumer and is pinned only to keep
+ * this list diffable against the design's `GameProps` block.
  */
 it('produces exactly the fields of the design shape, in order, with the design types', function () {
     [$game] = representationGame([4, 0, 8]);
@@ -202,14 +180,13 @@ it('produces exactly the fields of the design shape, in order, with the design t
         ->and($props['winningLines'])->toBeArray()
         ->and($props['lastMoveAt'])->toBeString();
 
-    // The four nullable fields, on a Game that has none of them: `active`, so no
-    // join code and no join URL; not won, so no winning Mark; no rematch.
+    // The fixture is `active`, unwon and has no rematch, so all four nullable fields
+    // should be null.
     foreach (['winningMark', 'joinCode', 'joinUrl', 'rematchGameId'] as $nullable) {
         expect($props[$nullable])->toBeNull("{$nullable} is not null on a Game that has none");
     }
 
-    // Every cell of a three-Move board: two occupied by the two Marks, and the rest
-    // null. `'x'`/`'o'`/null and nothing else is the client's union.
+    // `'x'`/`'o'`/null and nothing else is the client's union for a cell.
     foreach ($props['board'] as $cellIndex => $occupant) {
         expect($occupant === null || $occupant === 'x' || $occupant === 'o')
             ->toBeTrue("board cell {$cellIndex} is not 'x', 'o' or null");
@@ -224,24 +201,20 @@ it('produces exactly the fields of the design shape, in order, with the design t
 });
 
 /*
- * ENUM BACKING VALUES, VERIFIED IN THE ENCODED JSON RATHER THAN ASSUMED.
- *
- * `Mark` and `GameState` are backed enums, and a backed enum passed to
- * `json_encode` does serialise as its backing value — but only because it is a
- * *backed* enum, and `WinningLine` in the same namespace is not. So this is checked
- * rather than reasoned about: every enum-valued field is compared against a literal
- * string, on all four Game_States, so a `->value` dropped anywhere would surface as
- * `{"value":"x"}` or as a JSON failure instead of a passing test.
+ * Enum backing values, checked in the encoded JSON rather than reasoned about.
+ * `json_encode` serialises `Mark` and `GameState` as their backing values only
+ * because they are *backed* enums; `WinningLine` in the same namespace is not. Every
+ * enum-valued field is compared against a literal on all four Game_States, so a
+ * dropped `->value` surfaces as `{"value":"x"}` rather than as a pass.
  */
 it('emits enum values as their backing strings for every game state', function () {
     $waiting = representationWaitingGame();
 
     expect(representationOf($waiting, Mark::X)['state'])->toBe('waiting_for_opponent');
 
-    // `markToMove` is the parity of the Move_List length in every one of these:
-    // two Moves → `x`, five → `o`, nine → `o`. Spelled out per case rather than
-    // computed, so a serialiser that derived it from something other than parity
-    // fails here.
+    // Expected `markToMove` is spelled out per case rather than computed from the
+    // list length, so a serialiser deriving it from something other than parity fails
+    // here: two Moves → `x`, five → `o`, nine → `o`.
     $cases = [
         'active' => [[4, 0], Mark::X, 'x'],
         'won' => [[0, 3, 1, 4, 2], Mark::X, 'o'],
@@ -258,30 +231,26 @@ it('emits enum values as their backing strings for every game state', function (
             ->and($props['yourMark'])->toBe($yourMark->value, "yourMark did not serialise as '{$yourMark->value}' on a {$state} Game");
     }
 
-    // The winning Mark, from the row, on the only state that has one.
+    // `won` is the only state carrying a winning Mark.
     [$won] = representationGame([0, 3, 1, 4, 2]);
 
     expect(representationOf($won, Mark::X)['winningMark'])->toBe('x', 'the persisted winning Mark did not serialise as its backing value');
 });
 
 /*
- * THE DERIVED-VERSUS-PERSISTED SPLIT, ASSERTED WHERE IT IS OBSERVABLE.
+ * The derived-versus-persisted split, made observable by forcing the two sources to
+ * disagree: a `won` row is written with `winning_mark = 'o'` on a board X won. The
+ * row's `'o'` must reach `winningMark` while the derivation supplies the lines and
+ * `markToMove`, unreconciled.
  *
- * The split is only testable at all because the two sources can be made to
- * disagree, so this test makes them disagree: a `won` row is written with
- * `winning_mark = 'o'` on a board X won. The representation must report the ROW's
- * `'o'` as `winningMark` while reporting the DERIVATION's lines and `markToMove`,
- * and it must not reconcile the two.
+ * `SubmitMove` writes that column only from `Analysis::winner()`, so this row is
+ * unreachable in the application and is written with `DB::table()` to get past the
+ * model's cast. It satisfies the `state = 'won'` ⇔ `winning_mark IS NOT NULL` CHECK,
+ * and it is the only thing that catches a serialiser reading `winningMark` from
+ * `Analysis::winner()`.
  *
- * That is a state the application cannot produce — `SubmitMove` writes the column
- * only from `Analysis::winner()` — which is precisely why it is written here by
- * hand, with `DB::table()` to get past the model's cast. It is not a scenario to
- * support; it is the only way to observe *which source each field came from*, and
- * without it a serialiser that read `winningMark` from `Analysis::winner()` would
- * pass every other test in this file.
- *
- * The `state = 'won'` ⇔ `winning_mark IS NOT NULL` CHECK is satisfied throughout,
- * so this is a row the schema permits.
+ * The first expectation is a non-vacuity guard: it rules out the fixture board not
+ * being won by X, in which case the two sources would agree.
  */
 it('reads winningMark from the row and the lines and mark to move from the analysis', function () {
     [$game] = representationGame([0, 3, 1, 4, 2]);
@@ -301,27 +270,20 @@ it('reads winningMark from the row and the lines and mark to move from the analy
         ->and($props['board'])->toBe(['x', 'x', 'x', 'o', 'o', null, null, null, null], 'board was not read from the Analysis')
         ->and($props['state'])->toBe('won', 'state was not read from the row');
 
-    // The other half of the split: `version` is the row's counter, not a count of
-    // Moves and not anything the Analysis knows.
+    // 41 does not match the Move count, so a `version` derived from the Move_List
+    // length fails here.
     DB::table('games')->where('id', $game->id)->update(['version_counter' => 41]);
 
     expect(representationOf($game->fresh() ?? $game, Mark::X)['version'])->toBe(41, 'version was not read from the row (Req 8.3)');
 });
 
 /*
- * `markToMove` IS STILL DEFINED IN A TERMINAL STATE (Req 4.1), AND `isYourTurn`
- * FOLLOWS IT WITHOUT A STATE CHECK.
+ * `markToMove` stays defined in a Terminal_State (Req 4.1) and `isYourTurn` follows
+ * it with no state check, so `isYourTurn` is true for O on a board X has won. That is
+ * intended: `Board.tsx`'s disabled condition is `!isYourTurn || state !== 'active'`,
+ * and nulling `markToMove` here would move a UI decision into the serialiser.
  *
- * The design's own example: X wins at Sequence_Index 4, so `markToMove` is `O` and
- * `isYourTurn` is TRUE for the O Player on a finished board. That is asserted here
- * as the intended behaviour rather than patched, because `Board.tsx`'s disabled
- * condition is `!isYourTurn || state !== 'active'` and its second half is what keeps
- * the board inert — nulling `markToMove` here would move a UI decision into the
- * serialiser.
- *
- * Both Players are checked on the same board, which is also the whole of
- * `isYourTurn == (markToMove == yourMark)` in one place: identical row, opposite
- * answers, and the only thing that differs is the Mark the token is bound to.
+ * Both Players are read off the same row, so the only difference is the Mark.
  */
 it('keeps markToMove defined in a terminal state and derives isYourTurn from it alone', function () {
     [$won] = representationGame([0, 3, 1, 4, 2]);
@@ -335,7 +297,7 @@ it('keeps markToMove defined in a terminal state and derives isYourTurn from it 
         ->and($forX['isYourTurn'])->toBeFalse('isYourTurn is true for X when markToMove is o')
         ->and($forO['isYourTurn'])->toBeTrue('isYourTurn is not markToMove === yourMark: it was suppressed because the Game is over, which is Board.tsx\'s job and not the serialiser\'s');
 
-    // A drawn board, where the ninth Move leaves `markToMove` as the parity of nine.
+    // The same claim on a full board: nine Moves, so `markToMove` is `o`.
     [$drawn] = representationGame([0, 1, 2, 4, 3, 5, 7, 6, 8]);
 
     $props = representationOf($drawn, Mark::O);
@@ -348,18 +310,12 @@ it('keeps markToMove defined in a terminal state and derives isYourTurn from it 
 });
 
 /*
- * BOTH LINES OF A DOUBLE WIN (Req 6.3, 6.5).
+ * Both lines of a double win (Req 6.3, 6.5). `X0 O1 X2 O3 X6 O5 X8 O7 X4` — X's
+ * ninth Move at cell 4 completes both diagonals, reachable in legal play.
  *
- * `X0 O1 X2 O3 X6 O5 X8 O7 X4` — X's ninth Move at cell 4 completes both diagonals,
- * which is why Requirement 6.3 is plural and why `winningLines` is a list of lines
- * rather than one line. Reachable in legal play, so this is a board the application
- * can actually produce.
- *
- * Asserted as an unordered set of cell triples, because the order the engine finds
- * the lines in is `WinningLine::cases()` order and is not part of the client's
- * contract; asserting the order would pin an implementation detail. The count is
- * asserted separately so that "contains both" cannot pass by reporting one line
- * twice.
+ * The lines are sorted before comparison because the engine finds them in
+ * `WinningLine::cases()` order, which is not part of the client's contract. The count
+ * is asserted separately so "contains both" cannot pass by reporting one line twice.
  */
 it('reports every completed winning line for a double win', function () {
     [$game] = representationGame([0, 1, 2, 3, 6, 5, 8, 7, 4]);
@@ -377,17 +333,13 @@ it('reports every completed winning line for a double win', function () {
 });
 
 /*
- * `joinCode` AND `joinUrl` ARE PRESENT ONLY WHILE `waiting_for_opponent`, AND NULL
- * IN ALL THREE OTHER STATES.
+ * `joinCode` and `joinUrl` only while `waiting_for_opponent`. All three other states
+ * are checked, not just `won`: a gate written against `isTerminal()` or an empty
+ * Move_List would leak the code on `active` and still pass.
  *
- * All three are asserted, not one: the gate is a single comparison, and a gate
- * written against `isTerminal()` or against an empty Move_List would leak the code
- * on `active` while passing a test that only checked `won`. `active` is the
- * dangerous one — the Game is in play and a third party who reads the code off a
- * shared screen has nothing to gain but should not be offered it.
- *
- * The code is the HYPHENATED display form while the column holds the unhyphenated
- * ten characters, so both forms are asserted against the same row.
+ * The column holds the unhyphenated ten characters while the prop is the hyphenated
+ * display form, so both are asserted against the same row. The `join_code` expectation
+ * in the loop rules out a null prop passing because the fixture has no code at all.
  */
 it('exposes the join code and join url only while waiting for an opponent', function () {
     $waiting = representationWaitingGame();
@@ -413,23 +365,17 @@ it('exposes the join code and join url only while waiting for an opponent', func
 });
 
 /*
- * `rematchGameId` IS PRESENT WHENEVER A REMATCH EXISTS (Req 7.12).
+ * `rematchGameId` whenever a rematch exists (Req 7.12).
  *
- * THE REMATCH ROW IS INSERTED DIRECTLY RATHER THAN THROUGH `CreateRematch`, AND
- * THAT IS NOW A CHOICE RATHER THAN A NECESSITY. It was written before task 7.1
- * existed; `CreateRematch` exists now, and this test still builds the row by hand,
- * because what is under test is the SERIALISER's treatment of a back-reference —
- * `$game->rematch?->id` — and routing that through the service would make a
- * representation test fail when the rematch service broke. `RematchTest` covers the
- * producer. The row is inserted the way ADR-010 says a rematch is:
- * `active`, `join_code` NULL, both token slots NULL, `rematch_of_game_id` pointing
- * back at the preceding Game.
+ * The rematch row is inserted by hand rather than through `CreateRematch` so a break
+ * in the rematch service does not fail a serialiser test; `RematchTest` covers the
+ * producer. The shape follows ADR-010: `active`, `join_code` NULL, both token slots
+ * NULL, `rematch_of_game_id` pointing back.
  *
- * The direction is the thing worth pinning. `rematch_of_game_id` lives on the
- * *rematch* row, so the preceding Game must report the rematch's id and the rematch
- * must report null — a serialiser that read `$game->rematch_of_game_id` instead of
- * the back-reference would have those two exactly the wrong way round, and would
- * pass any test that only looked at one of them.
+ * `rematch_of_game_id` lives on the *rematch* row, so the direction is what matters:
+ * the preceding Game reports the rematch's id and the rematch reports null. A
+ * serialiser reading `$game->rematch_of_game_id` instead of the back-reference gets
+ * those exactly the wrong way round, which is why both are asserted.
  */
 it('reports the rematch game id on the preceding game once a rematch exists', function () {
     [$preceding] = representationGame([0, 3, 1, 4, 2]);
@@ -454,18 +400,14 @@ it('reports the rematch game id on the preceding game once a rematch exists', fu
 });
 
 /*
- * `lastMoveAt` IS NULL ON AN EMPTY BOARD, AND ISO 8601 UTC OTHERWISE.
+ * `lastMoveAt` is null on an empty board and ISO 8601 UTC otherwise. The empty case
+ * catches the obvious wrong implementation, reading `games.last_activity_at`, which is
+ * populated at creation and would start the client's idle clock from the join rather
+ * than from a Move (Req 9.4).
  *
- * The empty case is the one that matters, because the obvious wrong implementation
- * — reading `games.last_activity_at`, which is populated at creation — reports a
- * timestamp for a Game nobody has moved in, and the client's idle indication would
- * then start its clock from the join rather than from a Move (Req 9.4).
- *
- * The format is verified by PARSING it rather than by matching a regex: the string
- * is read back as a date, compared for equality with the stored timestamp to the
- * second, and its zone is asserted to be UTC. A regex would accept
- * `2026-01-01T00:00:00Z` written from a local-time clock, which is the failure that
- * actually costs a minute of the idle threshold.
+ * The format is verified by parsing rather than by regex: a regex would accept
+ * `2026-01-01T00:00:00Z` written off a local-time clock, which silently costs a
+ * minute of the idle threshold.
  */
 it('reports lastMoveAt as ISO 8601 UTC, and null when no move exists', function () {
     $waiting = representationWaitingGame();
@@ -495,21 +437,15 @@ it('reports lastMoveAt as ISO 8601 UTC, and null when no move exists', function 
 });
 
 /*
- * NO TOKEN VALUE ANYWHERE IN THE OUTPUT (Req 8.7).
+ * No token value anywhere in the output (Req 8.7).
  *
- * Walked over the SERIALISED JSON rather than checked field by field, because a
- * field-by-field check only covers the fields somebody thought of: a nested value,
- * an extra key, or a hash concatenated into a URL would all survive it. Searching
- * the encoded string for the four secrets — two raw tokens and their two digests —
- * covers the whole payload including anything a future field adds.
+ * The encoded string is searched rather than the fields checked one by one, so a
+ * nested value, an extra key or a hash concatenated into a URL is covered too. The
+ * digests are searched for as well as the raw tokens because a hash in the payload is
+ * a verifier for an offline guess.
  *
- * The digests are searched for as well as the raw values, because "not even hashed"
- * is the actual requirement: a hash in the payload is a verifier for an offline
- * guess, and there is no reason for the client to hold one.
- *
- * The search is also confirmed to be capable of failing, by finding a value that IS
- * in the payload. Without that, a typo in the haystack would make every assertion
- * here vacuous.
+ * The Game_Id search afterwards is the non-vacuity guard: it rules out a typo'd
+ * haystack, in which every absence above would hold for free.
  */
 it('excludes every player token value and digest from the serialised representation', function () {
     [$game, $raw] = representationGame([4, 0, 8]);
@@ -526,35 +462,28 @@ it('excludes every player token value and digest from the serialised representat
     foreach ($secrets as $description => $secret) {
         expect($secret)->not->toBe('', "{$description} is empty, so searching for it would pass vacuously");
 
-        // `str_contains` rather than `toContain()`, which takes variadic needles
-        // and no message argument — a message passed there is silently asserted as
-        // a second needle.
+        // `str_contains` rather than `toContain()`, which takes variadic needles and
+        // no message argument — a message passed there is silently asserted as a
+        // second needle.
         expect(str_contains($encoded, $secret))->toBeFalse("{$description} appears in the game representation (Req 8.7)");
     }
 
-    // The search works: a value that is in the payload is found by the same means.
     expect(str_contains($encoded, $game->id))->toBeTrue('the Game_Id is absent from the payload, so the searches above prove nothing');
 
-    // And no column name that could only have come from a token slot is present.
+    // Column names that could only have come from a token slot.
     foreach (['token', 'hash', 'x_token_hash', 'o_token_hash'] as $fragment) {
         expect(stripos($encoded, $fragment))->toBeFalse("the representation mentions '{$fragment}' (Req 8.7)");
     }
 });
 
 /*
- * THE SIGNATURE CANNOT EXPRESS A CONDITIONAL REQUEST (Req 8.4, ADR-002).
+ * The signature cannot express a conditional request (Req 8.4, ADR-002). Asserted by
+ * reflection because the claim is an absence with no behaviour to observe: a third
+ * parameter carrying a client Version_Counter is the shape a 304 path needs, and a
+ * nullable return is the shape "unchanged" needs.
  *
- * Asserted by reflection, because the claim is about an ABSENCE and there is no
- * behaviour to observe: `of()` takes a snapshot and a Mark, and nothing else. A
- * third parameter carrying a client Version_Counter is the shape a 304 path would
- * need, and a nullable return is the shape "unchanged" would need — so both are
- * pinned here rather than left to prose. The HTTP half of Requirement 8.4 (no
- * ETag, identical response whatever version the request presents) needs task 5.6's
- * routes and belongs to task 12.4.
- *
- * The behavioural half that IS available is asserted alongside: two calls on the
- * same row produce identical output, so nothing in the serialiser is stateful or
- * remembers what it last sent.
+ * The HTTP half of Req 8.4 — no ETag, identical response whatever version the request
+ * presents — needs the game route and lives in `RepresentationTest`.
  */
 it('takes no client version and returns the whole representation on every call', function () {
     $method = new ReflectionMethod(GameRepresentation::class, 'of');
@@ -575,16 +504,13 @@ it('takes no client version and returns the whole representation on every call',
 });
 
 /*
- * THE QUERY COST, COUNTED RATHER THAN CLAIMED.
+ * The query cost, counted rather than claimed, because this runs on the polling path
+ * (Req 8.1). `GameRepresentation::of` issues two of its own — the rematch
+ * back-reference and the last Move's timestamp — on top of the one `GameSnapshot::of`
+ * issues for the Move_List, so three per poll.
  *
- * This runs on the polling path, twice every two seconds per Game (Req 8.1), so the
- * number is worth pinning: `GameRepresentation::of` itself issues TWO queries — the
- * rematch back-reference and the last Move's timestamp — on top of the one
- * `GameSnapshot::of` issues for the Move_List. Three per poll in `App\Games`.
- *
- * The rematch lookup is honoured from a loaded relation, so a caller that eager-loads
- * pays two instead of three; that is asserted too, since it is the only lever a
- * caller has and a change that stopped honouring it would be invisible otherwise.
+ * The rematch lookup is honoured from a loaded relation, which is the only lever a
+ * caller has; a change that stopped honouring it would otherwise be invisible.
  */
 it('issues two queries of its own, one of which an eager-loading caller can avoid', function () {
     [$game] = representationGame([4, 0, 8]);
@@ -613,8 +539,8 @@ it('issues two queries of its own, one of which an eager-loading caller can avoi
     });
 
     expect($lazy)->toBe(2, 'GameRepresentation::of no longer issues exactly two queries of its own; the polling path cost has changed')
-        // The eager call is: the row, the rematch eager load, the Move_List read,
-        // and the last-Move read. Four, with the rematch lookup folded into the
-        // eager load rather than issued by the serialiser.
+        // Four: the row, the rematch eager load, the Move_List read and the last-Move
+        // read, with the rematch lookup folded into the eager load rather than issued
+        // by the serialiser.
         ->and($eager)->toBe(4, 'the eager-loaded rematch relation is no longer honoured, so a caller has no way to avoid that query');
 });

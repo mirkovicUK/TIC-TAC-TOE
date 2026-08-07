@@ -4,11 +4,10 @@ use Illuminate\Support\Env;
 use Illuminate\Support\Facades\DB;
 
 /*
- * Task 1.4 / ADR-004. The four PRAGMAs are asserted against a temporary
- * file-backed database built from the application's own `sqlite` connection
- * config, because the suite itself runs on `:memory:`, where `journal_mode` is
- * always `memory` and WAL is unavailable. Cloning the config is what makes this
- * a check of config/database.php rather than of the probe.
+ * ADR-004. The four PRAGMAs are asserted against a temporary file-backed database
+ * cloned from the application's own `sqlite` connection config, because the suite
+ * runs on `:memory:`, where `journal_mode` is always `memory` and WAL unavailable.
+ * Cloning the config is what makes this a check of config/database.php.
  */
 it('applies the configured pragmas to a sqlite connection', function () {
     $file = tempnam(sys_get_temp_dir(), 'pragma').'.sqlite';
@@ -41,9 +40,9 @@ it('applies the configured pragmas to a sqlite connection', function () {
 
 /*
  * The suite forces SESSION_DRIVER=array, so the shipped defaults are asserted by
- * re-reading config/session.php with both variables absent — which is also the
- * case that matters: a deployment without them must still get database sessions
- * with a 30-day lifetime.
+ * re-reading config/session.php with both variables absent — also the case that
+ * matters: a deployment without them must still get database sessions with a 30-day
+ * lifetime.
  */
 it('defaults to database sessions in the default sqlite file with a 30 day lifetime', function () {
     $names = ['SESSION_DRIVER', 'SESSION_LIFETIME'];
@@ -61,22 +60,20 @@ it('defaults to database sessions in the default sqlite file with a 30 day lifet
     } finally {
         foreach ($originals as $name => $value) {
             if ($value !== null) {
-                // RESTORED THROUGH THE RAW STORES AND NOT `Env::getRepository()->set()`,
-                // WHICH LEAKED THE VALUE INTO EVERY LATER TEST. `set()` goes through
-                // dotenv's `ImmutableWriter`, which records the name in its `$loaded`
-                // registry; that registry is what tells the writer a variable came from
-                // `.env` rather than from the environment. `Env::getRepository()` is
-                // memoized for the process, so the registry outlives this test, and the
-                // next test's `LoadEnvironmentVariables` is then *permitted* to overwrite
-                // `SESSION_DRIVER` with `.env`'s `database` — discarding the `array`
-                // driver `phpunit.xml` sets, for the whole rest of the run.
+                // Restored through the raw stores, not `Env::getRepository()->set()`, which
+                // leaked the value into every later test. `set()` goes through dotenv's
+                // `ImmutableWriter`, which records the name in its `$loaded` registry — the
+                // registry that tells the writer a variable came from `.env` rather than the
+                // environment. `Env::getRepository()` is memoized for the process, so the
+                // registry outlives this test and the next test's `LoadEnvironmentVariables`
+                // is then permitted to overwrite `SESSION_DRIVER` with `.env`'s `database`,
+                // discarding the `array` driver `phpunit.xml` sets for the rest of the run.
                 //
-                // That made the suite order-dependent rather than merely untidy:
-                // `ConcurrencyTest` suspends and resumes a Player_Session, which
-                // `ArraySessionHandler` supports and `DatabaseSessionHandler` cannot
-                // within one process, so it passed only because `C` sorts before `S`.
-                // Writing `$_ENV` and `putenv` directly restores what the reads see
-                // while leaving the registry untouched.
+                // That made the suite order-dependent: `ConcurrencyTest` suspends and resumes
+                // a Player_Session, which `ArraySessionHandler` supports and
+                // `DatabaseSessionHandler` cannot within one process, so it passed only
+                // because `C` sorts before `S`. Writing `$_ENV` and `putenv` directly
+                // restores what the reads see while leaving the registry untouched.
                 $_ENV[$name] = $value;
                 putenv("{$name}={$value}");
             }

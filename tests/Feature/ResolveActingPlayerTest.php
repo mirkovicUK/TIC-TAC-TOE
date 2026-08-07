@@ -28,44 +28,27 @@ use function Pest\Laravel\withoutExceptionHandling;
 // Validates: Requirements 3.3, 3.4, 3.9, 3.10, 9.6, 13.6, 13.7, 13.8
 //
 /*
- * Task 5.3 — the `ResolveActingPlayer` middleware.
+ * The `ResolveActingPlayer` middleware.
  *
- * THIS FILE DECLARES ITS OWN ROUTES RATHER THAN USING THE APPLICATION'S, AND STILL
- * SHOULD. It was written before any game-scoped route existed, which is no longer
- * the reason: `GET /games/{game}` (5.6), the move route (6.2) and the rematch route
- * (7.1) are all registered now, and this file goes on declaring its own because the
- * handlers it declares RECORD WHETHER THEY RAN. That is what makes the Requirement
- * 3.9 short-circuit observable at all — a real controller can only be observed by
- * what it returned, so a refusal and a controller that ran and then refused are
- * indistinguishable through it. `EntryRoutesTest` and the group-5 onwards feature
- * tests cover the real routes; what is pinned here is the middleware.
+ * This file declares its own stand-in routes rather than using the application's
+ * because the handlers it declares record whether they ran, which is what makes the
+ * Req 3.9 short-circuit observable. A real controller can only be observed by what
+ * it returned, so a refusal and a controller that ran and then refused are
+ * indistinguishable through it.
  *
- * The routes are declared with `->middleware('web')` as well as the alias, because
- * the middleware reads the session (through `PlayerTokens`) and because the `web`
- * group is where `SubstituteBindings` lives — and the interaction with route-model
- * binding is one of the things this file pins.
+ * The routes carry `->middleware('web')` as well as the alias: the middleware reads
+ * the session through `PlayerTokens`, and the `web` group is where
+ * `SubstituteBindings` lives, whose ordering this file pins below.
  *
- * WHAT 5.6 AND 12.2 STILL HAVE TO COVER, stated plainly rather than assumed:
+ * Excluded, and where that ground lives instead: `NotAPlayer.tsx` keyed by outcome
+ * and the exception renderer are `ShowGameController`'s tests; that the real routes
+ * carry this middleware and that their controllers avoid type-hinting
+ * `App\Models\Game` is the route-audit test's; Property 7 across every Game_State
+ * and every game-scoped route needs those routes and is the same audit's.
  *
- *   - The rendered page. This file asserts the STATUS and that no game data
- *     reaches the body; `NotAPlayer.tsx` keyed by outcome, and the `outcome` prop
- *     reaching it, are 5.6's, and the renderer for `GameNotVisibleException` is
- *     registered there.
- *   - The real routes. This file's routes are stand-ins, so nothing here can
- *     assert that `GET /games/{game}` and `POST /games/{game}/moves` actually
- *     carry this middleware, nor that their controllers avoid type-hinting
- *     `App\Models\Game`. That is 5.6's and 6.2's to get right and 12.2's to
- *     verify across every route naming a Game_Id.
- *   - Property 7 in full: every Game_State against every such route, which needs
- *     those routes to exist. Task 12.2.
- *
- * A note on the style, since this is the first file in the suite to make HTTP
- * requests and therefore sets the convention. The requests go through
- * `Pest\Laravel\get()` and `post()` rather than `get()`. Inside a Pest
- * closure `$this` is a `TestCall` as far as static analysis is concerned, so
- * `get()` is an undefined method to PHPStan and every request would need an
- * ignore; the imported functions are declared to return `TestResponse` and analyse
- * cleanly. They are the same calls on the same test case.
+ * Requests go through the imported `Pest\Laravel\get()` and `post()` because inside
+ * a Pest closure `$this` is a `TestCall` to static analysis, so `$this->get()` is an
+ * undefined method to PHPStan. Same calls on the same test case.
  */
 
 uses(RefreshDatabase::class);
@@ -90,16 +73,13 @@ function middlewareGame(GameState $state = GameState::Active): Game
 }
 
 /**
- * Gives `$game` a Player in `$mark`'s slot WITHOUT putting anything in this
- * session: mint, assign the hash, save, and never call `remember()`.
+ * Gives `$game` a Player in `$mark`'s slot without putting anything in this session:
+ * mint, assign the hash, save, and never call `remember()`.
  *
- * This is the fixture almost every test below needs, and it has to be built this
- * way rather than with `PlayerTokens::issue()`. In a feature test the session the
- * assertions run against is the same session the request under test reads, so
- * `issue()` would hand the requesting browser the very credential the test is
- * asserting it does not have — turning row 5 into row 1. Minting and assigning
- * the hash alone gives what these tests actually mean by "this Game has a player,
- * and it is not you".
+ * It cannot use `PlayerTokens::issue()`. In a feature test the session the
+ * assertions run against is the session the request under test reads, so `issue()`
+ * would hand the requesting browser the very credential the test asserts it does not
+ * have — turning row 5 into row 1.
  */
 function middlewarePlayerHash(Game $game, Mark $mark): MintedToken
 {
@@ -119,10 +99,9 @@ function middlewarePlayerHash(Game $game, Mark $mark): MintedToken
  * The types through which a Board, a Move_List, a Game_State or a Mark_To_Move
  * could be reached, as fully qualified names.
  *
- * Compared exactly rather than by substring, deliberately: `App\Games` contains
- * the word "Game", so a substring test would flag `VisibilityOutcome` — the one
- * type a refusal is *supposed* to carry — and would pass only by being wrong in
- * two places at once.
+ * Compared exactly rather than by substring: `App\Games` contains the word "Game",
+ * so a substring test would flag `VisibilityOutcome`, the one type a refusal is
+ * supposed to carry.
  *
  * @return list<string>
  */
@@ -159,14 +138,9 @@ function middlewareTombstone(): string
 /**
  * Declares the two stand-in routes and returns the recorder the handlers write to.
  *
- * The recorder is what makes Requirement 3.9 assertable without `SubmitMove`: the
- * handler stands in for EVERY downstream condition — the lifecycle guards, the
+ * The handler stands in for every downstream condition — the lifecycle guards, the
  * `cell_index` check, the snapshot read — because all of them live behind it in the
- * pipeline. If it did not run, none of them was evaluated.
- *
- * The GET route also reports back what `ResolveActingPlayer::resolved()` handed it,
- * which is the seam task 5.6's controllers use, exercised here rather than
- * described.
+ * pipeline. If it did not run, none of them was evaluated (Req 3.9).
  *
  * @return object{ran: bool, mark: string|null, gameId: string|null}
  */
@@ -203,12 +177,9 @@ function middlewareRecorder(): object
 }
 
 /*
- * ROW 1 THROUGH THE PIPELINE — the request reaches the handler, and the handler
- * gets the acting player through the seam 5.6 will use.
- *
- * The Mark and the Game come back from `ResolveActingPlayer::resolved()`, so this
- * asserts the whole path: the middleware read the raw `{game}` parameter, resolved
- * it, put a `ResolvedPlayer` on the request, and the accessor typed it back.
+ * Row 1 through the pipeline. The Mark and the Game come back from
+ * `ResolveActingPlayer::resolved()`, so this covers the whole path: the raw `{game}`
+ * parameter read, resolved, put on the request, and typed back by the accessor.
  */
 it('row 1: passes an authorised player through and hands the controller the acting mark', function () {
     $tokens = new PlayerTokens;
@@ -229,11 +200,8 @@ it('row 1: passes an authorised player through and hands the controller the acti
 });
 
 /*
- * ROWS 2 AND 5 — 403, and the handler never runs.
- *
- * Both rows that answer `not_authorised` are driven through the pipeline, so the
- * status and the short-circuit are asserted for each rather than for one and
- * assumed for the other.
+ * Rows 2 and 5 — 403, and the handler never runs. Both are driven through the
+ * pipeline so neither is assumed from the other.
  */
 it('rows 2 and 5: answers 403 and runs no handler for a request with no valid token', function () {
     $tokens = new PlayerTokens;
@@ -258,8 +226,7 @@ it('rows 2 and 5: answers 403 and runs no handler for a request with no valid to
 });
 
 /*
- * ROW 3 — 410. Requirement 13.6's distinct outcome, expressed by the transport as
- * Gone.
+ * Row 3 — 410. Req 13.6's distinct outcome, expressed by the transport as Gone.
  */
 it('row 3: answers 410 for a session holding a token for a swept game', function () {
     $tokens = new PlayerTokens;
@@ -275,11 +242,7 @@ it('row 3: answers 410 for a session holding a token for a swept game', function
 });
 
 /*
- * ROWS 4, 6 AND 7 — 404.
- *
- * The three rows that answer `not_recognised`: a token held for an id that was
- * never a Game, and a tokenless request against a swept id and against an id that
- * never existed.
+ * Rows 4, 6 and 7 — the three rows that answer `not_recognised` with 404.
  */
 it('rows 4, 6 and 7: answers 404 for every not_recognised row', function () {
     $tokens = new PlayerTokens;
@@ -303,12 +266,10 @@ it('rows 4, 6 and 7: answers 404 for every not_recognised row', function () {
 });
 
 /*
- * ROWS 6 AND 7, AS AN EQUIVALENCE, THROUGH THE PIPELINE.
- *
- * The resolver-level equivalence is in `GameResolverTest`; this is the same claim
- * about what a tokenless caller can actually observe over HTTP. The two responses
- * are compared to each other — status and body — so an edit that gave row 6 its own
- * answer fails here even if the individual expectations were updated to match.
+ * Rows 6 and 7 as an equivalence over HTTP; the resolver-level equivalence is in
+ * `GameResolverTest`. The two responses are compared to each other rather than to
+ * fixed expectations, so an edit that gave row 6 its own answer fails here even if
+ * the individual expectations were updated to match.
  */
 it('rows 6 and 7: the two responses are indistinguishable to a tokenless caller', function () {
     middlewareRecorder();
@@ -319,22 +280,13 @@ it('rows 6 and 7: the two responses are indistinguishable to a tokenless caller'
     $sweptResponse = get('/_probe/games/'.$swept);
     $neverWasResponse = get('/_probe/games/'.$neverWas);
 
-    // THE COMPARISON IS MADE WITH EACH RESPONSE'S OWN Game_Id NORMALISED OUT, and
-    // that concession was forced by task 5.6 rather than chosen. Since a refusal
-    // renders `NotAPlayer.tsx`, the response body is an Inertia page object, and an
-    // Inertia page object always carries the URL of the request it answers — which
-    // for these two requests is `/_probe/games/<the id the caller asked for>`. So
-    // the two bodies differ by construction, in exactly one place, in the one string
-    // the caller supplied itself.
-    //
-    // That discloses nothing, and the earlier form of this assertion — the raw
-    // bodies compared byte for byte, plus "the body must not echo the id" — was
-    // written at task 5.3 against the framework's own bodyless 404 and is not
-    // satisfiable once a page is rendered. What the requirement actually forbids is
-    // a caller learning whether an id WAS a Game, and substituting a fixed
-    // placeholder for each response's own id leaves every other byte under
-    // assertion: the status, the component name, the props, the version. A row 6
-    // that gained its own outcome, its own copy or an extra prop still fails here.
+    // Each response's own Game_Id is normalised out before the comparison. A refusal
+    // renders `NotAPlayer.tsx`, so the body is an Inertia page object, and a page
+    // object always carries the URL of the request it answers — here
+    // `/_probe/games/<the id the caller asked for>`. The two bodies therefore differ
+    // by construction, in one place, in the one string the caller supplied itself.
+    // Substituting a placeholder leaves every other byte under assertion: status,
+    // component name, props, version.
     $sweptBody = str_replace($swept, '{game-id}', (string) $sweptResponse->getContent());
     $neverWasBody = str_replace($neverWas, '{game-id}', (string) $neverWasResponse->getContent());
 
@@ -346,21 +298,18 @@ it('rows 6 and 7: the two responses are indistinguishable to a tokenless caller'
         'the two response bodies differ other than by the Game_Id the caller itself supplied, so the tombstone is observable to a caller holding no token',
     );
 
-    // And the normalisation is not what makes the two equal: both bodies really do
-    // contain the placeholder, so each response echoed its own id and neither echoed
-    // the other's.
+    // Non-vacuity: rules out the normalisation itself making the two equal. Each
+    // body really does carry the placeholder, so each echoed its own id and neither
+    // echoed the other's.
     expect(str_contains($sweptBody, '{game-id}'))->toBeTrue('the swept response does not carry its own Game_Id, so normalising it out proves nothing')
         ->and(str_contains($sweptBody, $neverWas))->toBeFalse('the swept response mentions the id that never existed')
         ->and(str_contains($neverWasBody, $swept))->toBeFalse('the never-existed response mentions the swept id');
 });
 
 /*
- * THE THREE `not_authorised` MODES, MUTUALLY INDISTINGUISHABLE OVER HTTP
- * (Req 9.6).
- *
- * The Web_Client renders one indication for all three, so all three responses must
- * be the same response: same status, same body. Compared pairwise, so no mode is
- * privileged as the expected one.
+ * The three `not_authorised` modes, mutually indistinguishable over HTTP (Req 9.6).
+ * The `resolve()` expectation is a non-vacuity guard: it rules out mode 3's token
+ * not actually being bound to the other Game, which would make it mode 2 again.
  */
 it('answers the three not_authorised modes with indistinguishable responses', function () {
     $tokens = new PlayerTokens;
@@ -393,21 +342,13 @@ it('answers the three not_authorised modes with indistinguishable responses', fu
 });
 
 /*
- * REQUIREMENT 3.9 THROUGH THE PIPELINE — authorisation precedes validity, and
- * nothing downstream is evaluated.
+ * Req 3.9 through the pipeline: authorisation precedes validity.
  *
- * The assertion does not depend on `SubmitMove` existing. The stand-in handler is
- * downstream of the middleware, so it is downstream of nothing and everything at
- * once: every move-validity and lifecycle condition the design specifies lives
- * behind it, and if it did not run, none of them ran either.
- *
- * Two payloads are posted to the move-shaped route, one that would be a valid Move
- * and one whose `cell_index` is out of range, against a Game in `waiting_for_opponent`
- * — a state whose own guard would answer `game_not_started`. All three of those
- * conditions are visible to a request that got past this middleware, and none of
- * them is reachable: both requests answer 403 with the same body, and the handler
- * never ran. "Whether or not the request would otherwise have been a valid Move"
- * is Property 7's own phrase, and the two payloads are it.
+ * Two payloads go to the move-shaped route, one that would be a valid Move and one
+ * whose `cell_index` is out of range, against a Game in `waiting_for_opponent` whose
+ * own guard would answer `game_not_started`. Three conditions a request past this
+ * middleware would meet, none of them reachable — which is Property 7's "whether or
+ * not the request would otherwise have been a valid Move".
  */
 it('evaluates authorisation before any move-validity or lifecycle condition', function () {
     $game = middlewareGame(GameState::WaitingForOpponent);
@@ -428,14 +369,9 @@ it('evaluates authorisation before any move-validity or lifecycle condition', fu
 });
 
 /*
- * THE REFUSAL CARRIES THE OUTCOME AND NOTHING ELSE — the seam task 5.6 renders
- * from.
- *
- * With the exception handler disabled the middleware's own throw is observable, so
- * this asserts what 5.6 receives: the `VisibilityOutcome` and the status, on one
- * exception, with no Game anywhere on it. That is the whole interface between this
- * task and the `NotAPlayer.tsx` page, and it is asserted rather than described
- * because 5.6 cannot be written against a seam that is only documented.
+ * The refusal carries the outcome and nothing else — the seam `NotAPlayer.tsx` is
+ * rendered from. `withoutExceptionHandling()` is what makes the middleware's own
+ * throw observable instead of the rendered response.
  */
 it('throws one exception carrying the outcome and the status, with no game on it', function () {
     $game = middlewareGame(GameState::Won);
@@ -470,10 +406,9 @@ it('throws one exception carrying the outcome and the status, with no game on it
         ->and($thrown->getStatusCode())->toBe(403, 'the status does not match the outcome the design assigns it')
         ->and($thrown->getMessage())->toBe('not_authorised');
 
-    // Nothing about the Game is reachable from the refusal. Asserted over the
-    // declared property types rather than by naming the properties a defect would
-    // have added, so a `?Game` or a `GameSnapshot` bolted on later fails here
-    // whatever it is called (Req 3.10).
+    // Asserted over the declared property types rather than by naming properties a
+    // defect would have added, so a `?Game` or a `GameSnapshot` bolted on later fails
+    // here whatever it is called (Req 3.10).
     $exposed = [];
 
     foreach ((new ReflectionObject($thrown))->getProperties() as $property) {
@@ -488,9 +423,8 @@ it('throws one exception carrying the outcome and the status, with no game on it
 
     expect($exposed)->toBe([], 'the refusal carries game state (Req 3.10): '.implode(', ', $exposed));
 
-    // The three outcomes map to the three statuses the design's outcome table
-    // assigns, and the mapping is exhaustive over the enum — so this cannot drift
-    // if a fourth outcome is ever added.
+    // Built by iterating the enum, so adding a fourth outcome fails here rather than
+    // silently escaping the mapping.
     $statuses = [];
 
     foreach (VisibilityOutcome::cases() as $outcome) {
@@ -505,17 +439,12 @@ it('throws one exception carrying the outcome and the status, with no game on it
 });
 
 /*
- * NO GAME DATA IN A REFUSED RESPONSE (Req 3.10, Property 7).
+ * No game data in a refused response (Req 3.10, Property 7). Body and headers are
+ * both scanned. The Game_Id is left out of the scan deliberately: it is not game
+ * state, and it arrived in the URL of the request being refused.
  *
- * A Game in a terminal state with a Move_List and a winning Mark is refused, and
- * the whole response — body and headers — is scanned for every fact Requirement
- * 3.10 excludes: the Game_State, the winning Mark, the Move_List, the Join_Code and
- * the Player_Token hash. The Game_Id is excluded from the scan deliberately: it is
- * not game state, and it arrived in the URL of the request being refused.
- *
- * This is the response-level counterpart of the resolver-level structural test.
- * Both are worth having: one says the rejection VALUE cannot carry game state, this
- * one says the response as actually rendered does not.
+ * The structural test above says the rejection value cannot carry game state; this
+ * says the response as rendered does not.
  */
 it('renders no board, move list, game state or mark in a refused response', function () {
     $game = middlewareGame(GameState::Won);
@@ -536,9 +465,9 @@ it('renders no board, move list, game state or mark in a refused response', func
 
     $rendered = (string) $response->getContent().' '.json_encode($response->headers->all());
 
-    // `str_contains` rather than `toContain()`, which takes variadic needles
-    // and no message argument — a message passed there is silently asserted as
-    // a second needle.
+    // `str_contains` rather than `toContain()`, which takes variadic needles and no
+    // message argument — a message passed there is silently asserted as a second
+    // needle. The empty-body expectation rules out the scan passing vacuously.
     expect($response->getStatusCode())->toBe(403)
         ->and($rendered)->not->toBe('', 'the response is empty, so this scan asserts nothing')
         ->and(str_contains($rendered, (string) $game->join_code))->toBeFalse('the refused response discloses the Join_Code')
@@ -550,26 +479,16 @@ it('renders no board, move list, game state or mark in a refused response', func
 });
 
 /*
- * THE HAZARD, PINNED: ROUTE-MODEL BINDING ANSWERS BEFORE THIS MIDDLEWARE RUNS.
+ * Ordering hazard: route-model binding answers before this middleware runs.
+ * `SubstituteBindings` is in the `web` group, and group middleware runs before route
+ * middleware, so a handler type-hinting `App\Models\Game` on a `{game}` parameter
+ * resolves the model first and aborts with the framework's own 404 for any id with no
+ * row. That collapses rows 3, 4, 6 and 7 into one 404 and destroys the
+ * `game_expired` distinction Req 13.6 requires.
  *
- * `SubstituteBindings` is in the `web` group and group middleware runs before
- * route middleware, so a handler type-hinting `App\Models\Game` on a `{game}`
- * parameter resolves the model first — and aborts with the framework's own 404 for
- * any id with no row. That would collapse rows 3, 4, 6 and 7 into one 404 and
- * destroy the `game_expired` distinction Requirement 13.6 requires.
- *
- * The two halves below are the whole reason this test exists rather than a comment
- * saying "don't do that":
- *
- *   - A bound route answers 404 where the unbound one answers 410, so the loss is
- *     demonstrated rather than asserted about.
- *   - The middleware does not run at all on the bound route, which is what makes
- *     it a loss no assertion inside the middleware could catch.
- *
- * Task 5.6 and task 6.2 therefore may not type-hint `App\Models\Game` on these
- * routes, and may register no `Route::model()` or `Route::bind()` for the name
- * `game`. They use `ResolveActingPlayer::resolved($request)` instead, which
- * supplies the acting Mark as well as the row.
+ * So no game-scoped route may type-hint `App\Models\Game` or register a
+ * `Route::model()`/`Route::bind()` for the name `game`; they use
+ * `ResolveActingPlayer::resolved($request)`, which supplies the acting Mark too.
  */
 it('is preceded by route-model binding, which is why no game-scoped route may type-hint the model', function () {
     $tokens = new PlayerTokens;
@@ -590,11 +509,9 @@ it('is preceded by route-model binding, which is why no game-scoped route may ty
 
     get('/_probe/bound/'.$expired)->assertNotFound();
 
-    // And the 404 above really is the binding's, not a missing route or an
-    // unregistered middleware: the same bound route answers 403 for an id that
-    // DOES have a row, which only this middleware can produce. So binding is
-    // reached first and answers first, exactly as claimed — and where it finds
-    // nothing, the outcome this middleware would have chosen never happens.
+    // Non-vacuity: rules out the 404 above being a missing route or an unregistered
+    // middleware. The same bound route answers 403 for an id that does have a row,
+    // which only this middleware can produce.
     $live = middlewareGame();
     middlewarePlayerHash($live, Mark::X);
 
@@ -602,13 +519,9 @@ it('is preceded by route-model binding, which is why no game-scoped route may ty
 });
 
 /*
- * A ROUTE WITH NO `{game}` PARAMETER IS A ROUTING DEFECT, NOT A 404.
- *
- * This is why the middleware is an alias and is appended to no global stack. If it
- * were global, `GET /` and `POST /join` would reach it with no Game_Id and would
- * have to be answered somehow — and the tempting answer, `not_recognised`, would
- * turn a misregistration into a plausible 404 on every request. It throws instead,
- * so the mistake is loud and is fixed rather than lived with.
+ * A route with no `{game}` parameter is a routing defect, not a 404. Answering
+ * `not_recognised` there would turn a misregistration into a plausible 404 on every
+ * request, which is also why the middleware is an alias and is on no global stack.
  */
 it('fails loudly rather than answering not_recognised when registered on a route naming no game', function () {
     Route::middleware(['web', 'acting.player'])->get('/_probe/nameless', fn () => response()->json(['ok' => true]));
@@ -620,23 +533,17 @@ it('fails loudly rather than answering not_recognised when registered on a route
 });
 
 /*
- * THE ACCESSOR IS THE SEAM, AND IT REFUSES TO GUESS.
- *
- * `ResolveActingPlayer::resolved()` on a request that never passed through the
- * middleware throws rather than returning null, because the alternative is a
- * controller on an unprotected game-scoped route serving a Game to anyone. The
- * `LogicException` names the middleware, so the fix is in the message.
- *
- * The positive half is asserted in the row 1 test above, through a real request;
- * this is the negative half, which needs no route at all.
+ * The accessor refuses to guess: `resolved()` on a request that never passed through
+ * the middleware throws rather than returning null, since the alternative is a
+ * controller on an unprotected game-scoped route serving a Game to anyone. The row 1
+ * test above is the positive half.
  */
 it('refuses to hand out an acting player for a request that never passed through it', function () {
     expect(fn () => ResolveActingPlayer::resolved(Request::create('/_probe/games/anything')))
         ->toThrow(LogicException::class);
 
-    // And the attribute it reads is the one it writes: a request carrying a
-    // `ResolvedPlayer` under that key is accepted, so the constant is not
-    // decorative.
+    // Non-vacuity: rules out `resolved()` throwing unconditionally. A request
+    // carrying a `ResolvedPlayer` under that key is accepted.
     $game = middlewareGame();
     $request = Request::create('/_probe/games/'.$game->id);
     $request->attributes->set(ResolveActingPlayer::REQUEST_ATTRIBUTE, new ResolvedPlayer($game, Mark::O));

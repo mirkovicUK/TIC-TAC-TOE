@@ -18,47 +18,31 @@ use Tests\Unit\Domain\Support\LineOracle;
 // Validates: Requirements 14.2, 11.2, 11.3, 11.7, 11.8, 6.1, 6.2, 6.3, 6.4
 //
 /*
- * Task 3.6 — the exhaustive walk.
- *
  * Every reachable Well_Formed_Move_List, depth-first from the empty one: 549,946
- * of them, of which 255,168 are the Move_List of a finished Game. Not a sample.
- * Requirement 14.2 asks for enumeration of the *complete* set and names both
- * counts, so there is no fast mode, no iteration cap and no environment flag
- * here that shortens the walk.
+ * of them, of which 255,168 are finished Games. Requirement 14.2 asks for the
+ * complete set and names both counts, so there is no fast mode, iteration cap or
+ * environment flag that shortens the walk.
  *
- * WHAT THE TWO COUNTS PROVE, AND WHAT THEY DO NOT. They are external ground
- * truth about tic-tac-toe, so they check the ORACLE and the HARNESS: 255,168 is
- * the accepted number of distinct games, and reaching it means this walk stopped
- * descending in exactly the places a correct notion of "finished" stops. It says
- * nothing directly about `RulesEngine`. The engine's correctness comes from the
- * per-node agreement below — with an oracle whose judgement the counts have
- * independently vouched for. Counts without per-node checks would be a headline
- * with no story; per-node checks without the counts would leave open that both
- * implementations agreed while walking the wrong tree. Together they close.
+ * The counts are external ground truth about tic-tac-toe, so what they vouch for
+ * is the oracle and the harness — that this walk stopped descending where a
+ * correct notion of "finished" stops. The engine's correctness comes from the
+ * per-node agreement below, against an oracle those counts have vouched for.
  *
- * THE ORACLE DECIDES WHEN TO STOP, NEVER THE ENGINE. This is the one structural
- * constraint that matters. If `$analysis->isTerminal()` drove the recursion, a
- * bug in the engine's notion of "won" would prune the tree into precisely the
- * shape that bug expects; the engine would then agree with itself at every node
- * it chose to visit, and Properties 3 and 4 would be tautologies with half a
- * million passing assertions behind them. So `Support\LineOracle` — an
- * independent, hand-written implementation sharing no code and no type with
- * `App\Domain\TicTacToe` — says when a node is terminal and which lines are
- * complete, and the engine is compared against it.
+ * The oracle decides when to stop, never the engine. If `$analysis->isTerminal()`
+ * drove the recursion, a bug in the engine's notion of "won" would prune the tree
+ * into the shape that bug expects, the engine would agree with itself at every
+ * node it chose to visit, and Properties 3 and 4 would be tautologies. So
+ * `Support\LineOracle` — sharing no code and no type with `App\Domain\TicTacToe` —
+ * says when a node is terminal and which lines are complete.
  *
- * The board handed to the oracle is the walk's own plain array, mutated on the
- * way down and restored on the way back up. It is never read from
- * `$analysis->board`: that would make the board check circular, and rebuilding
- * the board from the Move_List at each node would cost more than carrying it
- * (mitigation 2 of the design's runtime budget).
+ * For the same reason the board handed to the oracle is the walk's own plain
+ * array, mutated on the way down and restored on the way back up, never read from
+ * `$analysis->board`.
  *
- * ASSERTION ACCOUNTING. Roughly ten checks at each of 549,946 nodes is several
- * million assertions, which PHPUnit counts, formats and slows to a crawl for no
- * diagnostic gain. The hot loop therefore compares with plain `!==` and
- * accumulates the first few disagreements as strings; the `expect()` calls all
- * live after the walk, where the failure count, the collected counterexamples and
- * the aggregate counters are asserted. A break is diagnosable from the failure
- * message, which names the Move_List that broke.
+ * Ten checks at each of 549,946 nodes is several million assertions PHPUnit would
+ * count and format for no diagnostic gain, so the hot loop compares with `!==` and
+ * accumulates the first few disagreements as strings; every `expect()` runs after
+ * the walk.
  *
  * Cells are numbered
  *
@@ -71,19 +55,16 @@ use Tests\Unit\Domain\Support\LineOracle;
  */
 
 /**
- * How many disagreements are kept verbatim. Past this the total still counts, but
- * a walk this size producing thousands of them is diagnosed from the first few.
+ * How many disagreements are kept verbatim; the total still counts past this.
  */
 const ENUMERATION_FAILURE_SAMPLE = 10;
 
 /**
  * A canonical, name-free key for a line: its three cells, sorted, as a string.
  *
- * Comparing lines as CELL SETS rather than by name is deliberate. A
- * name-to-triple table in this file would be a table shared with
- * `WinningLine::cells()` — wrong in both identically and agreeing anyway — which
- * is exactly what the oracle's independence exists to prevent. The oracle knows
- * nothing of `WinningLine`; cells are the only vocabulary both sides speak.
+ * Lines compare as cell sets rather than by name because a name-to-triple table
+ * here would be a table shared with `WinningLine::cells()`, wrong in both
+ * identically and agreeing anyway. The oracle knows nothing of `WinningLine`.
  *
  * @param  array{int, int, int}  $cells
  */
@@ -97,7 +78,7 @@ function enumerationLineKey(array $cells): string
 
 /**
  * A set of lines as a sorted list of keys, so two sets compare with `!==`
- * irrespective of the order either side happened to produce them in.
+ * whatever order either side produced them in.
  *
  * @param  list<array{int, int, int}>  $lines
  * @return list<string>
@@ -117,12 +98,10 @@ function enumerationLineKeys(array $lines): array
 /**
  * One depth-first node, then its children.
  *
- * `$playedCells` is the Move_List as cell indices; `$board` is the same position
- * as a plain `'x'`/`'o'`/`null` array, maintained by this function alone.
- * `$depth` is the number of Moves played, so the Mark that has just moved is the
- * one at sequence index `$depth - 1` — `'x'` when `$depth` is ODD. Inverting that
- * would point the oracle at the wrong player's lines and is the easiest mistake
- * in the whole file to make quietly.
+ * `$board` is the position as a plain `'x'`/`'o'`/`null` array, maintained by this
+ * function alone. `$depth` is the number of Moves played, so the Mark that has just
+ * moved is the one at sequence index `$depth - 1` — `'x'` when `$depth` is odd.
+ * Inverting that points the oracle at the wrong player's lines.
  *
  * @param  list<int>  $playedCells
  * @param  array<int, string|null>  $board  Exactly nine entries keyed 0..8.
@@ -135,8 +114,8 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
     $moveList = MoveList::fromCellIndices(...$playedCells);
     $analysis = RulesEngine::analyse($moveList);
 
-    // The position is formatted inside the closure rather than before it, so the
-    // hot path does not build half a million strings it will never print.
+    // Formatted inside the closure so the hot path does not build half a million
+    // strings it never prints.
     $fail = static function (string $what) use ($playedCells, &$state): void {
         $state['failureCount']++;
 
@@ -146,20 +125,17 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
         }
     };
 
-    // Property 2 / Req 11.7: every position this walk can reach is well formed by
-    // construction — contiguous sequence indices, legal distinct cells, at most
-    // nine Moves, and no Move after the oracle called a halt. A rejection here
-    // would mean the engine refuses a list that legal play produces.
+    // Property 2 / Req 11.7: every position this walk reaches is well formed by
+    // construction, so a rejection here means the engine refuses a list that legal
+    // play produces.
     if (! $analysis instanceof Analysis) {
         $fail('rejected as ill formed, but every reachable move list is well formed');
 
         return;
     }
 
-    // Property 1 / Req 11.2: replay determinism. The same list analysed twice
-    // yields an identical Board, Mark_To_Move, Outcome and Winning_Line set —
-    // compared field by field, in order, because determinism is a claim about the
-    // implementation repeating itself exactly, not merely about equivalence.
+    // Property 1 / Req 11.2: replay determinism, compared field by field because
+    // the claim is exact repetition rather than equivalence.
     $replay = RulesEngine::analyse($moveList);
 
     if (! $replay instanceof Analysis
@@ -175,9 +151,9 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
         $fail("reported a move count of {$analysis->moveCount}, expected {$depth}");
     }
 
-    // Req 4.1, unconditional: parity of the LENGTH, defined in terminal states
-    // too. Checked against parity computed here as well as against the domain's
-    // own helper, so this is not purely the helper agreeing with itself.
+    // Req 4.1: parity of the length, defined in terminal states too. Checked against
+    // parity computed here as well as the domain's own helper, so this is not purely
+    // the helper agreeing with itself.
     $expectedToMove = $depth % 2 === 0 ? Mark::X : Mark::O;
 
     if ($analysis->markToMove !== $expectedToMove
@@ -185,9 +161,8 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
         $fail("reported {$analysis->markToMove->value} to move, expected {$expectedToMove->value}");
     }
 
-    // Property 1 / Req 11.2: Board occupancy is a function of the Move_List
-    // alone. The comparison is against the walk's independently maintained
-    // board, cell by cell.
+    // Property 1 / Req 11.2: Board occupancy is a function of the Move_List alone,
+    // compared cell by cell against the walk's own board.
     foreach ($board as $cellIndex => $expectedOccupant) {
         $derived = $analysis->board->occupantOf($cellIndex)?->value;
 
@@ -205,10 +180,9 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
     $oracleLines = $justMoved !== null ? $oracle->completedLines($board, $justMoved) : [];
     $oracleTerminal = $justMoved !== null && $oracle->isTerminal($board, $depth, $justMoved);
 
-    // Properties 3, 4 / Req 6.3: the reported set is EVERY line the mark
-    // occupies, not the first found. This is the only place in the suite where
-    // the double-line case is checked across the whole tree rather than at one
-    // pinned position.
+    // Properties 3, 4 / Req 6.3: every line the mark occupies, not the first found.
+    // The double-line case is pinned as a named example in `RulesEngineTest`; here it
+    // is checked across the whole tree.
     $engineKeys = enumerationLineKeys(array_map(
         static fn (WinningLine $line): array => $line->cells(),
         $analysis->winningLines,
@@ -223,11 +197,9 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
         ));
     }
 
-    // Property 3's "by either Mark": the player who did NOT just move can hold no
-    // line at any reachable node, because the walk halts the moment a line
-    // appears. A non-empty set here would mean the recursion descended past a
-    // finished game — a harness fault, and one that would silently weaken every
-    // check above it.
+    // Non-vacuity: the player who did not just move can hold no line at a reachable
+    // node, so a non-empty set here rules out the recursion having descended past a
+    // finished game and weakened every check above it.
     if ($justMoved !== null) {
         $opponentLines = $oracle->completedLines($board, $justMoved === 'x' ? 'o' : 'x');
 
@@ -244,10 +216,8 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
         ));
     }
 
-    // Property 2 / Req 11.3, 6.1: exactly one Outcome, and it agrees with the
-    // oracle's independent classification. Property 4 / Req 11.8, 6.2 for the two
-    // win branches; Property 3 / Req 11.7, 6.4 for the draw branch — drawn if and
-    // only if nine Moves and no line.
+    // Property 2 / Req 11.3, 6.1 for the single Outcome; Property 4 / Req 11.8, 6.2
+    // for the win branches; Property 3 / Req 11.7, 6.4 for the draw branch.
     $expectedOutcome = match (true) {
         $oracleLines !== [] => $justMoved === 'x' ? Outcome::WonByX : Outcome::WonByO,
         $depth === 9 => Outcome::Drawn,
@@ -272,9 +242,8 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
     if ($oracleTerminal) {
         $state['terminals']++;
 
-        // Classified from the ORACLE's judgement, not the engine's, so the three
-        // sub-totals reported at the foot of this file are as external as the two
-        // headline counts.
+        // Classified from the oracle's judgement, so the three sub-totals asserted at
+        // the foot of this file are as external as the two headline counts.
         if ($oracleLines === []) {
             $state['draws']++;
         } elseif ($justMoved === 'x') {
@@ -303,10 +272,7 @@ function enumerationWalk(array $playedCells, array &$board, int $depth, LineOrac
     }
 }
 
-/*
- * The walk itself. One test, not 549,946: the tree is traversed once and the
- * evidence is asserted afterwards.
- */
+// One test, not 549,946: the tree is traversed once and the evidence asserted after.
 it('agrees with an independent oracle at every reachable position in the game tree', function () {
     /** @var array<int, string|null> $board */
     $board = array_fill(0, 9, null);
@@ -334,34 +300,28 @@ it('agrees with an independent oracle at every reachable position in the game tr
         );
 
     expect($state['failureCount'])->toBe(0, $counterexamples)
-        // The board is restored on the way back up, so the walk must leave it as
-        // it found it. If it does not, the positions the oracle judged were not
-        // the positions the recursion thought it was in.
+        // Non-vacuity: a board not restored to empty rules out the oracle having
+        // judged the positions the recursion thought it was in.
         ->and($board)->toBe(array_fill(0, 9, null));
 
     /*
-     * THE TWO COUNTS. Both are external ground truth, and neither is negotiable
-     * against a run of this test.
+     * Both counts are external ground truth, not negotiable against a run of this
+     * test.
      *
-     * `nodes` counts on ENTRY to each node, the empty Move_List included: the
-     * root counts. Requirement 14.2 names 549,946 reachable Move_Lists under
-     * exactly that convention. A run reporting 549,945 has skipped the root —
-     * fix the accounting here, not the Rules_Engine, and not this number.
+     * `nodes` counts on entry to each node, the empty Move_List included: the root
+     * counts, which is the convention under which Req 14.2 names 549,946. A run
+     * reporting 549,945 has skipped the root — fix the accounting here.
      *
-     * `terminals` has no convention latitude at all. 255,168 is the accepted
-     * count of distinct tic-tac-toe games; a Move_List either finished or it did
-     * not. A mismatch means this walk and the engine disagree with the
-     * combinatorics, and the answer is to debug, never to adjust.
+     * 255,168 is the accepted count of distinct tic-tac-toe games and has no
+     * convention latitude. A mismatch is something to debug, never to adjust.
      */
     expect($state['nodes'])->toBe(549_946)
         ->and($state['terminals'])->toBe(255_168);
 
     /*
-     * Positive evidence, and three further external checks. The published split
-     * of the 255,168 games is 131,184 won by X, 77,904 won by O and 46,080 drawn.
-     * X wins far more often simply by moving first and holding five cells to O's
-     * four. Asserting the split as well as the total catches a class of fault the
-     * total cannot: two errors of equal size in opposite directions.
+     * The published split of the 255,168 games: X wins more by moving first and
+     * holding five cells to O's four. Asserting the split as well as the total
+     * catches two errors of equal size in opposite directions.
      */
     expect($state['xWins'])->toBe(131_184)
         ->and($state['oWins'])->toBe(77_904)

@@ -27,39 +27,28 @@ use Illuminate\Support\Str;
  *
  * A Feature test necessarily: the subject reads the session and two tables.
  * `RefreshDatabase` supplies the schema `DB_DATABASE=:memory:` otherwise leaves
- * absent, and `phpunit.xml` sets `SESSION_DRIVER=array`, so the session is
- * in-memory and per-test — the arrangement `PlayerTokensTest` and
- * `CreateGameTest` use.
+ * absent, and `phpunit.xml` sets `SESSION_DRIVER=array`.
  *
- * EACH OF THE SEVEN ROWS HAS ITS OWN TEST, NAMED FOR ITS ROW, so a failure names
- * the line of the design it contradicts. Four further tests carry the claims the
- * seven cannot, because each of those is a claim about a *relationship between*
- * two rows rather than about either one:
+ * Each of the seven rows has its own test, named for its row, so a failure names the
+ * line of the design it contradicts. Four further tests carry claims about a
+ * relationship BETWEEN rows, which no single row's test can make: rows 6 and 7
+ * compared to each other; the three `not_authorised` modes of Requirement 9.6
+ * compared the same way; rows 3 and 6 on identical database state; and the
+ * structural claim that a rejection carries no game state.
  *
- *   - rows 6 and 7 compared to EACH OTHER, so that an edit giving row 6 its own
- *     answer fails even if someone updated row 6's own expectation to match;
- *   - the three `not_authorised` modes of Requirement 9.6 compared to each other
- *     the same way;
- *   - rows 3 and 6 on IDENTICAL database state, which is the asymmetry the whole
- *     design rests on: the tombstone answers the player who was there and stays
- *     invisible to everyone else;
- *   - the structural claim that a rejection carries no game state at all.
- *
- * WHAT IS ASSERTED HERE AND WHAT IS ASSERTED ELSEWHERE. This file exercises the
- * resolver directly, so it can assert the outcome *values* and the queries issued.
- * `ResolveActingPlayerTest` asserts the same table through the request pipeline —
- * the statuses, the short-circuit, and that no game data reaches a response body.
- * Property 7's full sweep of every Game_State against every route naming a
- * Game_Id is task 12.2's `VisibilityTest`, once the routes of 5.6 and 6.2 exist.
+ * This file exercises the resolver directly, so it can assert outcome values and the
+ * queries issued. `ResolveActingPlayerTest` asserts the same table through the
+ * request pipeline — statuses, the short-circuit, and that no game data reaches a
+ * response body. Property 7's full sweep of every Game_State against every route
+ * naming a Game_Id is task 12.2's `VisibilityTest`.
  */
 
 uses(RefreshDatabase::class);
 
 /**
- * The subject, with its one collaborator supplied explicitly rather than resolved
- * from the container, so each test states what `GameResolver` depends on. The same
- * `PlayerTokens` instance is handed back so a test can mint against the very
- * session the resolver will read.
+ * The subject, with its one collaborator supplied explicitly. The same
+ * `PlayerTokens` instance is handed back so a test can mint against the very session
+ * the resolver will read.
  *
  * @return array{GameResolver, PlayerTokens}
  */
@@ -73,14 +62,12 @@ function resolverAnd(): array
 /**
  * A saved `games` row. Fixture, not the subject.
  *
- * `active` by default so that either token slot may be populated: the schema's
- * one-directional CHECK forbids an occupied O slot while a Game waits for an
- * opponent. `won` is given a `winning_mark`, which the paired CHECK requires, and
- * the other three states are given none, which it equally requires. A generated
- * `join_code` because `join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL`
- * keeps every Game reachable; generated rather than fixed so a test may create
- * several without colliding on the unique index. Attributes are assigned one by
- * one because mass assignment is closed on this model.
+ * Every value here is what a schema CHECK requires: `active` by default so either
+ * token slot may be populated, since the one-directional CHECK forbids an occupied O
+ * slot while a Game waits for an opponent; a `winning_mark` on `won` and none on the
+ * other three; a `join_code` because `join_code IS NOT NULL OR rematch_of_game_id IS
+ * NOT NULL`, generated so several Games do not collide on the unique index.
+ * Attributes are assigned one by one because mass assignment is closed on this model.
  */
 function resolverGame(GameState $state = GameState::Active): Game
 {
@@ -97,8 +84,8 @@ function resolverGame(GameState $state = GameState::Active): Game
 }
 
 /**
- * A tombstone for a Game_Id, with no `games` row anywhere — which is the state
- * the sweep leaves behind (Req 13.3) and the only state rows 3 and 6 are about.
+ * A tombstone for a Game_Id, with no `games` row anywhere — the state the sweep
+ * leaves behind (Req 13.3) and the only state rows 3 and 6 are about.
  *
  * There is no relationship from `ExpiryRecord` to `Game` and no foreign key on
  * `game_id`, precisely so this is expressible; see the migration.
@@ -117,11 +104,11 @@ function resolverTombstone(): string
 
 /**
  * Puts a raw Player_Token in the session for `$gameId` that is bound to nothing:
- * 64 hex characters, minted properly, whose hash was never written to any row.
+ * minted properly, but its hash was never written to any row.
  *
- * This is failure mode two of Requirement 9.6 — an unrecognised token — and it is
- * also how rows 3 and 4 are reached, since "the session holds a token for this id"
- * is all those rows require and there is no row left to hold a matching hash.
+ * This is failure mode two of Requirement 9.6, an unrecognised token, and it is also
+ * how rows 3 and 4 are reached: "the session holds a token for this id" is all those
+ * rows require, and there is no row left to hold a matching hash.
  */
 function resolverHoldUnboundToken(PlayerTokens $tokens, string $gameId): MintedToken
 {
@@ -135,9 +122,8 @@ function resolverHoldUnboundToken(PlayerTokens $tokens, string $gameId): MintedT
  * The types through which a Board, a Move_List, a Game_State or a Mark_To_Move
  * could be reached, as fully qualified names.
  *
- * Compared exactly rather than by substring: `App\Games` contains the word "Game",
- * so a substring test would flag the outcome type itself and would pass only by
- * being wrong twice.
+ * Compared exactly rather than by substring: `App\Games` contains the word "Game", so
+ * a substring test would flag the outcome type itself.
  *
  * @return list<string>
  */
@@ -186,16 +172,13 @@ function resolverStatementsDuring(callable $work): array
  * ROW 1 — session holds the token for the id, the row exists, the hash matches:
  * the acting player is resolved.
  *
- * Asserted for BOTH marks on one Game, because a resolver that returned a
- * constant `Mark::X` would satisfy the X half and every other test in this file.
- * The Mark comes from `PlayerTokens::resolve()` and from nowhere else (Req 3.2),
- * and the row that comes back is the row that was asked for.
+ * Asserted for both Marks on one Game, because a resolver returning a constant
+ * `Mark::X` would satisfy the X half and every other test in this file.
  *
- * The Move_List is asserted NOT loaded. That is not a performance nicety: it is
- * the design decision that `ResolvedPlayer` carries a `Game` rather than a
- * `GameSnapshot`, so that authorisation costs no Move_List read on the polling
- * path and cannot raise `CorruptMoveListException` ahead of the authorisation
- * answer.
+ * The Move_List is asserted NOT loaded, which is the design decision that
+ * `ResolvedPlayer` carries a `Game` rather than a `GameSnapshot`: authorisation costs
+ * no Move_List read on the polling path and cannot raise `CorruptMoveListException`
+ * ahead of the authorisation answer.
  */
 it('row 1: resolves the acting player when the session holds the token for that game', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -209,8 +192,8 @@ it('row 1: resolves the acting player when the session holds the token for that 
 
     expect($resolved)->toBeInstanceOf(ResolvedPlayer::class, 'a session holding the X token for this Game was not resolved as its player (row 1)');
 
-    // Narrowed for the analyser as well as the reader; the expectation above is
-    // what actually fails if resolution refused.
+    // Narrowed for the analyser; the expectation above is what fails if resolution
+    // refused.
     if (! $resolved instanceof ResolvedPlayer) {
         throw new RuntimeException('row 1 did not resolve, so the assertions below would say nothing');
     }
@@ -239,11 +222,10 @@ it('row 1: resolves the acting player when the session holds the token for that 
  * ROW 2 — session holds a token for the id, the row exists, the hash matches
  * neither slot: `not_authorised`.
  *
- * This is failure mode two of Requirement 9.6 reaching a live Game. The token is
- * a real 256-bit token, correctly shaped and correctly remembered; the only thing
- * wrong with it is that its digest is on no slot of this row. A resolver that
- * checked the *shape* of what the session holds instead of comparing hashes would
- * pass row 1 and fail here.
+ * Failure mode two of Requirement 9.6 reaching a live Game. The token is correctly
+ * shaped and correctly remembered; only its digest is on no slot of this row. A
+ * resolver checking the shape of what the session holds instead of comparing hashes
+ * would pass row 1 and fail here.
  */
 it('row 2: rejects a session whose token matches neither slot of the row as not_authorised', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -264,13 +246,11 @@ it('row 2: rejects a session whose token matches neither slot of the row as not_
 /*
  * ROW 3 — session holds a token for the id, no row, a tombstone: `game_expired`.
  *
- * Requirement 13.6, and the reason `PlayerTokens::heldFor()` takes a Game_Id
- * string rather than a `Game`: there is no row here to pass. Note what "a valid
- * Player_Token" can possibly mean on this row and what it cannot — the row that
- * held the hash has been deleted, so no comparison is available and no comparison
- * could be. What the design's table asks for, and what is asserted, is that the
- * SESSION HOLDS A TOKEN FOR THIS ID. That is the strongest test available once
- * the Game is gone, and it is the fact that separates this row from row 6.
+ * Requirement 13.6, and the reason `PlayerTokens::heldFor()` takes a Game_Id string
+ * rather than a `Game`: there is no row here to pass. The row that held the hash is
+ * deleted, so no hash comparison is available; what is asserted is that the session
+ * HOLDS A TOKEN FOR THIS ID, which is the strongest test available once the Game is
+ * gone and the fact that separates this row from row 6.
  */
 it('row 3: reports game_expired for a session holding a token for an id with a tombstone and no row', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -292,8 +272,8 @@ it('row 3: reports game_expired for a session holding a token for an id with a t
  *
  * The state a rolled-back creation leaves: the session key names a Game that was
  * never persisted. Requirement 13.8, and the case `CreateGame` and
- * `PlayerTokens::issue()` both cite as the reason the session may safely be
- * written before the row is saved — a stale session key authorises nothing.
+ * `PlayerTokens::issue()` both cite as the reason the session may safely be written
+ * before the row is saved.
  */
 it('row 4: reports not_recognised for a session holding a token for an id with no row and no tombstone', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -311,13 +291,11 @@ it('row 4: reports not_recognised for a session holding a token for an id with n
 /*
  * ROW 5 — no token, the row exists: `not_authorised`.
  *
- * Requirements 3.10 and 9.6, and the row a correctly guessed Game_Id reaches. It
- * is also the row that makes a Game_Id not a credential: knowing one buys the
- * knowledge that it is a Game and nothing else, because authorisation comes from
- * the Player_Token and nothing else.
+ * Requirements 3.10 and 9.6, and the row a correctly guessed Game_Id reaches: a
+ * Game_Id is not a credential.
  *
- * A Move is inserted first, so the Game has a Move_List and a Board to withhold
- * and the refusal is not vacuous.
+ * A Move is inserted first, so the Game has a Move_List and a Board to withhold and
+ * the refusal is not vacuous.
  */
 it('row 5: rejects a tokenless session for an existing game as not_authorised', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -346,10 +324,10 @@ it('row 5: rejects a tokenless session for an existing game as not_authorised', 
 /*
  * ROW 6 — no token, no row, a tombstone: `not_recognised`.
  *
- * The row the requirements leave unconstrained and the design chooses: 13.8
- * mandates row 7 and 13.6 grants `game_expired` only to a session presenting a
- * token, which is row 3, so row 6 is free — and answering it as row 7 is what
- * keeps the tombstone from becoming an oracle for which Game_Ids ever existed.
+ * The row the requirements leave unconstrained and the design chooses: 13.8 mandates
+ * row 7 and 13.6 grants `game_expired` only to a session presenting a token, which is
+ * row 3. Answering row 6 as row 7 keeps the tombstone from becoming an oracle for
+ * which Game_Ids ever existed.
  */
 it('row 6: reports not_recognised for a tokenless session on an id with a tombstone and no row', function () {
     [$resolver] = resolverAnd();
@@ -379,20 +357,15 @@ it('row 7: reports not_recognised for a tokenless session on an id that was neve
 });
 
 /*
- * ROWS 6 AND 7 ARE INDISTINGUISHABLE — asserted as an EQUIVALENCE, not as two
- * expectations that happen to name the same value.
+ * ROWS 6 AND 7 ARE INDISTINGUISHABLE, asserted as an equivalence between the two
+ * rejections rather than as two expectations naming the same value: an edit giving
+ * row 6 `game_expired` fails here even if row 6's own test was updated to match. Both
+ * directions and the serialised forms are compared, since "indistinguishable" covers
+ * everything a caller could observe.
  *
- * The two rejections are compared to each other, so an edit that gave row 6
- * `game_expired` fails here even if whoever made it updated row 6's own test to
- * match. Both directions of the comparison and both serialised forms are checked,
- * because "indistinguishable" is a claim about everything a caller could observe,
- * not just about `===`: same case, same backing value, same JSON.
- *
- * The query log carries the other half of it. A tokenless caller's answer is
- * produced without `expiry_records` being read at all, so the two rows are not
- * merely reported alike — the fact that separates them is never looked up. That
- * also means the two rows issue the same number of queries, which is as close to
- * "not distinguishable by timing" as an assertion can honestly get.
+ * The query log carries the other half: a tokenless answer is produced without
+ * `expiry_records` being read at all, so the fact that separates the two rows is
+ * never looked up, and the two issue the same number of queries.
  */
 it('rows 6 and 7: a tokenless caller cannot distinguish a swept game from an id that never was', function () {
     [$resolver] = resolverAnd();
@@ -426,17 +399,13 @@ it('rows 6 and 7: a tokenless caller cannot distinguish a swept game from an id 
 });
 
 /*
- * ROW 3 VERSUS ROW 6, ON IDENTICAL DATABASE STATE — the asymmetry the design
- * rests on.
+ * ROW 3 VERSUS ROW 6, ON IDENTICAL DATABASE STATE — the asymmetry the design rests
+ * on: the player who was there is told their Game is gone (Req 13.6), and to everyone
+ * else the id is indistinguishable from one that never existed (Req 13.8).
  *
- * One Game_Id, one tombstone, no `games` row, and the *same* two tables in the
- * *same* state for both calls. The only thing that changes between them is whether
- * the session holds a token for that id. The Game_Id is the same string, so this
- * cannot pass by accident of two different fixtures.
- *
- * That is the whole security argument for keeping tombstones: the player who was
- * there is told their Game is gone (Req 13.6), and to everyone else the id is
- * indistinguishable from one that never existed (Req 13.8).
+ * One Game_Id, the same two tables in the same state for both calls, so the only
+ * thing that changes is whether the session holds a token. Using the same id string
+ * rather than two fixtures is what stops this passing by accident.
  */
 it('rows 3 and 6: the same missing game and tombstone answer differently only by whether a token is held', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -468,20 +437,14 @@ it('rows 3 and 6: the same missing game and tombstone answer differently only by
 });
 
 /*
- * THE THREE `not_authorised` MODES OF REQUIREMENT 9.6, MUTUALLY
- * INDISTINGUISHABLE — again asserted as an equivalence between the three, not as
- * three expectations of one constant.
+ * THE THREE `not_authorised` MODES OF REQUIREMENT 9.6, MUTUALLY INDISTINGUISHABLE —
+ * again an equivalence between the three rather than three expectations of one
+ * constant, so no mode is privileged as the expected value.
  *
- * The modes are the ones the requirement lists: no token at all; a token that is
- * unrecognised; and a token bound to a different Game_Id, built the way a real one
- * would arise — minted, its hash stored on Game B's row, and held in the session
- * under Game A's key, which is what a player of B pointing a request at A looks
- * like.
- *
- * All three pairs are compared, so no single mode is privileged as the expected
- * value, and the serialised forms are compared too, since it is the serialised
- * form that would reach the Web_Client and break Requirement 9.6's single
- * indication.
+ * Mode 3 is built the way a real one would arise: minted, its hash stored on Game B's
+ * row, held in the session under Game A's key — a player of B pointing a request at A.
+ * The serialised forms are compared too, since it is the serialised form that would
+ * reach the Web_Client.
  */
 it('reports not_authorised identically for an absent, an unrecognised and an elsewhere-bound token', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -520,20 +483,17 @@ it('reports not_authorised identically for an absent, an unrecognised and an els
 });
 
 /*
- * REQUIREMENT 3.9 AT THE RESOLVER — authorisation is settled before any
- * lifecycle or validity condition is evaluated, and is the only outcome reported.
+ * REQUIREMENT 3.9 AT THE RESOLVER — authorisation is settled before any lifecycle or
+ * validity condition is evaluated, and is the only outcome reported.
  *
- * The assertion is possible without `SubmitMove`, and does not simulate it. If
- * authorisation were evaluated after — or even alongside — any other condition,
- * the answer for a tokenless caller would have to vary with the Game's condition:
- * a Game still waiting for an opponent would be `game_not_started`, a finished one
- * `game_ended`. So the test drives a tokenless request against a Game in every one
- * of the four Game_States, one of them holding a Move_List, and requires the four
- * answers to be the same single value. A resolver that consulted `state` at all
- * could not produce that.
+ * If authorisation were evaluated after or alongside any other condition, a tokenless
+ * caller's answer would vary with the Game's condition: `game_not_started` while
+ * waiting for an opponent, `game_ended` when finished. So a tokenless request is
+ * driven against all four Game_States, one holding a Move_List, and the four answers
+ * must be one value.
  *
  * The pipeline half of Requirement 3.9 — that nothing downstream even runs — is
- * in `ResolveActingPlayerTest`, where there is a handler to observe not running.
+ * `ResolveActingPlayerTest`'s, where there is a handler to observe not running.
  */
 it('settles authorisation without consulting the game state, whatever state the game is in', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -572,30 +532,18 @@ it('settles authorisation without consulting the game state, whatever state the 
 });
 
 /*
- * A REJECTION CARRIES NO GAME STATE — structurally, not by convention.
+ * A REJECTION CARRIES NO GAME STATE (Req 3.10, Property 7) — structurally, not by
+ * convention: a rejection is a `VisibilityOutcome` case, which has no fields, so
+ * there is nothing to read and nothing for a serialiser to walk.
  *
- * Requirement 3.10 excludes the Board, the Move_List, the Game_State and the
- * Mark_To_Move from the response to a request presenting no valid token, and
- * Property 7 restates it. The shape chosen makes it unreachable rather than merely
- * unread: a rejection is a `VisibilityOutcome` case, which has no fields, so there
- * is nothing to read and nothing for a serialiser to walk.
+ * Three independent assertions, each covering a different way the guarantee could be
+ * lost: no property or method on the type reaches a Game, Mark, MoveList, Board or
+ * Analysis, which is what adding `game()` or a nullable `?Game` field would break;
+ * the enum declares only `name` and `value`; and no rendering a caller could produce
+ * carries the Game's data.
  *
- * Three independent assertions, because each covers a different way the guarantee
- * could be lost:
- *
- *   - the value is not a `ResolvedPlayer` and has no property or method by which a
- *     Game, a Mark, a MoveList, a Board or an Analysis could be reached — which is
- *     what would fail if someone added `game()` or a nullable `?Game` field to the
- *     rejection type;
- *   - the enum declares exactly the two properties every enum has, `name` and
- *     `value`, and both are strings;
- *   - every rendering of the rejection a caller could produce — JSON, `print_r`,
- *     `var_export`, `serialize` — contains none of the Game's actual data: not the
- *     Game_State, not the Join_Code, not a token hash, not the Move it holds.
- *
- * The Game_Id is deliberately not in that list. It is not game state under
- * Requirement 3.10, and it arrives in the URL of the very request being refused,
- * so a refusal that repeated it would disclose nothing.
+ * The Game_Id is deliberately not searched for. It is not game state under Requirement
+ * 3.10 and it arrives in the URL of the request being refused.
  */
 it('exposes no board, move list, game state or mark on a rejection', function () {
     [$resolver, $tokens] = resolverAnd();
@@ -652,12 +600,12 @@ it('exposes no board, move list, game state or mark on a rejection', function ()
         'serialize' => serialize($rejection),
     ];
 
-    // `str_contains` rather than `toContain()`, which takes variadic needles
-    // and no message argument — a message passed there is silently asserted as
-    // a second needle.
+    // `str_contains` rather than `toContain()`, which takes variadic needles and no
+    // message argument — a message passed there is silently asserted as a second
+    // needle.
     //
-    // Each rendering is confirmed non-empty first. An empty haystack contains
-    // nothing, so every search below would pass without looking at anything.
+    // The non-empty check comes first because an empty haystack contains nothing, so
+    // every search below would pass without looking at anything.
     foreach ($renderings as $form => $rendered) {
         expect($rendered)->not->toBe('', "the {$form} rendering is empty, so the searches below prove nothing");
 
@@ -672,13 +620,12 @@ it('exposes no board, move list, game state or mark on a rejection', function ()
 });
 
 /*
- * THE EXPIRY_RECORD IS READ ON EXACTLY THE TWO ROWS THAT NEED IT.
+ * THE EXPIRY_RECORD IS READ ON EXACTLY THE TWO ROWS THAT NEED IT. Rows 1, 2 and 5 are
+ * settled by the `games` row and rows 6 and 7 without the tombstone on purpose, so
+ * `expiry_records` is touched only on rows 3 and 4.
  *
- * Rows 1, 2 and 5 are settled by the `games` row, and rows 6 and 7 are settled
- * without the tombstone on purpose — so `expiry_records` is touched only on rows 3
- * and 4, where a token is held for an id with no row. Asserted from the query log
- * in both directions: absent where it must be absent, and present where it must be
- * present, so this cannot pass by the resolver never reading that table at all.
+ * Asserted in both directions — absent where it must be absent, present where it must
+ * be present — so this cannot pass by the resolver never reading that table at all.
  */
 it('reads the expiry record only when a token is held for an id with no game row', function () {
     [$resolver, $tokens] = resolverAnd();

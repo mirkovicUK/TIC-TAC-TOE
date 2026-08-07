@@ -15,67 +15,48 @@ use function Pest\Laravel\get;
 // Validates: Requirements 10.6, 10.8
 //
 /*
- * Task 9.5 — the `TrustProxies` configuration of task 9.2, and nothing about
- * rate-limit BEHAVIOUR. The 20/21 join boundary and Property 20 are task 9.6's
- * `RateLimitTest`; this file never counts a request. It asserts what the
- * application believes the client's address to be, and that the IP branch of the
- * Rate_Limit_Subject is derived from that belief.
+ * The `TrustProxies` configuration, and nothing about rate-limit behaviour: this file
+ * never counts a request. It asserts what the application believes the client's address
+ * to be, and that the IP branch of the Rate_Limit_Subject follows that belief. The
+ * 20/21 join boundary and Property 20 are `RateLimitTest`'s.
  *
- * WHY THIS FILE EXISTS AT ALL. The feature suite talks to the application
- * directly, so no behavioural test of the limiters would notice `TrustProxies`
- * being removed from the global stack or its trusted range being narrowed — every
- * test client is its own peer, so every subject resolves to a working key either
- * way. In production the peer is Caddy, and the same misconfiguration collapses
- * `join`, `create-game` and `state` into three single global buckets keyed on
- * Caddy's container address: Requirement 10.6's twenty joins per subject becomes
- * twenty joins for the whole instance. That is the failure this file is the only
- * mechanical guard against, which is why it is not optional.
+ * No behavioural test of the limiters would notice `TrustProxies` leaving the global
+ * stack or its range being narrowed, because every test client is its own peer and
+ * every subject resolves to a working key either way. In production the peer is Caddy,
+ * where the same misconfiguration collapses `join`, `create-game` and `state` into
+ * three global buckets keyed on Caddy's container address, turning Req 10.6's twenty
+ * joins per subject into twenty for the whole instance.
  *
- * `THIS TEST IS COUPLED TO THE `*` TRUSTED RANGE, ON PURPOSE, AND HERE IS WHAT
- * BREAKS IT.` A feature test has no real peer, so the framework supplies a
- * loopback `REMOTE_ADDR`, and `X-Forwarded-For` is honoured only where the trusted
- * range covers that peer. `bootstrap/app.php` passes `trustProxies(at: '*')`,
- * which `TrustProxies` special-cases at line 83 of
- * `Illuminate/Http/Middleware/TrustProxies.php` and routes to
- * `setTrustedProxyIpAddressesToTheCallingIp()` (line 120), whose whole body sets
- * `['0.0.0.0/0', '::/0']` (line 122) — loopback included, which is the only reason
- * a feature test can observe any of this. Narrowing the range to a declared subnet
- * — the alternative task 9.2 weighed and rejected — makes loopback untrusted and
- * fails the assertions below rather than surfacing in production. The test and the
- * range are one decision: whoever narrows the range should read this file, satisfy
- * themselves that the new range covers the real proxy, and change the peer these
- * assertions run as. `peer_is_trusted` is asserted separately from the address so
- * that the failure says which of the two halves went.
+ * Coupled to the `*` trusted range on purpose. A feature test has no real peer, so the
+ * framework supplies a loopback `REMOTE_ADDR`, and `X-Forwarded-For` is honoured only
+ * where the trusted range covers that peer. `bootstrap/app.php` passes
+ * `trustProxies(at: '*')`, which `Illuminate/Http/Middleware/TrustProxies.php`
+ * special-cases at line 83 and routes to `setTrustedProxyIpAddressesToTheCallingIp()`
+ * (line 120), whose body sets `['0.0.0.0/0', '::/0']` (line 122) — loopback included,
+ * which is the only reason a feature test can observe any of this. Narrowing the range
+ * to a declared subnet makes loopback untrusted and fails the assertions below, so
+ * whoever narrows it must check the new range covers the real proxy and change the peer
+ * these assertions run as. `peer_is_trusted` is asserted separately from the address so
+ * the failure says which half went.
  *
- * NO FORGERY ASSERTION HERE, AND IT IS NOT AN OMISSION. Task 1.2 settled the
- * `PreventRequestForgery` question against the vendor source and task 9.1 recorded
- * that the defaults are deliberate; a companion assertion was then considered for
- * this file and dropped, because there is no flag to read and nothing about the
- * path is observable from a feature test. `handle()` short-circuits on the first
- * true condition of five, and `runningUnitTests()` is the SECOND of them —
- * `isReading()` at line 98, `runningUnitTests()` at line 99, then
- * `inExceptArray()`, `hasValidOrigin()` and `tokensMatch()` at lines 100 to 102,
- * with the `TokenMismatchException` at line 111. `runningUnitTests()` is
- * `runningInConsole() && runningUnitTests()` (line 132), both true for every test
- * in this suite, so the origin and token checks are never reached from here and no
- * assertion could distinguish a configured application from a misconfigured one.
- * Requirement 14.3's exclusion of the forgery rejection from the mandated coverage
- * therefore stands on its own.
+ * No `PreventRequestForgery` assertion, and not an omission. `handle()` short-circuits
+ * on the first true of five conditions and `runningUnitTests()` is the second (line 99,
+ * ahead of `inExceptArray()`, `hasValidOrigin()` and `tokensMatch()` at lines 100 to
+ * 102); it is `runningInConsole() && runningUnitTests()` (line 132), both true
+ * throughout this suite, so no assertion here could distinguish a configured
+ * application from a misconfigured one. Req 14.3 excludes it from mandated coverage.
  */
 
 /**
- * Declares the probe route and returns nothing.
+ * Declares the probe route.
  *
- * `->middleware('web')` matters twice. `StartSession` runs, so
- * `$request->hasSession()` is true and the Rate_Limit_Subject callback takes the
- * same branch it takes on `POST /join` rather than a degenerate one. And a GET
- * through the real group is the request shape the framework's own middleware
- * priority applies to, so the observation is made where the application makes it.
+ * `->middleware('web')` runs `StartSession`, so `$request->hasSession()` is true and the
+ * Rate_Limit_Subject callback takes the same branch it takes on `POST /join` rather than
+ * a degenerate one.
  *
- * `TrustProxies` needs no mention: it is GLOBAL middleware, so it has already run
- * by the time any handler is reached, on this route exactly as on a real one. That
- * is what makes a probe route a faithful place to read the client address from —
- * this file could not have waited for a route of its own.
+ * `TrustProxies` is global middleware, so it has already run by the time any handler is
+ * reached, on this route exactly as on a real one — which is what makes a probe route a
+ * faithful place to read the client address from.
  */
 function forwardedProbeRoute(): void
 {
@@ -95,15 +76,13 @@ function forwardedProbeRoute(): void
 }
 
 /**
- * The key a named limiter would count this request against, read from the limiter
- * the application registered rather than from a copy of its logic.
+ * The key a named limiter would count this request against, read from the limiter the
+ * application registered rather than from a copy of its logic.
  *
- * `RateLimiter::limiter()` returns the very closure `AppServiceProvider::boot()`
- * passed to `RateLimiter::for()`, so calling it here evaluates the real
- * Rate_Limit_Subject against the real request. NOTHING IS COUNTED: `Limit` is a
- * value object and this reads its `key`, which is the derivation task 9.2's
- * configuration feeds. The thresholds those keys are counted against belong to
- * task 9.6.
+ * `RateLimiter::limiter()` returns the closure `AppServiceProvider::boot()` passed to
+ * `RateLimiter::for()`, so calling it evaluates the real Rate_Limit_Subject against the
+ * real request. Nothing is counted: `Limit` is a value object and this reads its `key`.
+ * The thresholds those keys are counted against belong to `RateLimitTest`.
  */
 function forwardedLimiterKey(string $limiter, Request $request): ?string
 {
@@ -141,19 +120,13 @@ function forwardedObservation(?string $clientAddress = null): array
 }
 
 /*
- * THE FORWARDED CLIENT ADDRESS IS THE ONE THE APPLICATION SEES.
+ * Read through `$request->ip()` inside a handler, the same call
+ * `AppServiceProvider::rateLimitSubject()` makes, rather than the header, which is
+ * present either way and would assert nothing.
  *
- * Read through `$request->ip()` inside a handler, because that is the application's
- * view of the client — the same call `AppServiceProvider::rateLimitSubject()` makes
- * and the same one any client-address log field would resolve to — rather than the
- * header, which is present either way and would assert nothing.
- *
- * THE UNFORWARDED BASELINE IS ASSERTED FIRST, and it is what keeps the second half
- * honest: if the peer were already `203.0.113.7`, the forwarded assertion would
- * pass with `TrustProxies` deleted outright. The peer is asserted to be UNCHANGED
- * by the forwarded request too, so the address the application reports changed
- * because the header was honoured and not because the request came from somewhere
- * else.
+ * Non-vacuity: the unforwarded baseline and the unchanged peer rule out a peer that was
+ * already `203.0.113.7`, which would let the forwarded assertion pass with
+ * `TrustProxies` deleted outright.
  */
 it('honours a forwarded client address, so the application sees the client rather than the proxy', function () {
     forwardedProbeRoute();
@@ -172,11 +145,9 @@ it('honours a forwarded client address, so the application sees the client rathe
         ->and($forwarded['peer'])->toBe('127.0.0.1', 'the peer changed between the two requests, so the address above proves nothing about the header')
         ->and($forwarded['ip'])->not->toBe($forwarded['peer']);
 
-    // THE COUPLING TO TASK 9.2's RANGE, STATED AS AN ASSERTION RATHER THAN A
-    // COMMENT. `*` resolves to `['0.0.0.0/0', '::/0']`, which covers loopback; a
-    // declared subnet would not, and this is the assertion that says so in the
-    // failure output instead of leaving the reader to infer it from the address
-    // above.
+    // The coupling to the trusted range, as an assertion rather than a comment: `*`
+    // resolves to `['0.0.0.0/0', '::/0']`, which covers loopback, and a declared subnet
+    // would not.
     expect($forwarded['peer_is_trusted'])->toBeTrue(
         'the trusted proxy range no longer covers the loopback peer a feature test runs as — narrowing it from `*` is what this test is coupled to, and the forwarded header is ignored in this environment as a result',
     )
@@ -185,32 +156,23 @@ it('honours a forwarded client address, so the application sees the client rathe
 });
 
 /*
- * AND THE RATE_LIMIT_SUBJECT FOLLOWS IT — which is the reason the configuration
- * exists (Req 10.6, 10.8).
+ * The Rate_Limit_Subject follows the client address, which is why the configuration
+ * exists (Req 10.6, 10.8). `$request->ip()` alone would be a test of Symfony's header
+ * parsing, so the subject is read from the limiter closures the application registered,
+ * for the two limiters whose criteria this covers — `join` (10.6) and `state` (10.8).
+ * `move` keys on the presented token's hash and is unaffected either way.
  *
- * `$request->ip()` alone would be a test of Symfony's header parsing. The decision
- * task 9.2 records is about the limiters: the IP branch of the Rate_Limit_Subject
- * is reachable because no state-changing request is guaranteed to carry an
- * established Player_Session, and without the forwarded header that branch
- * resolves to the proxy for every caller alike. So the subject is read from the
- * limiter closures the application actually registered, for the two limiters whose
- * criteria this task cites — `join` (10.6) and `state` (10.8). `move` is left
- * alone: it keys on the presented token's hash and is unaffected either way.
- *
- * THE LAST ASSERTION IS THE WHOLE POINT. Two callers at two addresses must land in
- * two buckets. Under a misconfiguration both would be `ip:127.0.0.1` — one bucket,
- * shared by everybody, which is exactly the collapse the design describes and the
- * one thing that would still look correct in every other test in this suite.
+ * The last assertion is the point: two callers at two addresses land in two buckets,
+ * where a misconfiguration makes both `ip:127.0.0.1` — one bucket shared by everybody.
  */
 it('derives the ip branch of the Rate_Limit_Subject from the forwarded client address', function () {
     forwardedProbeRoute();
 
     $direct = forwardedObservation();
 
-    // PRECONDITION: THE IP BRANCH IS THE BRANCH BEING OBSERVED. The probe presents
-    // no session cookie, so `rateLimitSubject()` falls past the session branch —
-    // if it did not, the keys below would be a hash of a session id and would not
-    // move with the client address no matter how `TrustProxies` were configured.
+    // Non-vacuity: the probe presents no session cookie, so `rateLimitSubject()` falls
+    // past the session branch. This rules out keys that are a hash of a session id and
+    // would not move with the client address however `TrustProxies` were configured.
     expect($direct['join_subject'])->toBeString()->toStartWith('ip:')
         ->and($direct['state_subject'])->toBeString()->toStartWith('ip:')
         ->and($direct['join_subject'])->toBe('ip:127.0.0.1', 'the unforwarded subject is not the peer address, so the comparison below is not the one described')

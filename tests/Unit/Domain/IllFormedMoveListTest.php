@@ -15,12 +15,10 @@ use Eris\Generators;
 // Validates: Requirements 11.5, 14.8
 //
 /*
- * Task 3.5 — the five well-formedness violation classes.
+ * The five well-formedness violation classes.
  *
- * Every list here is built with `MoveList::fromMoves()`, which accepts its input
- * verbatim; `fromCellIndices()` and `append()` cannot express any of these
- * shapes, which is the whole reason `fromMoves()` exists (design, "Why
- * validation lives at the engine boundary rather than in constructors").
+ * Every list is built with `MoveList::fromMoves()`, which accepts its input
+ * verbatim; `fromCellIndices()` and `append()` cannot express any of these shapes.
  *
  * Cells are numbered
  *
@@ -28,34 +26,24 @@ use Eris\Generators;
  *     3 4 5
  *     6 7 8
  *
- * NOTHING HERE ASSERTS WHICH GUARD FIRED, AND THAT IS DELIBERATE. Requirement
- * 11.5 mandates a single uniform, detail-free rejection, so a list violating two
- * classes at once returns exactly the same value whichever guard reached it
- * first. Guard ordering is therefore unobservable from outside the engine, and
- * any assertion about it would have to reach inside the implementation. The
- * reachable property is uniformity, asserted explicitly in the last test in this
- * file — its absence here is not an oversight.
+ * Nothing asserts which guard fired. Req 11.5 mandates a single detail-free
+ * rejection, so guard ordering is unobservable from outside the engine and any
+ * assertion about it would reach inside the implementation. Uniformity is the
+ * reachable property, and it is the last test in this file.
  *
- * Eris drives the three genuinely unbounded shapes (out-of-range cell indices in
- * both directions, lengths above nine, arbitrary sequence-index perturbations)
- * at its default 100 iterations, the minimum the design asks for. Each of those
- * tests asserts its own iteration count and the spread of what it was handed, so
- * a generator that silently produced nothing fails rather than passing quietly.
- * The bounded shapes — a repeat over the nine cells, a move after a win over the
- * five cells left vacant — are enumerated as datasets instead: where a domain is
- * small enough to exhaust, exhausting it beats sampling it.
+ * Eris drives the three unbounded shapes at its default 100 iterations. Each of
+ * those tests asserts its iteration count and the spread it was handed, so a
+ * generator that produced nothing fails rather than passing quietly. The bounded
+ * shapes are enumerated as datasets instead.
  *
- * No framework boot: plain Pest functions under tests/Unit, so the generated
- * test class extends PHPUnit\Framework\TestCase. No `uses(Tests\TestCase::class)`,
- * no database, no session, no HTTP (Req 14.1).
+ * No framework boot: plain Pest functions under tests/Unit, so the generated test
+ * class extends PHPUnit\Framework\TestCase (Req 14.1).
  */
 
 /**
- * The single assertion pair Property 5 demands, applied to one ill-formed list:
- * the result is *identically* the one rejection value, and nothing was derived.
- *
- * Returns that value so the uniformity test at the foot of this file can compare
- * representatives of the five classes against each other.
+ * Property 5 for one ill-formed list: identically the one rejection value, and
+ * nothing derived. Returns it so the uniformity test at the foot of this file can
+ * compare representatives of the five classes against each other.
  */
 function rejectionFor(MoveList $moveList, string $case): InvalidMoveList
 {
@@ -72,8 +60,8 @@ function rejectionFor(MoveList $moveList, string $case): InvalidMoveList
 }
 
 /**
- * Narrows `Analysis|InvalidMoveList` for the two boundary cases that must *not*
- * be rejected, and fails loudly if they are.
+ * Narrows `Analysis|InvalidMoveList` for the two boundary cases that must not be
+ * rejected, and fails loudly if they are.
  */
 function analysisForWellFormed(MoveList $moveList, string $case): Analysis
 {
@@ -103,11 +91,9 @@ function moveListFromPairs(array $pairs): MoveList
 }
 
 /*
- * Violation class 1 — a repeated Cell_Index.
- *
- * Two Moves on the same cell with contiguous sequence indices, so the repeat is
- * the only thing wrong with the list. Nine cases, one per cell: the domain is
- * the nine cells and nothing more, so it is enumerated rather than sampled.
+ * Violation class 1 — a repeated Cell_Index. Contiguous sequence indices, so the
+ * repeat is the only fault. Nine cases: the domain is the nine cells, so it is
+ * enumerated rather than sampled.
  */
 it('rejects a move list that plays the same cell twice', function (int $cell) {
     rejectionFor(
@@ -121,8 +107,8 @@ it('rejects a move list that plays the same cell twice', function (int $cell) {
 ]);
 
 /*
- * Violation class 1, again — the repeat need not be adjacent, and the cells in
- * between are legal.
+ * Violation class 1 — the repeat need not be adjacent, and the cells between are
+ * legal.
  *
  *     X . .        X4 O0 X8 O1 X4  — the fifth Move returns to cell 4
  *     . X .
@@ -136,12 +122,9 @@ it('rejects a move list that returns to a cell played earlier', function () {
 });
 
 /*
- * Violation class 2 — a Cell_Index outside 0..8, in both directions.
- *
- * The two boundaries are pinned by hand because they are the values an off-by-one
- * guard admits: 9 is the first index above the board, and -1 the first below it.
- * A guard written `> 8` alone passes every positive case here and fails on -1,
- * which is exactly why the negative side is not left to chance.
+ * Violation class 2 — a Cell_Index outside 0..8, in both directions. The two
+ * boundaries are pinned by hand: a guard written `> 8` alone passes every positive
+ * case and fails on -1.
  */
 it('rejects a move list holding a cell index just outside the board', function (int $cell) {
     rejectionFor(
@@ -154,13 +137,11 @@ it('rejects a move list holding a cell index just outside the board', function (
 ]);
 
 /*
- * Violation class 2 — arbitrary out-of-range indices, generated. Unbounded in
- * both directions, so this is a property rather than a list of examples.
+ * Violation class 2 — arbitrary out-of-range indices, generated.
  *
- * The offending Move sits after a generated number of perfectly legal Moves
- * (cells 4, 0, 8 in that order: X holds 4 and 8, O holds 0, no line completes),
- * so the guard is shown to fire wherever in the list the bad Move happens to be
- * and not only at position zero.
+ * The offending Move sits after a generated number of legal Moves (cells 4, 0, 8:
+ * X holds 4 and 8, O holds 0, no line completes), so the guard is shown to fire
+ * wherever in the list the bad Move falls and not only at position zero.
  */
 it('rejects a move list holding any cell index outside the board', function () {
     $eris = new Facade;
@@ -176,10 +157,8 @@ it('rejects a move list holding any cell index outside the board', function () {
         ),
         Generators::choose(0, 3),
     )
-        // The generators only produce out-of-range indices, so this filters
-        // nothing. It constrains *shrinking*: without it a failure shrinks
-        // towards zero and reports an in-range index as the counterexample,
-        // which reads as nonsense. With it, a broken guard shrinks to 9 or -1.
+        // Filters nothing; it constrains shrinking. Without it a failure shrinks
+        // towards zero and reports an in-range index as the counterexample.
         ->when(static fn (int $cell, int $prefixLength): bool => $cell < 0 || $cell > 8)
         ->then(function (int $cell, int $prefixLength) use (&$iterations, &$cellsSeen): void {
             $iterations++;
@@ -196,8 +175,8 @@ it('rejects a move list holding any cell index outside the board', function () {
             rejectionFor(moveListFromPairs($pairs), "cell index {$cell} at position {$prefixLength}");
         });
 
-    // Evidence the generator did work: a property that generated nothing would
-    // pass every assertion above by never running one.
+    // Non-vacuity: rules out a generator that produced nothing and so passed every
+    // assertion above by never running one.
     expect($iterations)->toBeGreaterThanOrEqual(100)
         ->and(count(array_unique($cellsSeen)))->toBeGreaterThan(50)
         ->and(array_filter($cellsSeen, static fn (int $cell): bool => $cell < 0))->not->toBeEmpty()
@@ -205,12 +184,9 @@ it('rejects a move list holding any cell index outside the board', function () {
 });
 
 /*
- * Violation class 3 — a Sequence_Index that is not its position.
- *
- * One comparison in the engine covers three shapes, and the point of writing all
- * three out is to demonstrate that rather than to take the design's word for it:
- * a gap, a repeated index, and a start other than zero. Cells are legal and
- * distinct in every case, so the sequence indices are the only fault.
+ * Violation class 3 — a Sequence_Index that is not its position. One comparison in
+ * the engine covers all three shapes: a gap, a repeated index, and a start other
+ * than zero. Cells are legal and distinct, so the indices are the only fault.
  */
 it('rejects a move list whose sequence indices are not its positions', function (array $pairs, string $shape) {
     /** @var list<array{int, int}> $pairs */
@@ -222,13 +198,12 @@ it('rejects a move list whose sequence indices are not its positions', function 
 ]);
 
 /*
- * Violation class 3 — arbitrary perturbations, generated. The set of wrong
- * sequence indices is unbounded, so one Move of an otherwise legal list has its
- * index displaced by a generated non-zero amount, in either direction.
+ * Violation class 3 — arbitrary perturbations, generated: one Move of an otherwise
+ * legal list has its index displaced by a non-zero amount in either direction.
  *
- * The cells are the nine-move draw of `RulesEngineTest` (0, 1, 2, 5, 3, 6, 4, 8,
- * 7), truncated to the generated length. No prefix of it completes a line, so no
- * other guard can be reached first and the displaced index is the only fault.
+ * The cells are the nine-move draw of `RulesEngineTest` (0, 1, 2, 5, 3, 6, 4, 8, 7)
+ * truncated to the generated length. No prefix of it completes a line, so no other
+ * guard can be reached first.
  */
 it('rejects a move list whose sequence index is displaced by any amount', function () {
     $eris = new Facade;
@@ -247,9 +222,9 @@ it('rejects a move list whose sequence index is displaced by any amount', functi
             Generators::choose(1, 100_000),
         ),
     )
-        // Filters nothing — the delta generator never yields zero — but keeps
-        // shrinking honest: a displacement of zero is a *well formed* list, and
-        // an unconstrained shrinker would happily offer it as the counterexample.
+        // Filters nothing; keeps shrinking honest, since a displacement of zero is a
+        // well formed list that an unconstrained shrinker would offer as the
+        // counterexample.
         ->when(static fn (int $length, int $offset, int $delta): bool => $delta !== 0)
         ->then(function (int $length, int $offset, int $delta) use ($drawOrder, &$iterations, &$deltasSeen): void {
             $iterations++;
@@ -276,16 +251,11 @@ it('rejects a move list whose sequence index is displaced by any amount', functi
 });
 
 /*
- * Violation class 4 — a length above nine.
+ * Violation class 4 — a length above nine, the boundary the guard has to catch.
  *
- * Ten Moves is the boundary the guard has to catch, so it is written out by hand
- * as well as generated.
- *
- * A list longer than nine must repeat a cell by pigeonhole, so this class cannot
- * be isolated from class 1 the way the others can. That is not a defect in the
- * test: Requirement 11.5 asks only that such a list be rejected uniformly, and it
- * is precisely why the uniformity test below matters more than any claim about
- * which guard fired.
+ * A list longer than nine must repeat a cell by pigeonhole, so this class cannot be
+ * isolated from class 1 the way the others can. Req 11.5 asks only that such a list
+ * be rejected uniformly.
  */
 it('rejects a move list of ten moves', function () {
     $pairs = [];
@@ -308,8 +278,8 @@ it('rejects a move list of any length above nine', function () {
     $lengthsSeen = [];
 
     $eris->forAll(Generators::choose(10, 500))
-        // Filters nothing; stops a shrinker from proposing nine or fewer Moves,
-        // which is a well formed list and not a counterexample to anything.
+        // Filters nothing; stops a shrinker proposing nine or fewer Moves, which is a
+        // well formed list.
         ->when(static fn (int $length): bool => $length > 9)
         ->then(function (int $length) use (&$iterations, &$lengthsSeen): void {
             $iterations++;
@@ -332,16 +302,14 @@ it('rejects a move list of any length above nine', function () {
 /*
  * Violation class 5 — a Move following a Move that completes a Winning_Line.
  *
- * X0 O3 X1 O4 X2 fills the top row on the fifth Move and is a well formed,
- * finished game:
+ * X0 O3 X1 O4 X2 fills the top row on the fifth Move:
  *
  *     X X X
  *     O O .
  *     . . .
  *
- * Appending anything at all is ill formed. The five cases are the five cells left
- * vacant — bounded, so enumerated. Each appended Move is otherwise impeccable:
- * legal cell, correct sequence index, no repeat.
+ * The cases are the cells left vacant, and each appended Move is otherwise
+ * impeccable: legal cell, correct sequence index, no repeat.
  */
 it('rejects a move list carrying a move after the game was won', function (int $cell) {
     $wonGame = MoveList::fromCellIndices(0, 3, 1, 4, 2);
@@ -360,11 +328,9 @@ it('rejects a move list carrying a move after the game was won', function (int $
 ]);
 
 /*
- * The boundaries of the property, so that neither edge is swept into it.
- *
- * The empty list is well formed — it is the Move_List of every Game that has just
- * been created — and nine Moves is well formed too: the length guard is `> 9`,
- * not `>= 9`, and an off-by-one there would reject every completed game.
+ * The boundaries, so neither edge is swept into the property. The empty list is the
+ * Move_List of every newly created Game, and the length guard is `> 9` rather than
+ * `>= 9`, where an off-by-one would reject every completed game.
  */
 it('accepts an empty move list', function () {
     $analysis = analysisForWellFormed(MoveList::empty(), 'the empty list');
@@ -382,18 +348,14 @@ it('accepts a move list of nine moves', function () {
 });
 
 /*
- * PROPERTY 5 ITSELF. Everything above shows that each violation class is
- * rejected; this shows that they are rejected *identically*, which is the claim
- * Requirement 11.5 actually makes and the one callers depend on.
+ * Property 5 itself: the classes are rejected identically, which is the claim of
+ * Req 11.5.
  *
  * Five `toBe(InvalidMoveList::Error)` assertions would not establish it. Add
- * `InvalidMoveList::RepeatedCell` tomorrow and return it from the repeat guard,
- * and every individual test above still passes while a caller switching on the
- * value has silently acquired a second branch to handle — and a rejection that
- * now leaks which class was violated, which is what "deriving no Board, no
- * Mark_To_Move and no Outcome" is there to prevent. So the comparison here is
- * between the five results and each other, and the distinct-value count is taken
- * without naming any value at all.
+ * `InvalidMoveList::RepeatedCell` and return it from the repeat guard, and every
+ * test above still passes while a caller switching on the value has acquired a
+ * second branch and a rejection that leaks which class was violated. So the five
+ * results are compared against each other, without naming any value.
  */
 it('rejects every violation class with one indistinguishable value', function () {
     $representatives = [
@@ -431,11 +393,11 @@ it('rejects every violation class with one indistinguishable value', function ()
     ));
 
     expect($representatives)->toHaveCount(5)
-        // The whole property, stated without naming a value: however a Move_List
-        // is ill formed, there is exactly one thing the engine says about it.
+        // However a Move_List is ill formed, there is one thing the engine says
+        // about it.
         ->and($distinct)->toHaveCount(1)
-        // And a second guard on the same claim from the type's side: one case
-        // means there is nothing else the engine could have returned.
+        // The same claim from the type's side: one case means there is nothing else
+        // the engine could have returned.
         ->and(InvalidMoveList::cases())->toHaveCount(1);
 
     foreach ($representatives as $violation => $rejection) {

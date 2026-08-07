@@ -21,38 +21,29 @@ use Illuminate\Support\Str;
 // Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7
 //
 /*
- * Task 5.4 — `JoinGame`, the conditional UPDATE of ADR-006.
+ * `JoinGame`, the conditional UPDATE of ADR-006.
  *
- * A Feature test necessarily: the subject reads a row, writes a row and writes
- * the session. `RefreshDatabase` supplies the schema that `DB_DATABASE=:memory:`
- * otherwise leaves absent, and `phpunit.xml` sets `SESSION_DRIVER=array`, so the
- * session is in-memory and per-test — the arrangement `CreateGameTest`,
- * `PlayerTokensTest` and `GameResolverTest` use.
+ * A Feature test necessarily: the subject reads a row, writes a row and writes the
+ * session. `RefreshDatabase` supplies the schema `DB_DATABASE=:memory:` leaves
+ * absent, and `phpunit.xml` sets `SESSION_DRIVER=array` so the session is in-memory
+ * and per-test.
  *
- * WHAT IS ASSERTED HERE AND WHAT IS ASSERTED ELSEWHERE. This file covers the five
- * paths through `handle()` — accepted, short-circuited, unmatched, unparseable,
- * full — plus the two claims that are about the *mechanism* rather than about a
- * path: that the losing request leaves no credential anywhere, and that the claim
- * is one guarded statement with no read between the lookup and the write.
- * `ConcurrencyTest` holds the join race (task 5.8), which is Property 13's
- * exclusivity claim over two sessions in sequence, and `EntryRoutesTest` holds the
- * transport (task 5.6) — the 303 to `/join` and the flashed outcome, neither of
- * which `App\Games` knows about.
+ * Covered here: the five paths through `handle()` — accepted, short-circuited,
+ * unmatched, unparseable, full — plus the two mechanism claims, that the losing
+ * request leaves no credential anywhere and that the claim is one guarded statement
+ * with no read between the lookup and the write.
  *
- * A PREDICTION IN AN EARLIER DRAFT OF THIS PARAGRAPH TURNED OUT WRONG, and it is
- * corrected rather than quietly bumped: it said task 5.7 would extend this file. It
- * did not. 5.7 found this file already covered its four listed behaviours and added
- * nothing here, spending itself on `CreateGameTest` instead, where the one real gap
- * was — that no test asserted the raw Player_Token stays out of a response body.
+ * Excluded here: Property 13's exclusivity over two live sessions lives in
+ * `ConcurrencyTest`; the 303 to `/join` and the flashed outcome live in
+ * `EntryRoutesTest`.
  */
 
 uses(RefreshDatabase::class);
 
 /**
- * The subject, with its one collaborator supplied explicitly rather than resolved
- * from the container, so each test states what `JoinGame` depends on. The same
- * `PlayerTokens` instance comes back so a test can read the very session the
- * service wrote.
+ * The subject, with its collaborator supplied explicitly rather than resolved from
+ * the container. The same `PlayerTokens` instance comes back so a test can read the
+ * session the service wrote.
  *
  * @return array{JoinGame, PlayerTokens}
  */
@@ -64,19 +55,16 @@ function joiningServiceAnd(): array
 }
 
 /**
- * A saved Game waiting for an opponent, with the X slot occupied and NOTHING in
- * the session: the state `CreateGame` leaves behind as seen from a *second*
- * browser.
+ * A saved Game waiting for an opponent, with the X slot occupied and nothing in the
+ * session: the state `CreateGame` leaves behind as seen from a second browser.
  *
- * The X token is minted and assigned directly rather than through
- * `PlayerTokens::issue()`, because `issue()` writes the session — which is the
- * creator's session, and would trip the short-circuit in every test that means to
- * be somebody else. The `MintedToken` comes back so a test that *does* mean to be
- * the creator can `remember()` it deliberately.
+ * The X token is assigned directly rather than through `PlayerTokens::issue()`,
+ * which writes the current session and would trip the Req 2.4 short-circuit in
+ * every test that means to be somebody else. The `MintedToken` comes back so a test
+ * that does mean to be the creator can `remember()` it deliberately.
  *
- * `last_activity_at` is backdated so that an accepted join visibly moves it.
- * Attributes are assigned one by one because mass assignment is closed on this
- * model.
+ * `last_activity_at` is backdated so an accepted join visibly moves it. Attributes
+ * are assigned one by one because mass assignment is closed on this model.
  *
  * @return array{Game, MintedToken}
  */
@@ -116,11 +104,9 @@ function joiningRowOf(string $gameId): array
 }
 
 /**
- * Every SQL statement issued while `$work` runs, lower-cased and in order.
- *
- * The query log is the only way to assert both halves of "one statement, no
- * read-then-write": that exactly one UPDATE is issued, and that nothing reads the
- * row between the Join_Code lookup and that UPDATE.
+ * Every SQL statement issued while `$work` runs, lower-cased and in order. The
+ * query log is the only way to assert an absence of queries between the Join_Code
+ * lookup and the guarded UPDATE.
  *
  * @param  callable(): mixed  $work
  * @return list<string>
@@ -145,19 +131,15 @@ function joiningStatementsDuring(callable $work): array
 /*
  * THE ACCEPTED JOIN (Req 2.1, 2.6).
  *
- * All of Requirement 2.1 in one place: the visitor is assigned `O`, holds a
- * Player_Token bound to this Game and that Mark, and the Game is `active`. Plus
- * 2.6's increment, which is asserted as `0 → 1` against the persisted column
- * rather than as "greater than before", since the criterion is an increment of one
- * and `version_counter + 1` is evaluated by the database.
+ * The increment is asserted as `0 → 1` against the persisted column rather than as
+ * "greater than before", since `version_counter + 1` is evaluated by the database.
  *
- * The three halves of "issued" are checked the way `CreateGameTest` checks them,
- * because any two can hold while the credential is unusable: the hash is on the
- * row, the session holds a raw value for this Game, and the two are the same
- * token. The last assertion is the `MintedToken` hazard the design names outright
- * — `SET o_token_hash = :hash` with `$token->raw` in it would write the secret
- * into the database (Req 8.7) and no type checker would say a word — so the column
- * is compared against the digest AND against the raw value.
+ * "Issued" is checked in three halves because any two can hold while the credential
+ * is unusable: the hash is on the row, the session holds a raw value for this Game,
+ * and the two are the same token. The column is compared against the raw value as
+ * well as the digest because `MintedToken` carries both and `SET o_token_hash =
+ * $token->raw` would write the secret into the database (Req 8.7) with no type
+ * error.
  */
 it('assigns O to a joining visitor, activates the game and increments the version counter', function () {
     [$join, $tokens] = joiningServiceAnd();
@@ -169,8 +151,8 @@ it('assigns O to a joining visitor, activates the game and increments the versio
 
     expect($result)->toBeInstanceOf(ResolvedPlayer::class, 'a Join_Code matching a waiting Game was not accepted (Req 2.1)');
 
-    // Narrowed for the analyser as well as the reader; the expectation above is
-    // what actually fails if the join was refused.
+    // Narrowed for the analyser; the expectation above is what actually fails if
+    // the join was refused.
     if (! $result instanceof ResolvedPlayer) {
         throw new RuntimeException('the join was refused, so the assertions below would say nothing');
     }
@@ -197,12 +179,9 @@ it('assigns O to a joining visitor, activates the game and increments the versio
  * THE CREATOR PASTING THEIR OWN JOIN_CODE (Req 2.5, and 2.4 with the Mark
  * happening to be X).
  *
- * The Game comes back with `X`, no second Player is created, and the Game_State
- * and Version_Counter are unchanged — asserted against every column an accepted
- * join would have moved, so "unchanged" is a claim about the row rather than about
- * the two fields the criterion happens to name. The session is compared before and
- * after too: the creator must still hold the *same* token, not a freshly minted
- * one that happens to resolve.
+ * "Unchanged" is asserted against every column an accepted join would have moved,
+ * not just the two the criterion names. The session token is compared by value, so
+ * a freshly minted token that happens to resolve does not pass.
  */
 it('returns the creator their own game with the mark X and changes nothing', function () {
     [$join, $tokens] = joiningServiceAnd();
@@ -231,14 +210,12 @@ it('returns the creator their own game with the mark X and changes nothing', fun
 /*
  * A PLAYER RE-SUBMITTING THE CODE OF A GAME THEY ARE ALREADY IN (Req 2.4).
  *
- * The same short-circuit as the Creator's, reached with `O` instead of `X`, on a
- * Game that is already `active` and therefore already has two Players — which is
- * exactly the state Requirement 2.3 answers `game_full` for, but only for a
- * session holding no token. So this is the pair of tests that shows the branch is
+ * Reached with `O` on a Game that is already `active` — the same row state
+ * Requirement 2.3 answers `game_full` for below. The pair shows the branch is
  * decided by the session and not by the state: identical row, opposite answers.
  *
  * The join is performed by the subject rather than fabricated, so the token being
- * short-circuited on is one the subject itself issued.
+ * short-circuited on is one the subject issued.
  */
 it('returns a joined player their game with the bound mark O without creating a third player', function () {
     [$join, $tokens] = joiningServiceAnd();
@@ -260,9 +237,9 @@ it('returns a joined player their game with the bound mark O without creating a 
 /*
  * A CODE MATCHING NO GAME (Req 2.2).
  *
- * The code is well formed — ten Crockford characters from `generate()` — and
- * simply belongs to no row. A waiting Game with a *different* code exists, so the
- * rejection is not the trivial one of an empty table.
+ * The code is well formed — ten Crockford characters from `generate()` — and belongs
+ * to no row. A waiting Game with a different code exists, ruling out a rejection
+ * that only holds against an empty table.
  */
 it('rejects a well formed join code that matches no game as not_recognised', function () {
     [$join] = joiningServiceAnd();
@@ -280,16 +257,13 @@ it('rejects a well formed join code that matches no game as not_recognised', fun
 /*
  * AN UNPARSEABLE CODE IS THE SAME ANSWER AS AN UNMATCHED ONE (Req 2.2).
  *
- * Asserted as an EQUIVALENCE against the unmatched case rather than as a list of
- * expectations naming one constant, so an edit that gave malformed input its own
- * outcome fails here even if whoever made it updated this test's expected value.
- * That indistinguishability is the point: a distinguishable "wrong shape" reply
+ * Asserted as an equivalence against the unmatched case rather than against a named
+ * constant, so an edit giving malformed input its own outcome fails here even if
+ * whoever made it updated the expected value. A distinguishable "wrong shape" reply
  * would tell a prober which strings are worth trying.
  *
- * The inputs cover every way `JoinCode::parse()` can answer null and one way it is
- * never reached — too short, too long, a `U` (which Crockford excludes outright
- * and so cannot be folded), punctuation, empty, and a non-string, since a JSON
- * body may carry anything and the design keeps one vocabulary for one condition.
+ * `U` is included because Crockford excludes it outright, so it cannot be folded.
+ * Non-strings are included because a JSON body may carry anything.
  */
 it('rejects an unparseable or non-string join code exactly as it rejects an unmatched one', function () {
     [$join] = joiningServiceAnd();
@@ -322,15 +296,13 @@ it('rejects an unparseable or non-string join code exactly as it rejects an unma
 /*
  * NORMALISATION BEFORE LOOKUP.
  *
- * One submission exercising all four transformations at once — surrounding
- * whitespace, lower case, a hyphen, and both Crockford folds — against a stored
- * code chosen to contain a `1` and a `0` so that `I`/`L` → `1` and `O` → `0` have
- * something to fold *to*. `generate()` cannot be made to emit those digits on
- * demand, which is why the fixture names the code.
+ * The stored code is named rather than generated because it must contain a `1` and a
+ * `0` for `I`/`L` → `1` and `O` → `0` to have something to fold to, and `generate()`
+ * cannot be made to emit those digits on demand.
  *
- * The transformation itself belongs to `JoinCode::parse()` and is asserted
- * exhaustively in `JoinCodeTest`; what this asserts is that `JoinGame` normalises
- * *before* the lookup, which is only observable through a join succeeding.
+ * The transformation itself is asserted exhaustively in `JoinCodeTest`. What is
+ * asserted here is that `JoinGame` normalises before the lookup, which is only
+ * observable through a join succeeding.
  */
 it('normalises a submitted code before looking it up', function () {
     [$join] = joiningServiceAnd();
@@ -347,10 +319,9 @@ it('normalises a submitted code before looking it up', function () {
  * A GAME THAT ALREADY HAS TWO PLAYERS (Req 2.3).
  *
  * The Game is joined by the subject first, so the row reaches its two-Player state
- * the way a real one does, and the session is then flushed so the caller is a third
- * party holding no token — which is the precise condition Requirement 2.3 states.
- * The row is asserted unchanged across the refusal, so `game_full` is a rejection
- * rather than a write that happened to be reported.
+ * the way a real one does; the session is then flushed so the caller holds no token,
+ * which is the condition Requirement 2.3 states. The row is asserted unchanged, so
+ * `game_full` is a rejection rather than a write that happened to be reported.
  */
 it('rejects a third party for a game that already has two players as game_full', function () {
     [$join, $tokens] = joiningServiceAnd();
@@ -370,19 +341,16 @@ it('rejects a third party for a game that already has two players as game_full',
 });
 
 /*
- * THE LOSING REQUEST LEAVES NO CREDENTIAL ANYWHERE — the "no orphan credential"
- * claim, asserted from both ends.
+ * THE LOSING REQUEST LEAVES NO CREDENTIAL ANYWHERE (the "no orphan credential"
+ * claim).
  *
- * A second join against a row whose O slot is taken must leave the session holding
- * nothing for that Game_Id, and must leave the persisted hash as the *winner's*.
- * The winner's token is checked to still resolve afterwards, because the failure
- * this guards against is not an untidy session — it is an unguarded second write
- * overwriting `o_token_hash` and locking the real O Player out of their own Game,
- * unrecoverably.
+ * The winner's token is checked to still resolve afterwards because the failure this
+ * guards against is not an untidy session but an unguarded second write overwriting
+ * `o_token_hash` and locking the real O Player out of their own Game, unrecoverably.
  *
- * The absence is asserted on the raw session store as well as through
- * `heldFor()`, so a key written with an empty or malformed value — which
- * `heldFor()` reports as null by design — cannot pass this.
+ * The absence is asserted on the raw session store as well as through `heldFor()`,
+ * which reports an empty or malformed value as null by design and would hide a key
+ * written with one.
  */
 it('leaves no player token in the session or the row for a losing join', function () {
     [$join, $tokens] = joiningServiceAnd();
@@ -408,18 +376,15 @@ it('leaves no player token in the session or the row for a losing join', functio
 });
 
 /*
- * THE GUARD ACTUALLY GUARDS — observed through the affected-row count, not
- * asserted as intent.
+ * THE GUARD ACTUALLY GUARDS, observed through the affected-row count.
  *
- * The same guarded statement `JoinGame` issues is run a second time by hand
- * against the claimed row, and its return value is read: SQLite reports zero rows
- * affected, which is the entire mechanism by which the loser is told `game_full`
- * (Req 2.7, ADR-006). The state and the Version_Counter are confirmed not to move,
- * so the zero is a genuine no-op rather than an idempotent rewrite.
+ * The statement `JoinGame` issues is run a second time by hand against the claimed
+ * row and its return value read: zero rows affected is the entire mechanism by which
+ * the loser is told `game_full` (Req 2.7, ADR-006). The state and Version_Counter are
+ * confirmed not to move, so the zero is a no-op rather than an idempotent rewrite.
  *
- * This is deliberately the low-level half of the claim. The behavioural half —
- * two sessions in sequence, A gets `O` and B gets `game_full` — is task 5.8's
- * `ConcurrencyTest`, and Property 13 belongs there.
+ * The behavioural half — two sessions, A gets `O` and B gets `game_full` — is
+ * `ConcurrencyTest`'s, and Property 13 belongs there.
  */
 it('affects zero rows and moves nothing when the guarded update runs against a claimed slot', function () {
     [$join, $tokens] = joiningServiceAnd();
@@ -451,16 +416,13 @@ it('affects zero rows and moves nothing when the guarded update runs against a c
 /*
  * ONE STATEMENT, AND NO READ BETWEEN THE LOOKUP AND THE WRITE.
  *
- * The absence of that read is the point. A `SELECT` of `state` after the Join_Code
- * lookup and before the UPDATE would be a re-check in PHP, which reintroduces
- * exactly the read-then-write window the guarded statement exists to close — and
- * it would be invisible in behaviour, because both shapes pass this suite's happy
- * path. The query log is the only way to assert an absence of queries.
+ * A `SELECT` of `state` between the Join_Code lookup and the UPDATE would be a
+ * re-check in PHP, reintroducing the read-then-write window the guarded statement
+ * exists to close — and it would be invisible in behaviour, since both shapes pass
+ * this suite's happy path.
  *
- * Three assertions: the first statement is the Join_Code lookup, the second is the
- * UPDATE, and exactly one UPDATE is issued in the whole call. The SELECT that
- * follows the UPDATE is the deliberate re-read of the claimed row, so it is
- * asserted to come *after* the write rather than asserted away.
+ * The SELECT that follows the UPDATE is the deliberate re-read of the claimed row,
+ * so it is asserted to come after the write rather than asserted away.
  */
 it('claims the slot in one guarded update with no read between the lookup and the write', function () {
     [$join] = joiningServiceAnd();
@@ -479,9 +441,8 @@ it('claims the slot in one guarded update with no read between the lookup and th
         ->and($updates)->toHaveCount(1, "the claim was not a single UPDATE: {$trace}")
         ->and($updateAt)->toBe(1, "a statement ran between the Join_Code lookup and the guarded UPDATE, which is the read-then-write the single statement exists to avoid: {$trace}");
 
-    // `toContain()` takes variadic needles and no message, so the shape of the
-    // one UPDATE is checked as named booleans instead — each failure then says
-    // which half of the statement is missing rather than printing the SQL twice.
+    // `toContain()` takes variadic needles and no message, so the UPDATE's shape is
+    // checked as named booleans instead, letting each failure name its fragment.
     $fragments = [
         'sets the state' => '"state" = ?',
         'sets the O token hash' => '"o_token_hash" = ?',
@@ -502,11 +463,9 @@ it('claims the slot in one guarded update with no read between the lookup and th
 /*
  * THE SHORT-CIRCUIT ISSUES NO WRITE AT ALL.
  *
- * The companion to the test above, and the query-log half of Requirement 2.5's
- * "leave the Game_State unchanged": not merely that the columns end up where they
- * started, but that no UPDATE was attempted — so a future edit that claimed the
- * slot and then restored it would fail here rather than pass on the strength of
- * the row looking untouched afterwards.
+ * The query-log half of Requirement 2.5's "leave the Game_State unchanged": no UPDATE
+ * was attempted, so an edit that claimed the slot and then restored it fails here
+ * rather than passing on the row looking untouched afterwards.
  */
 it('issues no write when a session already holds a token for the game', function () {
     [$join, $tokens] = joiningServiceAnd();

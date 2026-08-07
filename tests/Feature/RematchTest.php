@@ -30,69 +30,54 @@ use function Pest\Laravel\post;
  * Task 7.3 — `CreateRematch`, `CreateRematchController` and
  * `POST /games/{game}/rematch`, over the real HTTP surface.
  *
- * THIS IS THE ONLY COVERAGE THE REMATCH PATH HAS. Task 7.1 shipped the service, the
- * controller and the route with no committed test of any kind, so nothing below
- * inherits a claim from another file — each of the seven claims this file makes is
- * established here or nowhere.
+ * This is the only coverage the Rematch path has, so nothing below inherits a claim
+ * from another file.
  *
- * WHY THROUGH HTTP RATHER THAN AGAINST THE SERVICE. Two of the claims are not
- * expressible at the service level at all, and a third is weaker there.
+ * Three claims are why it goes through HTTP rather than against the service:
  *
- *   - **`not_authorised` (Req 7.11)** is `GameResolver`'s answer, delivered by the
+ *   - `not_authorised` (Req 7.11) is `GameResolver`'s answer, delivered by the
  *     `acting.player` middleware. `CreateRematch::handle()` takes a `Mark` rather
- *     than a `?Mark` precisely so that there is no "not a Player" value to pass, so
- *     a tokenless request cannot be *expressed* as a service call: the refusal is
- *     observable only as a request that never reaches the service.
- *   - **The accepted redirect leaves the Game the request named**, which is unique
- *     in this application and is where "both requests return the same Rematch"
- *     becomes visible to a Player. `CreateRematch` returns a `ResolvedPlayer`; only
- *     the controller turns it into a location.
- *   - **The per-request minting of Requirement 7.6** is a claim about a *session*.
- *     A service call takes whatever session happens to be current; a request
- *     presents a credential. The distinction is the whole of ADR-010.
+ *     than a `?Mark` so there is no "not a Player" value to pass, which makes the
+ *     refusal expressible only as a request that never reaches the service.
+ *   - The accepted redirect leaves the Game the request named, which happens nowhere
+ *     else in this application and is where convergence becomes visible to a Player.
+ *     `CreateRematch` returns a `ResolvedPlayer`; only the controller makes a location.
+ *   - The per-request minting of Requirement 7.6 is a claim about a session. A
+ *     service call takes whatever session is current; a request presents a
+ *     credential (ADR-010).
  *
- * WHY IT SUSPENDS AND RESUMES SESSIONS RATHER THAN STARTING CLEAN ONES.
- * `SubmitMoveTest` starts a fresh session per request and says why: none of its
- * claims is about a stored credential surviving anything, only about which token a
- * request presents. Both of this file's central claims are the other kind.
- * Requirement 7.6 is that each Player is issued a token AT ITS OWN REQUEST — which
- * is a claim about the second Player's slot having been NULL until they asked, and
- * about the first Player's credential still resolving afterwards. That needs BOTH
- * sessions to still exist at the end, so `ConcurrencyTest`'s save-and-resume shape
- * is the faithful one here, with one addition it does not need: a request rewrites
- * the session id (`StartSession` re-reads it from a cookie the test client does not
- * send), so the id to resume by is re-captured AFTER every POST rather than once.
+ * It suspends and resumes sessions rather than starting clean ones, unlike
+ * `SubmitMoveTest`, because Requirement 7.6 is about the second Player's slot having
+ * been NULL until they asked AND the first Player's credential still resolving
+ * afterwards — which needs both sessions to exist at the end. One addition to
+ * `ConcurrencyTest`'s shape: a request rewrites the session id (`StartSession`
+ * re-reads it from a cookie the test client does not send), so the id to resume by is
+ * re-captured after every POST rather than once.
  *
- * WHAT IS DELIBERATELY NOT HERE. Requirements 7.1 and 7.13 are `RematchControl.tsx`
- * (task 7.2), which is a client component and therefore not a PHP test's ground —
- * its assertions are task 6.7's Vitest suite. Requirement 7.12 — `rematchGameId` in
- * the representation — is `GameRepresentation`'s and is asserted in
- * `GameRepresentationTest`. Requirement 7.7's negative half, that a session holding
- * no preceding token establishes no continuity, is the `not_authorised` case below;
- * its positive half is the swap. The `catch` branch of `createRematchOf()` is a
- * concurrency claim about two requests interleaved around one insert, which is
- * task 12.3's shape and not this file's.
+ * Deliberately not here. Requirements 7.1 and 7.13 are `RematchControl.tsx`, asserted
+ * in task 6.7's Vitest suite. Requirement 7.12, `rematchGameId` in the
+ * representation, is `GameRepresentationTest`'s. Requirement 7.7's negative half is
+ * the `not_authorised` case below and its positive half is the swap. The `catch`
+ * branch of `createRematchOf()` is a concurrency claim about two requests interleaved
+ * around one insert, which is task 12.3's.
  */
 
 uses(RefreshDatabase::class);
 
 /**
- * Suspends the Player_Session in effect and resumes another, so that two callers
- * below are two *Players* rather than one Player posting twice.
+ * Suspends the Player_Session in effect and resumes another, so the callers below are
+ * two Players rather than one Player posting twice.
  *
- * The mechanism, and why each line is needed, is `concurrencySwitchSession()`'s: the
- * outgoing payload is written through the handler first, because `Store::start()`
+ * The outgoing payload is written through the handler first because `Store::start()`
  * MERGES what the handler holds for the incoming id into the attributes already in
- * memory rather than replacing them — so a switch that only changed the id would
- * carry the outgoing session's `player_tokens.*` key into the incoming one, and the
- * second Player would arrive already holding the first Player's credentials.
+ * memory rather than replacing them: a switch that only changed the id would carry
+ * the outgoing session's `player_tokens.*` key into the incoming one. Same mechanism
+ * as `concurrencySwitchSession()`.
  *
- * WHAT IS DIFFERENT HERE, AND IT IS NOT OPTIONAL. This file makes real requests, and
- * `StartSession` sets the store's id from the session cookie on every one of them —
- * a cookie the test client does not send, so each request replaces the id with a
- * freshly generated one. The id a session must be resumed by is therefore the id in
- * effect AFTER its last request, not the one this function returned before it, and
- * every caller below re-reads `Session::getId()` once the POST has been made.
+ * `StartSession` sets the store's id from the session cookie on every request — a
+ * cookie the test client does not send, so each request replaces the id with a freshly
+ * generated one. The id a session must be resumed by is the id in effect AFTER its
+ * last request, so every caller re-reads `Session::getId()` once the POST is made.
  *
  * @param  string|null  $id  An existing session id to resume, or null for a new one.
  * @return string The id now in effect.
@@ -113,21 +98,19 @@ function rematchSwitchSession(?string $id = null): string
 
 /**
  * A saved Game in `$state` whose Move_List is `$cells` recorded contiguously from
- * zero, together with the two Player_Tokens bound to it — and NOTHING in any
- * session.
+ * zero, together with the two Player_Tokens bound to it — and NOTHING in any session.
  *
- * The tokens are minted and their hashes assigned directly rather than issued
- * through a real create-plus-join, because `PlayerTokens::issue()` writes whichever
- * session happens to be current and there are two Players here; and because the
- * Game_State is a parameter, which no sequence of real requests can produce for
- * `won` without playing a Game first. Both `MintedToken`s come back so a test can
- * decide which session presents which.
+ * The hashes are assigned directly rather than issued through a real
+ * create-plus-join, because `PlayerTokens::issue()` writes whichever session happens
+ * to be current and there are two Players here, and because no sequence of real
+ * requests produces a `won` Game_State without playing a Game first. Both
+ * `MintedToken`s come back so a test can decide which session presents which.
  *
  * `version_counter` is `1 + count($cells)` for a Game that has an opponent — one for
- * the join (Req 2.6) and one per accepted Move (Req 4.7) — so "it moved exactly
- * once" below is asserted against a value a real Game would carry rather than
- * against a round number. `last_activity_at` is backdated: creating a Rematch must
- * NOT move it (Req 13.2), and a column already at `now()` could not show that.
+ * the join (Req 2.6) and one per accepted Move (Req 4.7) — so "it moved exactly once"
+ * below is asserted against a value a real Game would carry rather than a round
+ * number. `last_activity_at` is backdated because creating a Rematch must not move it
+ * (Req 13.2), which a column already at `now()` could not show.
  *
  * @param  list<int>  $cells
  * @return array{game: Game, tokens: array{x: MintedToken, o: MintedToken}}
@@ -165,17 +148,13 @@ function rematchFixture(GameState $state = GameState::Won, array $cells = [0, 3,
 }
 
 /**
- * Every column of a `games` row that a Rematch request must leave alone, read
- * straight from the table rather than through any model the subject returned, so a
- * stale or hand-assigned in-memory instance cannot make an assertion pass.
+ * Every column of a `games` row that a Rematch request must leave alone, read from the
+ * table rather than through any model the subject returned, so a stale or
+ * hand-assigned in-memory instance cannot make an assertion pass.
  *
- * `version_counter` IS DELIBERATELY ABSENT, and `rematchVersionOf()` reads it
- * instead. It is the one column creation is *required* to move on the preceding row
- * (Req 7.5), so keeping it out of this array is what lets a single comparison say
- * "everything else is identical" — including `last_activity_at`, which Requirement
- * 13.2 forbids this operation from touching, and `winning_mark` and `state`, which
- * Requirement 7.14's neighbourhood requires to be exactly as the final Move left
- * them.
+ * `version_counter` is deliberately absent and `rematchVersionOf()` reads it instead:
+ * it is the one column creation is required to move on the preceding row (Req 7.5), so
+ * keeping it out is what lets a single comparison say "everything else is identical".
  *
  * @return array{state: string, winning_mark: string|null, join_code: string|null, x_token_hash: string|null, o_token_hash: string|null, rematch_of_game_id: string|null, last_activity_at: string}
  */
@@ -222,11 +201,10 @@ function rematchSlotOf(Mark $mark): string
 /**
  * The ids of every Game recording `$precedingId` as the Game it is a Rematch of.
  *
- * A LIST, AND NOT A COUNT OR A `sole()`. Requirement 7.8 is "at most one", so the
- * assertion has to be able to report two: `sole()` would throw before an expectation
- * could name the failure, and a count says nothing about *which* row survived when
- * the answer is one. Ordered by `id` — UUIDv7, so insertion order — which makes a
- * two-row failure legible rather than arbitrary.
+ * A list rather than a count or a `sole()`, because Requirement 7.8 is "at most one"
+ * and the assertion has to be able to report two: `sole()` would throw before an
+ * expectation could name the failure, and a count says nothing about which row
+ * survived. Ordered by `id`, which is UUIDv7 and so insertion order.
  *
  * @return list<string>
  */
@@ -262,13 +240,11 @@ function rematchMoveListOf(string $gameId): array
 /**
  * Every Game_Id the session in effect holds a Player_Token for.
  *
- * READ AS A NESTED ARRAY, NOT AS A FLAT KEY, for the reason
- * `concurrencyTokenKeys()` records: `PlayerTokens` writes
- * `Session::put('player_tokens.'.$gameId, ...)`, and `Store::put()` interprets the
- * dot as `Arr::set()` does, so the store holds ONE top-level `player_tokens` key
- * whose value is a Game_Id-keyed array. A filter over `Session::all()`'s top-level
- * keys for the prefix `player_tokens.` matches nothing ever — including when a token
- * is held — which is an assertion that cannot fail.
+ * Read as a nested array, not as a flat key: `PlayerTokens` writes
+ * `Session::put('player_tokens.'.$gameId, ...)` and `Store::put()` interprets the dot
+ * as `Arr::set()` does, so the store holds one top-level `player_tokens` key whose
+ * value is a Game_Id-keyed array. Filtering `Session::all()`'s top-level keys for the
+ * prefix `player_tokens.` matches nothing ever, even when a token is held.
  *
  * @return list<string>
  */
@@ -284,12 +260,12 @@ function rematchTokenKeys(): array
 }
 
 /**
- * `POST /games/{preceding}/rematch` in the session in effect, with no body — which is
- * the whole of the request shape the design gives this endpoint.
+ * `POST /games/{preceding}/rematch` in the session in effect, with no body — the whole
+ * of the request shape the design gives this endpoint.
  *
- * IT DOES NOT SWITCH SESSIONS, unlike `submitMovePost()`. Every caller below has
- * already established which Player it is, and the rejection cases need the flashed
- * outcome to survive into the assertion, which a switch would discard.
+ * It does not switch sessions, unlike `submitMovePost()`: every caller has already
+ * established which Player it is, and the rejection cases need the flashed outcome to
+ * survive into the assertion, which a switch would discard.
  *
  * @return TestResponse<Response>
  */
@@ -315,15 +291,12 @@ function rematchProps(TestResponse $response): array
  * The Mark a session's stored Player_Token for `$gameId` resolves to against a FRESH
  * read of that row, or null if it resolves to neither slot.
  *
- * BOTH HALVES ARE READ RATHER THAN REMEMBERED, and that is what makes this the
- * assertion Requirement 7.6 needs. The token comes out of the session by way of
- * `PlayerTokens::heldFor()`, so it is the credential the browser actually holds and
- * not a copy the test kept; the row is re-read from the database, so a hash the
- * subject assigned in memory but never persisted resolves to nothing. A session
- * entry whose hash was never written, or a hash written for a slot the session was
- * not told about, each fail here — and either would leave a Player permanently
- * unable to play their own Rematch, since a Player_Token cannot be reissued
- * (ADR-005, Req 12.10).
+ * Both halves are read rather than remembered, which is what makes this the assertion
+ * Requirement 7.6 needs: the token comes out of the session, so it is the credential
+ * the browser holds and not a copy the test kept, and the row is re-read, so a hash
+ * assigned in memory but never persisted resolves to nothing. Either failure would
+ * leave a Player permanently unable to play their own Rematch, since a Player_Token
+ * cannot be reissued (ADR-005, Req 12.10).
  */
 function rematchResolvedMark(string $gameId): ?Mark
 {
@@ -353,38 +326,30 @@ function rematchHeldHashFor(string $gameId): ?string
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * Three requests, in two distinct Player_Sessions, over one finished Game: the first
- * Player asks, asks again, and then the second Player asks. All three converge on
- * one Rematch row.
+ * Player asks, asks again, then the second Player asks. All three converge on one
+ * Rematch row.
  *
- * THE DATASET RUNS IT IN BOTH ORDERS, and the two runs are not the same test with the
- * letters exchanged. Requirement 7.3 says the swap holds "irrespective of which
- * Player requested the Rematch first", and the two orders exercise genuinely
- * different rows of the table: when X asks first, the CREATING request populates
- * `o_token_hash` and leaves `x_token_hash` NULL — the asymmetry an earlier draft's
- * CHECK would have rejected outright, and the one a reader is most likely to think
- * impossible. When O asks first it is the other way round, which is the shape that
- * would still pass a test written only for the first.
+ * The dataset runs both orders because Requirement 7.3 holds "irrespective of which
+ * Player requested the Rematch first", and the two orders reach genuinely different
+ * rows: when X asks first, the CREATING request populates `o_token_hash` and leaves
+ * `x_token_hash` NULL, and when O asks first it is the other way round.
  *
- * THE ASSERTION THIS TASK EXISTS FOR is the one made twice before each Player's
- * request: the slot that request will fill IS NULL BEFORE IT. That is the difference
- * between minting per request (ADR-010, Req 7.6) and minting both tokens at creation
- * — the impossible behaviour an earlier draft of Requirement 7 specified, recorded in
- * `docs/ai-direction.md`. An implementation that folded the minting back into the
- * insert would populate both slots at the first request and pass every other
- * assertion here.
+ * The central assertion is made twice, before each Player's request: the slot that
+ * request will fill is NULL before it. That is the difference between minting per
+ * request (ADR-010, Req 7.6) and minting both tokens at creation, which would
+ * populate both slots at the first request and pass every other assertion here.
  *
- * The preconditions are asserted rather than assumed, because each is a way this
- * could pass for the wrong reason: the Game really is terminal with a five-Move
- * Move_List, no Rematch exists yet, and each session holds the preceding token for
- * the Mark it claims to and nothing else.
+ * The preconditions are asserted rather than assumed, because each is a way this could
+ * pass for the wrong reason: the Game really is terminal with a five-Move Move_List,
+ * no Rematch exists yet, and each session holds the preceding token for the Mark it
+ * claims and nothing else.
  */
 it('converges on one rematch with the marks swapped, minting each session its own token at its own request', function (Mark $asksFirst) {
     $fixture = rematchFixture();
     $preceding = $fixture['game'];
 
-    // The Mark each session held in the preceding Game, and the Mark each must
-    // therefore be assigned on the Rematch — DERIVED HERE THE WAY REQUIREMENT 7.3
-    // derives it, from the token that session presents and from nothing else.
+    // Derived the way Requirement 7.3 derives it: from the token that session
+    // presents and from nothing else.
     $secondMark = $asksFirst->opponent();
     $firstOnRematch = $asksFirst->opponent();
     $secondOnRematch = $secondMark->opponent();
@@ -415,8 +380,8 @@ it('converges on one rematch with the marks swapped, minting each session its ow
     $rematchId = $created[0];
 
     $first->assertStatus(303)
-        // THE REDIRECT LEAVES THE GAME THE REQUEST NAMED, which happens nowhere else
-        // in the application, and it is how a Player reaches a Rematch at all.
+        // The redirect leaves the Game the request named, which is how a Player
+        // reaches a Rematch at all.
         ->assertRedirect(url('/games/'.$rematchId))
         ->assertSessionMissing('outcome')
         ->assertSessionHasNoErrors();
@@ -430,15 +395,13 @@ it('converges on one rematch with the marks swapped, minting each session its ow
         ->and($rematchRow['rematch_of_game_id'])->toBe($preceding->id, 'the Rematch does not record the Game_Id of the preceding Game (Req 7.4)')
         ->and(rematchVersionOf($rematchId))->toBe(0, "the Rematch's own Version_Counter did not start at 0 (Req 7.2)")
         ->and(rematchMoveListOf($rematchId))->toBe([], 'the Rematch was not created with an empty Move_List (Req 7.2)')
-        // Req 7.3 and Req 7.6, in one pair of assertions: the requester's own slot
-        // holds the digest of the token now in their session, and THE ABSENT
-        // PLAYER'S SLOT IS STILL NULL.
+        // Req 7.3 and Req 7.6: the requester's own slot holds the digest of the token
+        // now in their session, and the absent Player's slot is still NULL.
         ->and($rematchRow[rematchSlotOf($firstOnRematch)])->toBe(rematchHeldHashFor($rematchId), 'the slot for the swapped Mark does not hold the digest of the Player_Token in the requesting session (Req 7.3, 7.6)')
         ->and($rematchRow[rematchSlotOf($firstOnRematch)])->not->toBeNull('the requesting session was issued no Player_Token for the Rematch (Req 7.6)')
         ->and($rematchRow[rematchSlotOf($secondOnRematch)])->toBeNull('the absent Player\'s Rematch token was minted before that Player asked for it, which is the behaviour ADR-010 exists to replace (Req 7.6)')
         ->and(rematchResolvedMark($rematchId))->toBe($firstOnRematch, 'the requesting session\'s Rematch token does not resolve to the opposite of the Mark it held in the preceding Game (Req 7.3, 7.6)')
-        // Req 7.5 and Req 7.14: the preceding Game moved its Version_Counter once
-        // and nothing else about it moved at all.
+        // Req 7.5 and Req 7.14.
         ->and(rematchVersionOf($preceding->id))->toBe($versionBefore + 1, "creating the Rematch did not increment the preceding Game's Version_Counter by exactly one (Req 7.5)")
         ->and(rematchRowOf($preceding->id))->toBe($before, 'creating the Rematch changed a column of the preceding Game other than its Version_Counter (Req 7.14, 13.2)')
         ->and(rematchMoveListOf($preceding->id))->toBe($movesBefore, 'the preceding Game\'s Move_List did not survive the creation of its Rematch (Req 7.14)');
@@ -457,9 +420,9 @@ it('converges on one rematch with the marks swapped, minting each session its ow
         ->and(rematchRowOf($preceding->id))->toBe($before, 'a repeated request changed the preceding Game (Req 7.9, 7.14)')
         ->and(rematchMoveListOf($rematchId))->toBe([], 'a repeated request added a Move to the Rematch')
         // Re-minting replaces the hash in the requester's own slot, which ADR-010
-        // names as a consequence worth having — it is how a Player who lost their
-        // Rematch token but kept the preceding one recovers. What it must NOT do is
-        // reach the other slot.
+        // names as a consequence worth having: it is how a Player who lost their
+        // Rematch token but kept the preceding one recovers. It must not reach the
+        // other slot.
         ->and(rematchResolvedMark($rematchId))->toBe($firstOnRematch, 'a repeated request left the session holding a Player_Token that no longer resolves to its Mark (Req 7.6, 7.9)')
         ->and(rematchRowOf($rematchId)[rematchSlotOf($secondOnRematch)])->toBeNull('a repeated request from one Player filled the ABSENT Player\'s slot (Req 7.6)');
 
@@ -473,9 +436,8 @@ it('converges on one rematch with the marks swapped, minting each session its ow
         ->and(rematchTokenKeys())->toBe([$preceding->id], 'the second session carries Player_Tokens from the first, so the two callers are not two distinct Players')
         ->and(rematchResolvedMark($preceding->id))->toBe($secondMark, 'the second session does not hold the preceding Player_Token for the other Mark (Req 7.7)')
         ->and(rematchResolvedMark($rematchId))->toBeNull('the second session already holds a Player_Token for the Rematch, so its request below mints nothing (Req 7.6)')
-        // THE SAME ASSERTION AS BEFORE THE FIRST REQUEST, NOW FOR THE OTHER PLAYER,
-        // AND AT THE MOMENT IT MATTERS MOST: the Rematch has existed for two
-        // requests and this Player's slot is STILL empty.
+        // The same assertion as before the first request, now for the other Player:
+        // the Rematch has existed for two requests and this slot is still empty.
         ->and(rematchRowOf($rematchId)[rematchSlotOf($secondOnRematch)])->toBeNull('the second Player\'s Rematch token existed before the second Player asked for it (Req 7.6, ADR-010)');
 
     // ---- The second request. ----
@@ -497,8 +459,8 @@ it('converges on one rematch with the marks swapped, minting each session its ow
         ->and($final['o_token_hash'])->not->toBeNull('the Rematch has no O Player after both Players asked for it')
         ->and($final['x_token_hash'])->not->toBe($final['o_token_hash'], 'the two Players of the Rematch hold the same Player_Token, so they are not two Players (Req 3.1)')
         ->and(rematchVersionOf($rematchId))->toBe(0, "the second Player's request incremented the Rematch's own Version_Counter")
-        // THE WHOLE OF REQUIREMENT 7.5 OVER THREE REQUESTS: one increment, not
-        // three, because only one of them created anything.
+        // Requirement 7.5 over three requests: one increment, not three, because only
+        // one of them created anything.
         ->and(rematchVersionOf($preceding->id))->toBe($versionBefore + 1, 'the preceding Game\'s Version_Counter moved other than exactly once across three Rematch requests (Req 7.5, 7.9, Property 12)')
         ->and(rematchRowOf($preceding->id))->toBe($before, 'three Rematch requests changed a column of the preceding Game other than its Version_Counter (Req 7.14, 13.2)')
         ->and(rematchMoveListOf($preceding->id))->toBe($movesBefore, 'the preceding Game\'s Move_List did not survive three Rematch requests (Req 7.14)');
@@ -509,10 +471,9 @@ it('converges on one rematch with the marks swapped, minting each session its ow
     expect(Session::getId())->toBe($sessionOne)
         ->and(rematchTokenKeys())->toEqualCanonicalizing([$preceding->id, $rematchId], 'the first Player\'s session does not hold Player_Tokens for both the preceding Game and the Rematch')
         ->and(rematchHeldHashFor($rematchId))->toBe($firstPlayersToken, "the second Player's request replaced the Player_Token in the first Player's session")
-        // The assertion that matters most, and the one the resume exists for: the
-        // second Player's arrival did not take the first Player's slot. It could
-        // not be made against a copy the test kept, because the copy would still
-        // hash to a value on a row that had been rewritten.
+        // The assertion the resume exists for. It could not be made against a copy the
+        // test kept, because the copy would still hash to a value on a row that had
+        // been rewritten.
         ->and(rematchResolvedMark($rematchId))->toBe($firstOnRematch, "the second Player's request unbound the first Player's Player_Token, locking them out of their own Rematch (Req 3.1, 7.6)");
 })->with([
     'the X player asks first' => Mark::X,
@@ -525,27 +486,22 @@ it('converges on one rematch with the marks swapped, minting each session its ow
  *    NOTHING IS WRITTEN (Req 7.10, Property 9).
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * Both non-terminal states, because Requirement 7.10 draws no distinction between
- * them and neither does the outcome vocabulary: a Game still `waiting_for_opponent`
- * and a Game still `active` are refused by the same value. The requester is the X
- * Player in both cases, since the waiting state means there is no O Player to be.
+ * Both non-terminal states, since Requirement 7.10 draws no distinction between them.
+ * The requester is the X Player in both cases, because the waiting state means there
+ * is no O Player to be.
  *
- * THE REFUSAL IS ASSERTED FROM THREE SIDES. The transport is the design's — a 303
- * back to the PRECEDING game page, the one the request named, with `invalid_state`
- * flashed, never a 4xx. Nothing was created: no row records the Game as its
- * predecessor. And nothing was credentialled: the session holds no Player_Token it
- * did not already hold, which is what would remain if the guard ran after the minting
- * rather than before it.
+ * Three sides to the refusal: a 303 back to the preceding game page with
+ * `invalid_state` flashed and never a 4xx; nothing created; and nothing credentialled
+ * — the session holds no Player_Token it did not already hold, which is what would
+ * remain if the guard ran after the minting rather than before it.
  *
- * THE CONTRAST AT THE END IS WHAT MAKES THIS AN ASSERTION ABOUT THE STATE rather than
- * about a route that refuses everything: the same session posts to the same endpoint
- * again with only the Game_State changed to `drawn`, and is accepted. Without it,
- * every assertion above would also hold for a broken endpoint.
+ * The accepted request at the end is what makes this an assertion about the state
+ * rather than about a route that refuses everything.
  */
 it('refuses a rematch of a game that is not in a terminal state and writes nothing', function (GameState $state, array $cells) {
     // The dataset's Cells arrive as a bare `array`, since a Pest dataset carries no
-    // type information; they are narrowed here rather than at the fixture, which
-    // takes the `list<int>` its Sequence_Indexes depend on.
+    // type information; narrowed here rather than at the fixture, which takes the
+    // `list<int>` its Sequence_Indexes depend on.
     $fixture = rematchFixture($state, array_values(array_map(intval(...), $cells)));
     $preceding = $fixture['game'];
 
@@ -575,9 +531,9 @@ it('refuses a rematch of a game that is not in a terminal state and writes nothi
         ->and(rematchTokenKeys())->toBe([$preceding->id], 'the refused request left a Player_Token for a Game that was never created, so the token was minted before the state was checked (Req 7.10)');
 
     // ---- The same session, the same endpoint, a terminal Game: accepted. ----
-    // `drawn` rather than `won`, so no `winning_mark` is needed to satisfy the CHECK
-    // that pairs the two, and so the only difference from the refusal above is the
-    // one column Requirement 7.10 turns on.
+    // `drawn` rather than `won` so no `winning_mark` is needed to satisfy the CHECK
+    // that pairs the two, leaving the one column Requirement 7.10 turns on as the only
+    // difference from the refusal above.
     DB::table('games')->where('id', $preceding->id)->update(['state' => GameState::Drawn->value]);
 
     rematchPost($preceding->id)
@@ -595,23 +551,14 @@ it('refuses a rematch of a game that is not in a terminal state and writes nothi
  * 3. A TOKENLESS SESSION IS `not_authorised` (Req 7.11, 9.6, 3.10).
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * OBSERVABLE ONLY THROUGH HTTP, WHICH IS WHY IT IS HERE. This is `GameResolver`'s
- * answer, thrown by the `acting.player` middleware before `CreateRematch` is
- * constructed, let alone called. `CreateRematch::handle()` takes a `Mark` rather than
- * a `?Mark` precisely so that there is no "not a Player" value to pass it, so the
- * refusal cannot be expressed as a service call at all: it is a request that never
- * reaches the service.
+ * The claim is that `POST /games/{game}/rematch` carries the `acting.player`
+ * middleware at all: a route that forgot it would answer 500 from
+ * `ResolveActingPlayer::resolved()`, or mint a stranger a token. Asserted through a
+ * request rather than by reading the route table.
  *
  * The Game is finished, has both Players and has a Move_List, so a request that got
- * through would have something real to create and something real to disclose. That
- * `POST /games/{game}/rematch` carries the middleware at all is the claim — a route
- * that forgot it would answer 500 from `ResolveActingPlayer::resolved()`, or worse,
- * mint a stranger a token — and it is asserted through a request rather than by
- * reading the route table.
- *
- * The contrast at the end is the same one as above: the same POST, from a session
- * holding the X Player's preceding token, is accepted. Without it the 403 could
- * equally be a broken endpoint.
+ * through would have something real to create and something real to disclose. The
+ * accepted request at the end rules out a broken endpoint.
  */
 it('refuses a tokenless session with not_authorised and creates no rematch', function () {
     $fixture = rematchFixture();
@@ -621,8 +568,7 @@ it('refuses a tokenless session with not_authorised and creates no rematch', fun
     $versionBefore = rematchVersionOf($preceding->id);
     $movesBefore = rematchMoveListOf($preceding->id);
 
-    // A session that holds nothing at all: not a token for another Game, not an
-    // expired one. Requirement 9.6's first failure mode.
+    // A session holding nothing at all — Requirement 9.6's first failure mode.
     rematchSwitchSession();
 
     expect(rematchTokenKeys())->toBe([], 'the session under test holds a Player_Token, so it is not a tokenless one')

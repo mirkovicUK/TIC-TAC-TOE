@@ -7,12 +7,11 @@ namespace Tests\Unit\Domain\Support;
 /**
  * Independent, deliberately naive win oracle. Test-only.
  *
- * The engine must never be its own judge: if the enumeration asked the engine
- * when to stop recursing, Properties 3 and 4 would be tautologies. So this
- * shares no code with the domain namespace, not even a type — it keeps its own
- * hand-written line table, because one table read by both implementations could
- * be wrong in both identically and they would agree anyway. Small enough to
- * review by eye is the entire basis for trusting it.
+ * If the enumeration asked the engine when to stop recursing, Properties 3 and 4
+ * would be tautologies. So this shares no code and no type with the domain
+ * namespace and keeps its own hand-written line table: a table read by both
+ * implementations could be wrong in both identically and they would still agree.
+ * Being small enough to review by eye is the whole basis for trusting it.
  */
 final class LineOracle
 {
@@ -23,8 +22,7 @@ final class LineOracle
      *     3 4 5
      *     6 7 8
      *
-     * Held in a constant so the table is built once for the whole walk rather
-     * than once per node (mitigation 1 of the runtime budget).
+     * A constant, so the table is built once for the whole walk, not per node.
      *
      * @var list<array{int, int, int}>
      */
