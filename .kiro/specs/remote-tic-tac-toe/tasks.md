@@ -321,7 +321,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Not marked optional: it remains the only mechanical guard on the `TrustProxies` configuration, which no behavioural test would notice
     - _Requirements: 10.6, 10.8_
 
-  - [ ] 9.6 Write `RateLimitTest` for the join boundary
+  - [x] 9.6 Write `RateLimitTest` for the join boundary
     - **Property 20: Conforming polling is never rate limited**
     - `array` cache driver so the window is deterministic; twenty join requests asserted *not* rate limited in a loop, then one assertion that the twenty-first is; assert the rejected request changed no Game state
     - Also assert state requests issued for a full window at the rate Requirement 8 demands are never rate limited
