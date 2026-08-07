@@ -314,7 +314,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 10.6, 10.7, 10.8_
     - _Properties: 20_
 
-  - [ ] 9.5 Write `MiddlewareConfigurationTest`
+  - [x] 9.5 Write `MiddlewareConfigurationTest`
     - Its own file, because it tests middleware configuration rather than rate-limit behaviour
     - Set `X-Forwarded-For` and assert the resolved client address is the forwarded value rather than the test client's. **This test is coupled to the `*` trusted range from 9.2** — a feature test has no real peer, so the framework supplies a loopback address, and the header is honoured only if the trusted range includes loopback. The test and the range are one decision, not two
     - A companion forgery assertion was considered and dropped: there is no flag to read, and `handle()` calls `runningUnitTests()` before both the origin and the token checks, so the middleware short-circuits entirely in the test environment and nothing about that path is observable from a feature test. Requirement 14.3's exclusion therefore stands on its own, and the attempt is recorded in `docs/ai-direction.md`
