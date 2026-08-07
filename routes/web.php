@@ -5,12 +5,13 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\JoinFormController;
 use App\Http\Controllers\JoinGameController;
 use App\Http\Controllers\ShowGameController;
+use App\Http\Controllers\SubmitMoveController;
 use Illuminate\Support\Facades\Route;
 
 /*
- * The five routes of task 5.6, in the order the design's HTTP-surface table lists
- * them. `POST /games/{game}/moves` (task 6.2), `POST /games/{game}/rematch`
- * (task 7.x) and the Health_Endpoint (task 10.x) are deliberately absent.
+ * The five routes of task 5.6 followed by task 6.2's move route, in the order the
+ * design's HTTP-surface table lists them. `POST /games/{game}/rematch` (task 7.x)
+ * and the Health_Endpoint (task 10.x) are deliberately absent.
  *
  * NO `throttle:` MIDDLEWARE IS ATTACHED YET, AND THAT IS A DECISION RATHER THAN
  * AN OMISSION. The design's table puts `throttle:create-game` on `POST /games`,
@@ -60,3 +61,19 @@ Route::post('/join', JoinGameController::class)->name('join.store');
 Route::get('/games/{game}', ShowGameController::class)
     ->middleware('acting.player')
     ->name('games.show');
+
+/*
+ * Task 6.2 — submit a Move. Same `acting.player` middleware as the page above, so
+ * authorisation is settled before `cell_index` is read at all (Req 3.9), and the
+ * refusal is a thrown `GameNotVisibleException` that no later step can un-refuse.
+ *
+ * `throttle:move` (Req 10.7) is still absent for the reason given at the head of
+ * this file: the named limiter does not exist until task 10.x, and referencing it
+ * now would make every request to this route a 500.
+ *
+ * `SubmitMoveController` type-hints `Request` and not `App\Models\Game`, which is
+ * what keeps route-model binding away from this second `{game}` route.
+ */
+Route::post('/games/{game}/moves', SubmitMoveController::class)
+    ->middleware('acting.player')
+    ->name('games.moves.store');

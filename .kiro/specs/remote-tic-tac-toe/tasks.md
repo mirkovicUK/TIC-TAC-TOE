@@ -217,7 +217,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 3.5, 3.6, 3.9, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 5.3, 5.4, 6.2, 6.4_
     - _Properties: 9, 12, 14_
 
-  - [ ] 6.2 Add the move route and its controller
+  - [x] 6.2 Add the move route and its controller
     - `POST /games/{game}/moves` with `ResolveActingPlayer`; `cell_index` deliberately **not** validated by a Form Request, so a bad cell yields `invalid_move` rather than a 422 validation payload
     - Rejections of an authorised player's action answer 303 to the game page with the outcome flashed, so the following GET carries the outcome together with the current Game_State, Move_List and Version_Counter
     - _Requirements: 4.4, 5.4, 5.5_
