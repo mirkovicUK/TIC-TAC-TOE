@@ -89,19 +89,19 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 4.1, 6.2, 11.1, 11.2, 11.3, 11.5, 11.7, 11.8_
     - _Properties: 1, 2, 3, 4, 5_
 
-  - [ ] 3.3 Write the independent win oracle `tests/Unit/Domain/Support/LineOracle.php`
+  - [x] 3.3 Write the independent win oracle `tests/Unit/Domain/Support/LineOracle.php`
     - A deliberately naive, test-only implementation that checks the eight lines against a plain board array and returns terminality plus **all** lines held by a mark
     - **The engine must never be its own judge.** If the enumeration asked the engine when to stop recursing, Properties 3 and 4 would be tautologies
     - Keep it small enough to review by eye — that is the entire basis for trusting it. Hoist its line table into a static array (mitigation 1 of the runtime budget)
     - _Requirements: 14.2_
 
-  - [ ] 3.4 Write `RulesEngineTest` unit examples
+  - [x] 3.4 Write `RulesEngineTest` unit examples
     - Mark parity over sequence indices 0..8 (Req 11.4 is definitional under this design and is covered here rather than by a property)
     - Empty list, first move, each of the eight winning lines, the nine-move draw, and the double-winning-line position pinned explicitly so a reviewer sees it without reading the enumeration
     - Extends a plain PHPUnit `TestCase`; no framework boot, no database, no session, no HTTP
     - _Requirements: 11.4, 14.1_
 
-  - [ ] 3.5 Write `IllFormedMoveListTest` over the five violation classes
+  - [x] 3.5 Write `IllFormedMoveListTest` over the five violation classes
     - **Property 5: Ill-formed Move_Lists are rejected uniformly**
     - Repeated Cell_Index, Cell_Index outside 0..8, Sequence_Index gap, length above nine, a Move following a Move that completes a Winning_Line — each asserted to return exactly `InvalidMoveList::Error` with nothing derived
     - Use Eris for the unbounded shapes if it resolved; otherwise Pest datasets over the hand-picked sample described in Notes, item 2
