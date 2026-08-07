@@ -105,6 +105,28 @@ The decisions that followed were the human's, and there were three.
 
 **Why this was surfaced at all.** Worth recording, because it is a property of how the work was directed rather than of the tooling. The standing instructions throughout were to reason about review feedback rather than accept it, to report before changing, and to say plainly when something in the spec was wrong or unimplementable rather than working around it silently. A sub-agent told to satisfy its brief would have shipped something that satisfied the brief. One told that flagging a contradiction is part of the job flagged it.
 
+### A UUIDv7 does not carry 74 random bits when you generate two in the same millisecond
+
+Smaller than the above, and included because the shape of the error is common: a figure that is correct in general, quoted in a context where it is not.
+
+The design's `GameResolver` section justified a visibility decision with this: *"A Game_Id is a UUIDv7 with roughly 74 random bits, so there is nothing to enumerate and no id to test that was not already known."* The arithmetic behind 74 is right — RFC 9562's UUIDv7 is 48 bits of millisecond timestamp, 4 of version, 12 of `rand_a`, 2 of variant, 62 of `rand_b`, and 12 + 62 = 74.
+
+Implementing task 5.2 measured it. Eight ids generated inside one millisecond:
+
+```
+019fdc9a-b9f3-7246-9d3b-80a9161cc692
+019fdc9a-b9f3-7246-9d3b-80a9168db064
+019fdc9a-b9f3-7246-9d3b-80a9175ef476
+019fdc9a-b9f3-7246-9d3b-80a917cde78c
+...
+```
+
+Seven of thirty-two hex nibbles varied. About 28 bits, not 74 — and the varying part *increments* rather than being redrawn, because the RFC permits a monotonic counter in `rand_a` and `Str::uuid7()` uses one. Two games created in the same millisecond have ids that are close together and partly predictable from one another.
+
+The claim was measured because a sub-agent reported the discrepancy in passing rather than adopting the design's figure, and it was then checked independently before the design was changed. The correction is not that the design chose the wrong id type: Requirement 1.2 asks for "a cryptographically secure random source **or a time-ordered random source**" and forbids deriving any part from "a monotonically increasing **database** sequence", and UUIDv7 satisfies both clauses exactly. Requirement 1.2 also asks for "non-sequential and non-guessable", and that half is now stated as partly unmet within a millisecond rather than glossed.
+
+**What makes this worth an entry is that the correction improved the argument rather than weakening it.** The paragraph's conclusion — that the visibility decision closes no meaningful hole — was resting on the id being hard to guess, which turns out to be partly false. It now rests on the Game_Id not being a credential at all: guessing one correctly yields `not_authorised`, because authorisation comes from the Player_Token and nothing else, and that token is 256 bits from `random_bytes()` with no counter and no structure. That was always the design's actual position. The wrong justification had been doing work the right one does better.
+
 ## Decisions recorded rather than corrected
 
 Not everything below was an error; these are choices where the reasoning matters more than the outcome, and each has a decision record under `docs/decisions/`.
