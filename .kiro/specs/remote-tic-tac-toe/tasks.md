@@ -141,7 +141,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - `game_id` primary key, `deleted_at`, index on `deleted_at`. No Move_List, no Join_Code, no Player_Token, no foreign key
     - _Requirements: 13.3, 13.4_
 
-  - [ ] 4.4 Models and the observed-state value object
+  - [x] 4.4 Models and the observed-state value object
     - `Game`, `Move`, `ExpiryRecord` Eloquent models; `App\Games\GameState` enum with the `Outcome` → `GameState` mapping from the design
     - `GameSnapshot`: the game row, its `MoveList` and its `Analysis` as observed by one request — the type that makes task 6.1's purity invariant expressible
     - _Requirements: 6.1, 9.1_
