@@ -30,6 +30,13 @@ Resolved by reading `vendor/laravel/framework/src/Illuminate/Foundation/Http/Mid
 
 The lesson is narrow and worth stating plainly: framework behaviour was asserted from memory three times and was wrong three times, and each correction was itself partly wrong until the source was read.
 
+**Inertia's `usePoll`, twice in one paragraph of the design.** Both halves of the design's polling block described the library doing something it does not do, and both were found the same way: by reading `node_modules` while implementing task 6.4 rather than by reviewing the paragraph again.
+
+1. The illustrative snippet computed an interval from `game.state` and passed it to a single `usePoll`, as though changing the argument would change the rate. It does not. `usePoll`'s effect has an empty dependency array, and `Poll` assigns `this.interval` in its constructor and arms `setInterval(…, this.interval)` in `start()`, with no path that reassigns it — so the interval is pinned to first render. A page first rendered in a Terminal_State would poll at 5000 ms and, if its props later described a live Game, would sit outside Requirement 8.1's 2-second ceiling. The hook declares both polls and runs exactly one; the design's snippet now shows that form, so a later reader does not "simplify" it back into the defect.
+2. The same paragraph justified leaving `keepAlive` at its default with "a hidden tab does not poll". The default sets a *throttle*: `isInBackground()` derives the flag from `document.hidden`, and `tick()` fires when `!this.throttle || this.cbCount % 10 === 0`, so a hidden tab still polls every tenth tick — one request per 20 s while live, per 50 s while terminal.
+
+The second is the more interesting of the two, because the decision it was defending was correct and only the reason was false. Nothing in the implementation changes: `keepAlive` is still not passed. What changes is that the design now states the rate a forgotten tab actually costs instead of implying zero, which is the difference between a decision a reviewer can check and one they have to trust.
+
 ### Self-contradictions within a single document
 
 Defects that survived generation because each half was locally plausible.

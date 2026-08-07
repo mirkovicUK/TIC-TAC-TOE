@@ -643,18 +643,30 @@ resources/js/
 #### Polling lifecycle
 
 ```ts
-const { stop } = useGamePolling(game)
+useGamePolling(game)
 
-// useGamePolling.ts
-const interval = game.state === 'won' || game.state === 'drawn' ? 5000 : 2000
-const poll = usePoll(interval, { only: ['game'] })          // Inertia v2 partial reload
-useEffect(() => { if (game.rematchGameId) poll.stop() }, [game.rematchGameId])
+// useGamePolling.ts — two polls declared, exactly one running
+const mode = game.rematchGameId !== null
+    ? 'stopped'
+    : (game.state === 'won' || game.state === 'drawn' ? 'terminal' : 'live')
+
+const live = usePoll(2000, { only: ['game'] }, { autoStart: mode === 'live' })
+const terminal = usePoll(5000, { only: ['game'] }, { autoStart: mode === 'terminal' })
+
+useEffect(() => {
+    if (mode === 'stopped') return
+    const poll = mode === 'live' ? live : terminal
+    poll.start()
+    return () => poll.stop()
+}, [mode])
 ```
+
+**A computed `interval` passed to a single `usePoll` does not work, and an earlier draft of this block showed exactly that.** `usePoll`'s effect has an empty dependency array (`node_modules/@inertiajs/react/dist/index.esm.js`), and `Poll` assigns `this.interval` in its constructor and arms `setInterval(…, this.interval)` in `start()` with no path that changes it afterwards (`@inertiajs/core`). So the interval is fixed at whatever it was on *first render*. The direction that breaks a criterion: a page first rendered in a Terminal_State polls at 5000 ms, and if its props later describe a live Game it is outside Requirement 8.1's 2-second ceiling. Declaring both polls and running one is what expresses the switch through the documented API rather than around it.
 
 - 2000 ms while `waiting_for_opponent` or `active`, inside the 2-second ceiling (Req 8.1); with a 2-second interval plus request latency the opponent's move renders well inside the 3-second budget (Req 8.2).
 - 5000 ms once terminal and no rematch exists (Req 8.5).
 - Polling stops when a rematch is discovered, and Inertia's `usePoll` stops on unmount, which covers navigating away (Req 8.6).
-- `keepAlive` is left at its default, so a hidden tab does not poll. There is no viewer to serve, and it keeps a forgotten tab from consuming the rate budget for a week.
+- `keepAlive` is left at its default, which **throttles** a hidden tab rather than stopping it: `Poll.isInBackground()` sets a throttle flag from `document.hidden`, and `tick()` then fires only every tenth tick — one request per 20 s while live, per 50 s while terminal. An earlier draft of this line claimed a hidden tab does not poll at all, which the library source does not support. The decision stands on the corrected reading: there is no viewer to serve, and a fiftieth of the rate is what keeps a forgotten tab from consuming the budget for a week.
 - Poll requests are partial reloads (`only: ['game']`), so the response carries the game prop rather than a whole page payload.
 
 The one thing the client must *not* do is send a version and expect a short answer; see ADR-002.
