@@ -229,7 +229,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 1.7, 6.5, 6.6, 6.7, 9.3_
     - _Properties: 11_
 
-  - [ ] 6.4 Implement `useGamePolling`
+  - [x] 6.4 Implement `useGamePolling`
     - 2000 ms while `waiting_for_opponent` or `active`, 5000 ms while terminal with no rematch, via Inertia v2 `usePoll` partial reloads (`only: ['game']`)
     - Stop when a rematch is discovered; `usePoll` stops on unmount, which covers navigating away. Leave `keepAlive` at its default so a hidden tab does not poll
     - _Requirements: 8.1, 8.2, 8.5, 8.6_

@@ -3,6 +3,7 @@ import Board from '@/components/Board';
 import JoinCodePanel from '@/components/JoinCodePanel';
 import OutcomeMessage from '@/components/OutcomeMessage';
 import StatusBanner from '@/components/StatusBanner';
+import useGamePolling from '@/hooks/useGamePolling';
 
 /*
  * `GET /games/{game}` — the game page.
@@ -33,9 +34,14 @@ import StatusBanner from '@/components/StatusBanner';
  * not-your-turn branch of `StatusBanner`, which needs no clock — and Requirement
  * 9.4's "may have stopped playing" is the branch this flag selects. The 60-second
  * decision is `useOpponentIdle`'s (task 6.5), and passing the constant now is what
- * lets that task supply the signal without touching the rendering. Likewise the
- * polling loop (`useGamePolling`, task 6.4) and the rematch control (task 7.2) are
- * absent rather than approximated: this page currently updates when it is visited.
+ * lets that task supply the signal without touching the rendering. The rematch control
+ * (task 7.2) is likewise absent rather than approximated.
+ *
+ * `useGamePolling` IS CALLED FOR ITS EFFECT AND ITS RETURN IS IGNORED. It reads the
+ * game prop, chooses the interval and stops itself when a Rematch appears (Req 8.1,
+ * 8.5, 8.6); the mode it returns is there to be asserted in a test, not to be rendered.
+ * Nothing about the loop is visible here, which is the point — the page still renders
+ * only from props, and a poll is just another visit delivering new ones.
  *
  * `GameProps` IS THE WHOLE SHAPE `GameRepresentation` PRODUCES, and it is exported
  * because it is the client's half of that contract — `Board.tsx` and
@@ -63,6 +69,8 @@ export type GameProps = {
 
 export default function Game({ game }: { game: GameProps }) {
     const { outcome } = usePage<{ outcome: string | null }>().props;
+
+    useGamePolling(game);
 
     return (
         <>
