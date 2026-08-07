@@ -10,6 +10,10 @@ use App\Games\PlayerTokens;
 use App\Models\Game;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+
+use function Pest\Laravel\get;
+use function Pest\Laravel\post;
 
 // Feature: remote-tic-tac-toe
 //
@@ -239,4 +243,75 @@ it('creates the game in a single insert with no availability read', function () 
 
     expect($inserts)->toHaveCount(1, 'the Game was written by more than one statement: '.implode(' | ', $statements))
         ->and($selects)->toBe([], 'CreateGame issued a read; Join_Code uniqueness is enforced by the index, not by a check-then-insert: '.implode(' | ', $selects));
+});
+
+/*
+ * Req 8.7, at the transport: the raw Player_Token reaches no response — not the
+ * create response, not the game page's HTML, not the Inertia JSON a poll receives.
+ *
+ * THE ONLY TEST IN THIS FILE THAT GOES THROUGH HTTP, and it has to. The scan above
+ * establishes that the secret is in no *column*; "the raw value lives in the session
+ * and nowhere else" also has a client-facing half, and a response body is the one
+ * place it can be observed. `CreateGame` itself cannot leak it — it returns a `Game`
+ * and nothing more — so what this guards is the whole create path downstream of it:
+ * a controller flashing the token, a `GameRepresentation` field carrying it, an
+ * Inertia prop added later.
+ *
+ * ALL THREE SURFACES ARE SCANNED SEPARATELY, because they are produced by different
+ * code and can disagree. The HTML embeds the props in the root template's `data-page`
+ * attribute, so a leaked prop appears there JSON-encoded and HTML-escaped; the
+ * `X-Inertia` request re-serialises the same props for a partial reload; and the 303
+ * is scanned together with its headers, since a flash would travel in the session
+ * cookie rather than the body.
+ *
+ * THE NON-VACUITY GUARDS ARE THE POINT OF THE FIRST TWO EXPECTATION BLOCKS. A scan
+ * for a 64-character needle passes trivially against an empty body, a 409, or a page
+ * carrying no game data at all — so the token is asserted to be a real 64-hex digest
+ * matching the persisted hash, and each response is asserted to carry `yourMark` and
+ * the Join_Code before it is scanned. Without those, this test would keep passing if
+ * the game page stopped rendering.
+ */
+it('renders the raw Player_Token into no response body: not the redirect, the page HTML, or the Inertia JSON', function () {
+    $created = post('/games');
+
+    $game = Game::query()->sole();
+    $raw = (string) (new PlayerTokens)->heldFor($game->id);
+
+    // The needle is real and it is the credential that was issued, not some other
+    // string: 64 hex characters, and its digest is the hash on the row.
+    expect($raw)->toMatch('/^[0-9a-f]{64}$/', 'no raw Player_Token is held for the created Game, so the scans below assert nothing')
+        ->and($game->x_token_hash)->toBe(hash('sha256', $raw), 'the held token is not the one bound to this Game, so the scans below scan for the wrong needle');
+
+    $page = get('/games/'.$game->id);
+    $json = get('/games/'.$game->id, [
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => (string) Inertia::getVersion(),
+    ]);
+
+    $html = (string) $page->getContent();
+    $payload = (string) $json->getContent();
+    $display = (string) JoinCode::parse((string) $game->join_code)?->display();
+
+    // Each surface really does carry this Game's data, so a scan finding nothing is
+    // a statement about the token rather than about an empty or refused response.
+    $page->assertOk();
+    $json->assertOk();
+
+    expect($display)->not->toBe('')
+        ->and(str_contains($html, 'yourMark'))->toBeTrue('the game page HTML carries no props, so scanning it asserts nothing')
+        ->and(str_contains($html, $display) || str_contains($html, $game->join_code ?? ''))->toBeTrue('the game page HTML carries no Join_Code, so it is not the Creator\'s page and scanning it asserts nothing')
+        ->and(str_contains($payload, 'yourMark'))->toBeTrue('the Inertia JSON carries no game prop, so scanning it asserts nothing');
+
+    // And the secret is in none of them, nor in the redirect that started the path.
+    foreach (['the game page HTML' => $html, 'the Inertia JSON' => $payload, 'the create redirect' => (string) $created->getContent()] as $surface => $body) {
+        expect(str_contains($body, $raw))->toBeFalse("{$surface} contains the raw Player_Token (Req 8.7)");
+    }
+
+    foreach ([$created, $page, $json] as $response) {
+        foreach ($response->headers->all() as $header => $values) {
+            foreach ($values as $value) {
+                expect(str_contains((string) $value, $raw))->toBeFalse("the {$header} response header contains the raw Player_Token (Req 8.7)");
+            }
+        }
+    }
 });
