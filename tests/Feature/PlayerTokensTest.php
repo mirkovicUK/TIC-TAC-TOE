@@ -223,9 +223,12 @@ it('remembers the raw token under the session key for the game id, and writes no
         ->and($game->x_token_hash)->toBeNull('remember() assigned a hash to the row')
         ->and($game->o_token_hash)->toBeNull('remember() assigned a hash to the row');
 
+    // `str_contains` rather than `toContain()`, which takes variadic needles
+    // and no message argument — a message passed there is silently asserted as
+    // a second needle.
     foreach (Session::all() as $key => $value) {
-        expect(is_string($value) ? $value : (string) json_encode($value))
-            ->not->toContain($token->hash, "session key {$key} holds the token hash; the hash belongs on the row, not in the session");
+        expect(str_contains(is_string($value) ? $value : (string) json_encode($value), $token->hash))
+            ->toBeFalse("session key {$key} holds the token hash; the hash belongs on the row, not in the session");
     }
 });
 
@@ -269,11 +272,14 @@ it('leaves the raw token in no column of the game row', function () {
 
     expect($row)->not->toBeEmpty('the game row was not found, so this test asserts nothing');
 
+    // `str_contains` rather than `toContain()`, which takes variadic needles
+    // and no message argument — a message passed there is silently asserted as
+    // a second needle.
     foreach ($row as $column => $value) {
         $value = is_string($value) ? $value : (string) json_encode($value);
 
-        expect($value)->not->toContain($rawX, "column {$column} contains the raw X Player_Token (Req 8.7)")
-            ->and($value)->not->toContain($rawO, "column {$column} contains the raw O Player_Token (Req 8.7)");
+        expect(str_contains($value, $rawX))->toBeFalse("column {$column} contains the raw X Player_Token (Req 8.7)")
+            ->and(str_contains($value, $rawO))->toBeFalse("column {$column} contains the raw O Player_Token (Req 8.7)");
     }
 });
 
@@ -490,16 +496,19 @@ it('writes no session entry for a join that loses the guarded update, and one fo
 
     // And the loser holds nothing anywhere: no orphan credential exists, because
     // nothing wrote one.
+    // `str_contains` rather than `toContain()`, which takes variadic needles
+    // and no message argument — a message passed there is silently asserted as
+    // a second needle.
     foreach (Session::all() as $key => $value) {
-        expect(is_string($value) ? $value : (string) json_encode($value))
-            ->not->toContain($loser->raw, "session key {$key} holds the losing join's raw token (no orphan credential may exist)");
+        expect(str_contains(is_string($value) ? $value : (string) json_encode($value), $loser->raw))
+            ->toBeFalse("session key {$key} holds the losing join's raw token (no orphan credential may exist)");
     }
 
     expect((array) $row)->not->toBeEmpty('the row has no columns, so the scan below asserts nothing');
 
     foreach ((array) $row as $column => $value) {
-        expect(is_string($value) ? $value : (string) json_encode($value))
-            ->not->toContain($loser->hash, "column {$column} holds the losing join's hash");
+        expect(str_contains(is_string($value) ? $value : (string) json_encode($value), $loser->hash))
+            ->toBeFalse("column {$column} holds the losing join's hash");
     }
 
     // The freshly minted-and-discarded token resolves to no mark, which is the

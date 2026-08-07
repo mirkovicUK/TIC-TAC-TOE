@@ -652,12 +652,20 @@ it('exposes no board, move list, game state or mark on a rejection', function ()
         'serialize' => serialize($rejection),
     ];
 
+    // `str_contains` rather than `toContain()`, which takes variadic needles
+    // and no message argument — a message passed there is silently asserted as
+    // a second needle.
+    //
+    // Each rendering is confirmed non-empty first. An empty haystack contains
+    // nothing, so every search below would pass without looking at anything.
     foreach ($renderings as $form => $rendered) {
-        expect($rendered)->not->toContain((string) $game->join_code, "the {$form} rendering of a rejection discloses the Join_Code")
-            ->and($rendered)->not->toContain($hash, "the {$form} rendering of a rejection discloses a Player_Token hash (Req 8.7)")
-            ->and($rendered)->not->toContain(GameState::Won->value, "the {$form} rendering of a rejection discloses the Game_State (Req 3.10)")
-            ->and($rendered)->not->toContain('winning_mark', "the {$form} rendering of a rejection discloses the winning Mark (Req 3.10)")
-            ->and($rendered)->not->toContain('cell_index', "the {$form} rendering of a rejection discloses the Move_List (Req 3.10)");
+        expect($rendered)->not->toBe('', "the {$form} rendering is empty, so the searches below prove nothing");
+
+        expect(str_contains($rendered, (string) $game->join_code))->toBeFalse("the {$form} rendering of a rejection discloses the Join_Code")
+            ->and(str_contains($rendered, $hash))->toBeFalse("the {$form} rendering of a rejection discloses a Player_Token hash (Req 8.7)")
+            ->and(str_contains($rendered, GameState::Won->value))->toBeFalse("the {$form} rendering of a rejection discloses the Game_State (Req 3.10)")
+            ->and(str_contains($rendered, 'winning_mark'))->toBeFalse("the {$form} rendering of a rejection discloses the winning Mark (Req 3.10)")
+            ->and(str_contains($rendered, 'cell_index'))->toBeFalse("the {$form} rendering of a rejection discloses the Move_List (Req 3.10)");
     }
 
     expect($renderings['json'])->toBe('"not_authorised"', 'a rejection serialises to something other than its outcome value alone');

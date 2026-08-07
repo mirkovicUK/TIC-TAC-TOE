@@ -200,9 +200,12 @@ it('leaves the raw Player_Token in no column of the created row', function () {
     expect($raw)->not->toBe('', 'no token was issued, so this test asserts nothing')
         ->and($row)->not->toBeEmpty('the created row was not found, so this test asserts nothing');
 
+    // `str_contains` rather than `toContain()`, which takes variadic needles
+    // and no message argument — a message passed there is silently asserted as
+    // a second needle.
     foreach ($row as $column => $value) {
-        expect(is_string($value) ? $value : (string) json_encode($value))
-            ->not->toContain($raw, "column {$column} contains the raw Player_Token (Req 8.7)");
+        expect(str_contains(is_string($value) ? $value : (string) json_encode($value), $raw))
+            ->toBeFalse("column {$column} contains the raw Player_Token (Req 8.7)");
     }
 });
 

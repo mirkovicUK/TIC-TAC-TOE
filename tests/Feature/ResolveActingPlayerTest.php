@@ -535,14 +535,17 @@ it('renders no board, move list, game state or mark in a refused response', func
 
     $rendered = (string) $response->getContent().' '.json_encode($response->headers->all());
 
+    // `str_contains` rather than `toContain()`, which takes variadic needles
+    // and no message argument — a message passed there is silently asserted as
+    // a second needle.
     expect($response->getStatusCode())->toBe(403)
         ->and($rendered)->not->toBe('', 'the response is empty, so this scan asserts nothing')
-        ->and($rendered)->not->toContain((string) $game->join_code, 'the refused response discloses the Join_Code')
-        ->and($rendered)->not->toContain($hash, 'the refused response discloses a Player_Token hash (Req 8.7)')
-        ->and($rendered)->not->toContain(GameState::Won->value, 'the refused response discloses the Game_State (Req 3.10)')
-        ->and($rendered)->not->toContain('winning_mark', 'the refused response discloses the winning Mark (Req 3.10)')
-        ->and($rendered)->not->toContain('cell_index', 'the refused response discloses the Move_List (Req 3.10)')
-        ->and($rendered)->not->toContain('sequence_index', 'the refused response discloses the Move_List (Req 3.10)');
+        ->and(str_contains($rendered, (string) $game->join_code))->toBeFalse('the refused response discloses the Join_Code')
+        ->and(str_contains($rendered, $hash))->toBeFalse('the refused response discloses a Player_Token hash (Req 8.7)')
+        ->and(str_contains($rendered, GameState::Won->value))->toBeFalse('the refused response discloses the Game_State (Req 3.10)')
+        ->and(str_contains($rendered, 'winning_mark'))->toBeFalse('the refused response discloses the winning Mark (Req 3.10)')
+        ->and(str_contains($rendered, 'cell_index'))->toBeFalse('the refused response discloses the Move_List (Req 3.10)')
+        ->and(str_contains($rendered, 'sequence_index'))->toBeFalse('the refused response discloses the Move_List (Req 3.10)');
 });
 
 /*
