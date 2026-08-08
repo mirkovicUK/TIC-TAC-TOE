@@ -75,6 +75,10 @@ Defects that survived generation because each half was locally plausible.
 
 **Game-tree figures described as positions.** The enumeration's node count, 549,946, counts reachable move sequences, not distinct board positions — of which there are 5,478. The figure was right and the noun was wrong.
 
+**A writer's five-second wait attributed to a read-only health probe.** The design's error table said of `SQLITE_BUSY` that `busy_timeout` waits up to 5 s and that beyond it "the Health_Endpoint begins reporting the persistence layer unreachable". Read as an account of one `/health` request, that is a response arriving after five seconds, which Requirements 10.1 and 10.2 forbid on both branches. The intended reading was a steady state of contention, and the row now says so: the 5 s is a writer's wait, and under WAL a reader takes its read mark without waiting on a writer, so the probe's own read never sits on that path. Surfaced by the sub-agent implementing task 10.1, which had to satisfy the 1-second bound and could not do it from the row as written. The WAL and `busy_timeout` settings were then read out of `config/database.php` rather than taken on trust, and both branches of the endpoint were exercised against a missing file, a corrupt file and a schema-less file before the row was amended.
+
+**A design decision left in the future tense after it had happened.** The same paragraph read "goes when the endpoint is implemented (task 10.1)" and "until then the repository has two health routes" after task 10.1 had removed the argument. Both clauses became false while the substance — why `/health` won over the scaffolded `/up` — stayed correct. Retensed rather than deleted, which is the standing rule for a justification that has outlived its dating.
+
 ## Inconsistencies the implementation surfaced
 
 Everything above was found by reading. This one was found by building, and so were the three that follow it. It is recorded separately because the failure mode is different: no document was wrong, two documents were individually right and jointly unsatisfiable, and no amount of re-reading either one would have shown it.
@@ -209,7 +213,9 @@ The ruling was to narrow the criterion: it now carries an "at least one Move has
 
 **Note the shape it shares with an entry above.** "An idle indication that fired on your own turn" records the same vacuity caught on the *other* screen: an early draft told the Creator their opponent may have stopped playing while the Application was in fact waiting on the Creator's own first Move. Closing that one added the Mark_To_Move clause; closing this one added the accepted-Move clause. The same defect had two faces and needed both.
 
-### The AI-direction record comprises two components rather than three Requirement 12.6 originally asked this documentation to comprise three things: the spec documents, the significant prompts issued, and the corrections made to the generated output. The prompts component was dropped against the brief's "no more than a few hours" budget, and the criterion now names only the two components actually delivered.
+### The AI-direction record comprises two components rather than three
+
+Requirement 12.6 originally asked this documentation to comprise three things: the spec documents, the significant prompts issued, and the corrections made to the generated output. The prompts component was dropped against the brief's "no more than a few hours" budget, and the criterion now names only the two components actually delivered.
 
 The reasoning is the part worth keeping. An unmet criterion that a reviewer can find by reading your own specification is worse than a narrower criterion honestly stated. The choice was between satisfying it cheaply and amending it openly; leaving it quietly unsatisfied was not one of the options. Requirement 12.8 — recording where the generated output was wrong — is untouched and still in force, and this file satisfies it.
 
