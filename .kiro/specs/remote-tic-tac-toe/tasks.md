@@ -442,7 +442,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - If task 3.6 measured the enumeration beyond the budget, split it into its own job here rather than reducing its coverage
     - _Requirements: 12.9_
 
-  - [ ] 14.3 Add the `browser` CI job
+  - [-] 14.3 Add the `browser` CI job
     - `npm ci`, `npm run build`, `npx playwright install --with-deps chromium`, `pest --group=browser`, in its own job so a browser flake never masks a domain regression
     - **Sequenced after task 12.5, not with the rest of group 14.** `PlayAGameTest` is the only `browser`-tagged test, so until it exists the job runs an empty selection: either it fails the workflow, or it passes vacuously. A job that passes vacuously while claiming to run browser tests is worse than no job at all, because nobody investigates a green tick. It also pays a chromium download on every push to test nothing. 14.1 and 14.2 stay early — config problems are cheaper to find against fifty lines than five hundred, and a trivially passing first run of Pint and static analysis costs nothing
     - _Requirements: 12.9_
