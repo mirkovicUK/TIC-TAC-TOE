@@ -359,7 +359,9 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
 - [ ] 11. Retention and expiry
   - [-] 11.1 Implement `SweepExpiredGames` and the `games:sweep` command
     - Eligibility in one query over the `(state, last_activity_at)` index: never-joined and created over 24 hours ago, OR no accepted move or state change for 7 days
-    - In one transaction: clear `rematch_of_game_id` on any rematch pointing at a game in the delete set, insert an Expiry_Record per game, delete the games (moves cascade), then delete Expiry_Records older than 30 days. Report counts; exit non-zero only on failure. A `RESTRICT` violation means a missed step and should fail loudly
+    - **Then exclude any Game whose Rematch is not itself in the delete set, and do NOT clear `rematch_of_game_id`.** An earlier draft had the sweep clear the back-reference, and that is unimplementable: a Rematch has `join_code = NULL`, so `CHECK (join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL)` is satisfied only by `rematch_of_game_id`, and setting it to NULL violates the CHECK while leaving it violates the `ON DELETE RESTRICT`. Reproduced both ways before the plan was changed. Because a Rematch's `last_activity_at` is always at or after its parent's, the parent always becomes eligible first, so a sweep in that window would have rolled back and deleted *nothing at all*. A deferred parent is collected on the first run after its Rematch is eligible too, which Requirement 13.5 licenses — the thresholds are lower bounds on retention, not exact times of deletion
+    - In one transaction: insert an Expiry_Record per game, delete the games **children before parents** (moves cascade), then delete Expiry_Records older than 30 days. The reference is not `DEFERRABLE`, so SQLite enforces it per row and the order is load-bearing. Report counts; exit non-zero only on failure. A `RESTRICT` violation now means the deferral or the ordering is wrong, and should fail loudly
+    - The purge boundary is **strict** — `deleted_at < :thirty_days_ago` — because Requirement 13.4 retains a record for "at least 30 days", so one exactly 30 days old survives. This is the opposite polarity from the two eligibility thresholds, which are inclusive because Requirements 13.1 and 13.2 fire *when* the elapsed time is reached
     - Nothing in the read path consults eligibility — an eligible but unswept game is an ordinary playable game
     - `last_activity_at` is *not* bumped when a rematch is created, or a finished game would outlive the 7-day threshold
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
@@ -369,6 +371,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
   - [ ] 11.2 Write `SweepExpiredGamesTest`
     - **Property 17: The sweep deletes exactly the eligible Games**
     - Mixed population with a travelled clock: assert the survivor set, one Expiry_Record per deleted game holding only the id and the deletion time, no `moves` rows left for a deleted game, the 30-day purge of records, and that an eligible-but-unswept game still accepts a Move and returns its ordinary representation
+    - Cover the deferral of 11.1 as its own case: an eligible parent whose Rematch survives is retained, and is deleted on a later run once the Rematch is eligible too. Also pin the purge boundary at exactly 30 days, where the strict comparison is the whole of the distinction
     - **Validates: Requirements 13.1, 13.2, 13.3, 13.4, 13.5, 14.7**
 
 - [ ] 12. Complete the mandated verification suite

@@ -47,11 +47,15 @@ return new class extends Migration
         Schema::table('expiry_records', function (Blueprint $table) {
             // Req 13.4: a record is kept for at least 30 days and deleted
             // thereafter, so the sweep's closing statement is
-            // `DELETE FROM expiry_records WHERE deleted_at <= :thirty_days_ago`,
-            // and this index is what it reads. The sweep performs two deletions
-            // of opposite polarity in the one transaction: games too old to keep
-            // (Req 13.1, 13.2, read through `games_expiry_index`), and tombstones
-            // too old to still be useful (read through this one).
+            // `DELETE FROM expiry_records WHERE deleted_at < :thirty_days_ago`,
+            // and this index is what it reads. The comparison is STRICT: "at least
+            // 30 days" means a record exactly 30 days old is still within its
+            // retention and survives. That is the opposite polarity from the two
+            // game thresholds, which are inclusive because Requirements 13.1 and
+            // 13.2 fire WHEN the elapsed time is reached. The sweep performs two
+            // deletions in the one transaction: games too old to keep (Req 13.1,
+            // 13.2, read through `games_expiry_index`), and tombstones too old to
+            // still be useful (read through this one).
             $table->index('deleted_at', 'expiry_records_deleted_at_index');
         });
 

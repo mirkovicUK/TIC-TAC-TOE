@@ -126,6 +126,36 @@ So the sub-agent implementing 10.2 was correct to leave it out and correct to sa
 
 The general shape is worth naming, because a deferral is the one kind of comment that rots without anything failing. A note saying "task N owns this" is a claim about a document the writer has not re-read, and nothing checks it when task N is written to a narrower scope than the note assumed.
 
+### The retention sweep was unimplementable, and the two constraints that blocked it were each correct
+
+The most consequential defect found by building rather than reading, and the one that would have shipped as a silently broken cleanup job.
+
+**What the three documents said.** The design's retention section had `SweepExpiredGames` run a transaction beginning "clear `rematch_of_game_id` on any rematch pointing at a game in the delete set", and task 11.1 repeated it. The `games` schema, in the same design and in the committed migration, carried two constraints on that column: `ON DELETE RESTRICT` on the self-reference, so a parent cannot be deleted while a rematch points at it, and `CHECK (join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL)`, the sole carrier of "every Game is reachable either by its Join_Code or as the rematch of a known Game".
+
+**Why they cannot all hold.** A Rematch is inserted with `join_code = NULL` — it is reached by navigation, not by a code — so its `rematch_of_game_id` is the only thing satisfying the reachability CHECK. Clearing that column violates the CHECK; leaving it violates the foreign key. There is no third step. Both failures are `SQLSTATE[23000]` inside the sweep's transaction, so the whole run rolls back and **nothing is deleted at all**, not merely the affected pair.
+
+And it is not a corner case. A Rematch's `last_activity_at` is set at creation and bumped by every Move, so it is always at or after its parent's — meaning the parent always becomes eligible first, and the window in which the sweep is broken is exactly however long the pair played the rematch. Any scheduled run landing in it fails wholesale.
+
+**How it was handled, and by whom.** The sub-agent given task 11.1 stopped without writing a line, reported which two constraints deadlocked with file and line numbers, reproduced both failures against a throwaway database, and set out four candidate resolutions with the cost of each. It also noticed that the design's own justification for `RESTRICT` — "a missed step in the sweep surfaces as a loud constraint failure instead of silent data loss" — was now false as a diagnosis, since the violation is reachable with no step missed. That is the behaviour the standing instructions ask for, and it is worth naming: a sub-agent optimising for a green task would have found *some* way through, and every way through here is wrong.
+
+The failure was then reproduced independently before anything was changed, because a claim that a schema is unimplementable is exactly the kind of claim that is easy to make and expensive to accept.
+
+**The ruling, which was the human's.** Defer rather than clear: exclude from the delete set any Game whose Rematch survives, and collect it on a later run once the Rematch is eligible too, ordering each run's deletes children before parents since the reference is not `DEFERRABLE`. Requirement 13.5 licenses it directly — the thresholds are "lower bounds on retention rather than exact times of deletion" — and it needs no migration. The alternatives were rejected for stated reasons: dropping the reachability CHECK means a full SQLite table rebuild to weaken an invariant in order to make a cleanup path work, and assigning the orphaned Rematch a fresh Join_Code writes a join-shaped value onto an active Game for no user-facing reason.
+
+The cost is that Property 17 stops being literally true as written. "The surviving Games are exactly those that are not Eligible_For_Expiry" now carries "together with those whose Rematch survives", and the property records why, along with the fact that the deferral is bounded rather than indefinite. Amending a correctness property is not free, and stating the amendment beside the property is the least bad way to pay for it.
+
+**What makes this worth the length.** Neither constraint was wrong. The reachability CHECK is right, the `RESTRICT` is right, and the deletion step that sat between them was written without checking either — three documents each locally consistent, jointly describing an operation the database refuses. Nothing in reviewing any one of them would have shown it, and no test existed to fail, because the code that would have failed had not been written yet.
+
+### The 30-day purge boundary was specified three ways
+
+Found in the same investigation, and much smaller, but recorded because the disagreement was between a requirement, the design and a committed code comment.
+
+Requirement 13.4 retains an Expiry_Record "for at least 30 days ... and SHALL delete that Expiry_Record thereafter". The design said records are "deleted once older than 30 days" — strict, so one exactly 30 days old survives. The `expiry_records` migration comment said the sweep's closing statement is `DELETE FROM expiry_records WHERE deleted_at <= :thirty_days_ago` — inclusive, so one exactly 30 days old is deleted.
+
+The requirement settles it: at exactly 30 days the record has been retained for at least 30 days, and "thereafter" is strictly after, so the comparison is strict and the migration comment was the wrong one. Corrected there rather than in the design.
+
+The reason it is worth a note at all is the asymmetry it exposes, which is now stated in both places instead of left to be inferred: the two *eligibility* thresholds are inclusive, because Requirements 13.1 and 13.2 fire *when* an elapsed time is reached, while the *purge* is exclusive, because 13.4 grants a minimum retention. Two boundaries in one transaction, deliberately of opposite polarity, and previously nothing said so.
+
 ### A UUIDv7 does not carry 74 random bits when you generate two in the same millisecond
 
 Smaller than the above, and included because the shape of the error is common: a figure that is correct in general, quoted in a context where it is not.

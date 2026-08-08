@@ -755,7 +755,11 @@ Constraints are only useful if no legitimate write can trip them, so each one is
 
 Two of these deserve a word. The waiting-state constraint is deliberately one-directional: it forbids an *occupied* O slot in `waiting_for_opponent`, and never requires an occupied slot in any state. A rematch is inserted in `active` with `o_token_hash` NULL, which makes the antecedent false and the constraint trivially satisfied — there is no conflict. And the reachability guarantee is carried entirely by `join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL`: every Game is reachable either by its Join_Code or as the rematch of a known Game, which is what the deleted token constraint was reaching for and states without touching the token slots at all.
 
-`ON DELETE RESTRICT` on the self-reference is chosen over `CASCADE` or `SET NULL` so that deletion order is explicit in the sweep command rather than implicit in the schema: a live rematch can never be destroyed as a side effect of expiring its parent, and a missed step in the sweep surfaces as a loud constraint failure instead of silent data loss. The sweep therefore clears the back-reference of any rematch whose parent it is about to delete, in the same transaction.
+`ON DELETE RESTRICT` on the self-reference is chosen over `CASCADE` or `SET NULL` so that deletion order is explicit in the sweep command rather than implicit in the schema: a live rematch can never be destroyed as a side effect of expiring its parent, and a missed step in the sweep surfaces as a loud constraint failure instead of silent data loss.
+
+**The sweep therefore defers a parent whose rematch survives, rather than clearing the back-reference.** An earlier draft of this document had it clear `rematch_of_game_id` on any rematch pointing at a game in the delete set, and that is unimplementable against the table above: a rematch carries `join_code = NULL`, so the reachability CHECK one row up is satisfied *only* by its `rematch_of_game_id`, and setting that column to NULL violates it. Clearing fails the CHECK; not clearing fails the foreign key. Because a rematch's `last_activity_at` is always at or after its parent's, the parent always becomes eligible first, so this was not an edge case — every sweep landing in that window would have rolled back and deleted nothing at all. The correction is recorded in `docs/ai-direction.md`.
+
+So eligibility is narrowed by one condition: a Game with a surviving Rematch is not swept, and is collected on a later run once that Rematch is itself eligible. Within a run the delete set is ordered children before parents, since the foreign key is not declared `DEFERRABLE` and SQLite therefore enforces it per row. Requirement 13.5 licenses this directly — the thresholds are lower bounds on retention rather than exact times of deletion — and the `RESTRICT` keeps its purpose: a violation now means the deferral or the ordering was got wrong, which is exactly the loud failure it was chosen for.
 
 ### `moves`
 
@@ -815,7 +819,11 @@ Eligibility is a single query over the index above:
 OR last_activity_at <= :week_ago
 ```
 
-`SweepExpiredGames` runs in a transaction: clear `rematch_of_game_id` on any rematch pointing at a game in the delete set, insert an Expiry_Record per game, delete the games (moves cascade), then delete Expiry_Records older than 30 days. It reports counts and exits non-zero only on failure.
+A Game whose Rematch is not itself in the delete set is then excluded, for the reason given under the `games` schema above: the back-reference cannot be cleared without violating the reachability CHECK, and the parent cannot be deleted while it stands. Such a parent is collected on a later run, once its Rematch is eligible too.
+
+`SweepExpiredGames` runs in a transaction: insert an Expiry_Record per game, delete the games children before parents (moves cascade), then delete Expiry_Records older than 30 days. It reports counts and exits non-zero only on failure.
+
+The purge boundary is strict. Requirement 13.4 retains a record "for at least 30 days ... and SHALL delete that Expiry_Record thereafter", so a record exactly 30 days old is still within its retention and survives: `deleted_at < :thirty_days_ago`. This is deliberately the opposite polarity from the two eligibility thresholds above, which are inclusive (`<=`) because Requirement 13.1 and 13.2 fire *when* the elapsed time is reached.
 
 The thresholds are lower bounds, not deletion times. A game that is eligible but not yet swept is still a perfectly ordinary game and remains playable (Req 13.5) — nothing in the read path consults eligibility. Wiring the command to a scheduler is a README instruction rather than an application feature (Req 12.12), which keeps the deliverable's runtime free of a scheduler process while still making the production means of deletion explicit.
 
@@ -935,7 +943,9 @@ Application-delivered: the Sequence_Indexes of a Game form 0..n-1 contiguously f
 
 ### Property 17: The sweep deletes exactly the eligible Games
 
-*For any* population of Games and *for any* current time, after `SweepExpiredGames` runs the surviving Games are exactly those that are not Eligible_For_Expiry; every deleted Game has an Expiry_Record holding its Game_Id and deletion time and nothing else; no Move rows remain for a deleted Game; Expiry_Records older than 30 days are absent and younger ones are present; and a Game that is Eligible_For_Expiry but not yet swept still accepts Moves and returns its ordinary representation.
+*For any* population of Games and *for any* current time, after `SweepExpiredGames` runs the surviving Games are exactly those that are not Eligible_For_Expiry, together with those whose Rematch survives; every deleted Game has an Expiry_Record holding its Game_Id and deletion time and nothing else; no Move rows remain for a deleted Game; Expiry_Records older than 30 days are absent and those exactly 30 days old or younger are present; and a Game that is Eligible_For_Expiry but not yet swept still accepts Moves and returns its ordinary representation.
+
+The Rematch clause is not a hedge. It is the deferral recorded under the `games` schema, and it is bounded: a deferred parent is collected on the first run after its Rematch is also eligible, so no Game is retained indefinitely. Requirement 13.5 makes the thresholds lower bounds on retention rather than exact times of deletion, which is what admits it.
 
 **Validates: Requirements 13.1, 13.2, 13.3, 13.4, 13.5**
 

@@ -35,6 +35,16 @@ return new class extends Migration
         // that deletion order is explicit in the sweep command: a live rematch can
         // never be destroyed as a side effect of expiring its parent, and a missed step
         // surfaces as a constraint failure instead of silent data loss.
+        //
+        // It interacts with the reachability CHECK above, and the sweep is built around
+        // that interaction. A rematch has `join_code = NULL`, so its
+        // `rematch_of_game_id` is the only thing satisfying that CHECK: the column
+        // cannot be set to NULL to release the parent for deletion. The sweep therefore
+        // DEFERS a parent whose rematch survives rather than clearing the
+        // back-reference, and orders its deletes children before parents — this
+        // reference is not `DEFERRABLE`, so SQLite enforces it per row. Requirement
+        // 13.5's thresholds are lower bounds on retention, which is what permits the
+        // deferral.
         DB::statement(<<<'SQL'
             CREATE TABLE games (
                 id                 TEXT    NOT NULL PRIMARY KEY,   -- UUIDv7; derives from no database sequence
