@@ -1,12 +1,25 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "mirkovic-uk/remote-tic-tac-toe",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "description": "Two-player remote tic-tac-toe: a framework-free rules engine over a move list, served to separate browsers through Inertia and polling.",
+    "keywords": ["tic-tac-toe", "laravel", "inertia", "react", "property-based-testing", "spec-driven-development"],
     "license": "MIT",
+    "homepage": "https://github.com/mirkovicUK/TIC-TAC-TOE",
+    "authors": [
+        {
+            "name": "Uros Mirkovic",
+            "email": "mirkovic.uk@gmail.com",
+            "homepage": "https://github.com/mirkovicUK",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/mirkovicUK/TIC-TAC-TOE/issues",
+        "source": "https://github.com/mirkovicUK/TIC-TAC-TOE"
+    },
     "require": {
-        "php": "^8.3",
+        "php": "^8.5",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/framework": "^13.8",
         "laravel/tinker": "^3.0"
