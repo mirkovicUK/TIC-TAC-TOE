@@ -368,7 +368,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Properties: 17_
     - _Design: ADR-007_
 
-  - [ ] 11.2 Write `SweepExpiredGamesTest`
+  - [-] 11.2 Write `SweepExpiredGamesTest`
     - **Property 17: The sweep deletes exactly the eligible Games**
     - Mixed population with a travelled clock: assert the survivor set, one Expiry_Record per deleted game holding only the id and the deletion time, no `moves` rows left for a deleted game, the 30-day purge of records, and that an eligible-but-unswept game still accepts a Move and returns its ordinary representation
     - Cover the deferral of 11.1 as its own case: an eligible parent whose Rematch survives is retained, and is deleted on a later run once the Rematch is eligible too. Also pin the purge boundary at exactly 30 days, where the strict comparison is the whole of the distinction
