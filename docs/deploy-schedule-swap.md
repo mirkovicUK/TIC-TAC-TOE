@@ -344,6 +344,7 @@ larger claim on the 19 G volume than the logs, which are capped at 30 MB per ser
 ```bash
 df -h /
 docker system df
+docker images
 ```
 
 `docker system df` is the one that tells you which. Measured on the first deploy:
@@ -411,6 +412,89 @@ Known failure shapes, so you can recognise them:
 | `502 Bad Gateway` | `web` is up and `app` is not. `docker compose logs app` |
 | `the input device is not a TTY` | A `docker compose exec` without `-T` under cron |
 | `detected dubious ownership` from git | You used `sudo git`. Don't |
+
+## Redeploying after a code change
+
+The loop, once the stack is live. Steps 1 to 4 are on your laptop, 5 onwards on the instance.
+
+```bash
+# 1-2. on your laptop: change the code, then run what CI runs
+composer lint
+composer analyse
+npx tsc --noEmit
+npm run build
+./vendor/bin/pest --exclude-group=browser
+
+# 3. commit and push
+git add <the files you meant to change>
+git commit
+git push origin main
+
+# 4. wait for the two GitHub Actions jobs (quality, browser) to go green
+```
+
+Then on the instance:
+
+```bash
+# 5. shell in
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
+aws ssm start-session --target "$IID"
+
+# 6-7. pull and rebuild
+cd /srv/tic-tac-toe
+git pull
+docker compose up -d --build
+
+# 8. verify
+docker compose ps                                    # app must reach (healthy)
+sudo ss -ltnp | grep 9000 || echo "9000 closed — correct"
+curl -s https://18-175-88-107.sslip.io/health
+
+# 9-10. reclaim the image the rebuild just orphaned
+docker image prune -f
+df -h /
+```
+
+`docker image prune -f` earns its place from here on. The first deploy had nothing dangling;
+every rebuild after it untags the previous `tic-tac-toe-app`, which is about 900 MB.
+
+### What actually needs a rebuild
+
+Not every change does, and rebuilding when you do not need to costs ten minutes.
+
+| Changed | What to run | Why |
+| --- | --- | --- |
+| PHP, TypeScript, CSS, Blade | `docker compose up -d --build` | The code is baked into the image. The `app` stage also sets `opcache.validate_timestamps=0`, so PHP never re-reads a file — a new image is the only way in |
+| A migration | `docker compose up -d --build` | Nothing extra: the entrypoint runs `migrate --force` on every start |
+| `compose.yaml` — an environment value, a port, a limit | `docker compose up -d` | No rebuild. Compose recreates the container with the new settings |
+| `deploy/Caddyfile.production` | `docker compose restart web` | It is a bind mount, so the file on disk is already current; Caddy just has to re-read it |
+| `deploy/app.env` | Don't. See below | |
+| `composer.json` / `package.json` | `docker compose up -d --build` | The lock files drive the build; expect a slower one, since the dependency layers are invalidated |
+
+### What survives a redeploy, and what does not
+
+**Survives.** Everything in the two volumes: the SQLite database with its games, moves and
+`sessions` table, and Caddy's certificate. Players stay in their games across a redeploy —
+that depends on `APP_KEY` being unchanged, and `git pull` cannot change it because
+`deploy/app.env` is gitignored and therefore not in the repository.
+
+**Does not survive, by design.** The rate-limit counters, which live in the container's own
+filesystem. Everyone starts from a clean limit after a deploy, which costs nothing.
+
+**Never regenerate `APP_KEY` as part of a deploy.** It would invalidate every session cookie
+at once, and with no accounts to recover through, every player in a game in progress is locked
+out permanently.
+
+### Downtime, and what a failed build does
+
+`up -d --build` builds first and only recreates the container when the build succeeds. So a
+build that fails leaves the running stack untouched — you are still serving the old version,
+which is the right failure.
+
+On success, `app` restarts and is unavailable for a few seconds while the entrypoint migrates
+and rebuilds its caches. `web` is not recreated unless its image changed, so Caddy stays up and
+answers 502 during that window. The client is polling every 2 seconds and will pick up the next
+successful response, so a player sees a brief stall rather than a broken page.
 
 ## Teardown, when you are finished with the instance
 
