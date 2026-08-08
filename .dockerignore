@@ -1,0 +1,63 @@
+# What never enters the build context. Without this the context is roughly 350 MB of
+# `node_modules`, `vendor` and `.git` that both stages would then discard, and every
+# build would ship that up to the daemon first.
+#
+# Both are rebuilt inside the image instead — `composer install --no-dev` and `npm ci`
+# from the committed lock files — so copying the host's copies in would be slower AND
+# less reproducible: the host's `vendor` carries dev dependencies and the host's
+# `node_modules` carries whatever platform its binaries were compiled for.
+/node_modules
+/vendor
+/.git
+/.github
+
+# Build output. Regenerated in the assets stage; a stale host copy shadowing a fresh
+# build is the exact failure this prevents.
+/public/build
+/public/hot
+/public/storage
+/public/fonts-manifest.dev.json
+
+# Runtime state, none of which belongs in an image. The `sessions` table and the
+# database live on the `sqlite-data` volume; the log and cache directories are written
+# at runtime. The directory SKELETON under `storage/` is still needed, so the Dockerfile
+# recreates it rather than copying it — see the comment there.
+/database/database.sqlite
+/storage/logs
+/storage/framework/cache/data
+/storage/framework/sessions
+/storage/framework/views
+/storage/framework/testing
+/storage/app/private
+/storage/app/public
+/storage/pail
+/bootstrap/cache
+
+# Secrets and machine-specific configuration. `.env` is gitignored and must never be
+# baked into a layer; the container is configured by Compose environment instead.
+.env
+.env.*
+!.env.example
+/deploy/.provisioned.env
+/deploy/Caddyfile.local
+
+# Development-only material with no runtime role. Excluded so a production image cannot
+# be read for the challenge brief, and so the test suite and specs do not inflate layers.
+/tests
+/docs
+/.kiro
+/the-skills-network
+phpunit.xml
+phpstan.neon
+phpstan-domain.neon
+
+# Editor and OS noise.
+/.vscode
+/.idea
+/.zed
+/.nova
+/.codex
+/.cursor
+.DS_Store
+Thumbs.db
+*.log

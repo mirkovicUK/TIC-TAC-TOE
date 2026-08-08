@@ -404,17 +404,31 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 14.5_
 
 - [ ] 13. Containerisation and deployment
-  - [ ] 13.1 Write the multi-stage `Dockerfile`
+  - [x] 13.1 Write the multi-stage `Dockerfile`
     - Target `app`: `php:8.5-fpm`, `composer install --no-dev`, required extensions, entrypoint running `php artisan migrate --force` then `php-fpm`
     - Target `web`: `caddy:2-alpine` with `public/` and the Vite build output copied in from the app build stage, so no shared code volume is needed
     - Assets built at image build time (`npm ci && npm run build`); no Node runtime ships to production
-    - _Requirements: 12.2_
+    - **Delivered as four stages** — `vendor` → `assets` → `app` → `web` — plus `.dockerignore` and `docker/app-entrypoint.sh`. The two build stages are discarded, so neither Composer nor any Node runtime reaches production. `app` 637 MB, `web` 63.4 MB
+    - **The requirement citation was wrong and is corrected here.** This task cited `12.2`, which is "the README SHALL state the commands that start the Application locally" — a documentation criterion that task 15.1 satisfies and a Dockerfile does not. Requirement 12 has no containerisation criterion at all; all thirteen are documentation, CI and decision records. Containerisation is ADR-009's chosen *means* to Requirement 12.4's publicly hosted instance, not a requirement in its own right
+    - **Verified by running it, not by building it.** Both images built, then exercised as a pair on a throwaway Docker network with a minimal Caddyfile: `GET /health` returned `{"status":"ok","persistence":"reachable"}` in 163 ms, `GET /` rendered the `Home` Inertia component referencing the image's own assets, Caddy served the CSS from its own copy, and `POST /games` with `Sec-Fetch-Site: same-origin` returned 303 to a real UUIDv7 game that landed in SQLite as `waiting_for_opponent`. The `game.created` record from task 10.2 appeared on stderr as JSON, which is what `docker logs` will show
+    - **Two comment claims in the first draft were wrong and were corrected after measuring.** The CSS figures cited for the Tailwind `@source` inside `vendor` (41.91 kB / 38.94 kB) had been measured against a dirty local Blade cache; on a cleared cache it is 17.33 kB against 11.94 kB, so the structural conclusion held and the numbers did not. And the `mkdir storage/framework/views` was justified as required, when removing the directory entirely produces a byte-identical stylesheet — it is insurance, and now says so
+    - **The asset build is not reproducible across machines, and that is a finding for whoever cares.** `resources/css/app.css` carries `@source '../../storage/framework/views/*.php'`, so the stylesheet depends on which Blade views a machine happens to have rendered: 45 stale entries locally inflated it from 17.33 kB to 41.91 kB. The image is unaffected because that cache is always empty in a build. The image's 14.95 kB is a strict SUBSET of a clean host build's 17.33 kB — 146 selectors against 162, nothing of its own — and all 16 extras are generic single-word utilities (`absolute`, `static`, `table`, `filter`, `container`, `relative`) that Tailwind emits because those words occur in PHP, tests and markdown that `.dockerignore` excludes. Scanner false positives, not styles the application uses. Narrowing that `@source` would make builds reproducible and is application source rather than this task's
+    - _Requirements: 12.4 (indirectly, as ADR-009's means)_
+    - _Design: ADR-009, ADR-011_
 
   - [ ] 13.2 Write `compose.yaml` and the production Caddyfile
     - Services `app` and `web`, `restart: unless-stopped`, named volume `sqlite-data` mounted at the database directory (the `sessions` table lives in the same file, so a Player_Session survives a restart)
     - Declare `caddy-data` as an **external** volume with the fixed name `caddy-data` (`external: true`, `name: caddy-data`) and mount it at `/data` on the `web` service. **This is the same volume created in task 2.2**, so the certificate obtained days earlier is reused rather than re-requested; a plain named declaration would resolve to `<repo>_caddy-data` and silently start from empty storage
     - The asymmetry between the two volumes is deliberate, so do not "tidy" them into agreement: `sqlite-data` stays project-scoped because only this stack mounts it and its contents are rebuildable with `php artisan migrate`, whereas `caddy-data` is external because it crosses a project boundary and its contents cannot be regenerated on demand — re-issuance depends on a rate limit shared with strangers
     - **Port 9000 is not published, and the `app` service declares no `ports:` key at all** — the justification for the `*` trusted range in 9.2 depends on it. Task 9.2 confirmed against the vendor source that `'*'` expands to `['0.0.0.0/0', '::/0']` (`TrustProxies::setTrustedProxyIpAddressesToTheCallingIp()`), so the application will believe `X-Forwarded-For` *and* `X-Forwarded-Proto` from any peer able to open a FastCGI connection. Nothing in the suite fails if this is violated — 9.5's assertion passes either way — so the constraint holds only if it is honoured here. A `ports: - "9000:9000"` line added for local debugging and left in is the specific way this gets lost
+    - **The Caddyfile needs a `root` override inside `php_fastcgi`, and this is the one real consequence of task 13.1 copying `public/` in rather than sharing a volume.** Caddy serves static files from `/srv/public`, its own copy, but php-fpm resolves `SCRIPT_FILENAME` in *its* filesystem where the document root is `/var/www/html/public`. Without the override Caddy sends `/srv/public/index.php`, which does not exist in the `app` container, and every PHP request fails. Found by smoke-testing the two images together during 13.1; the shape that works is:
+      ```
+      root * /srv/public
+      php_fastcgi app:9000 {
+          root /var/www/html/public
+      }
+      file_server
+      ```
     - Compose healthcheck hitting `/health` through the local FPM socket; note in a comment that it resolves to a different limiter key than a browser request
     - Caddyfile for `18-175-88-107.sslip.io`, the hostname obtained in task 2.2, with automatic HTTPS. **Issuance succeeded and the certificate is in the external `caddy-data` volume, so `SESSION_SECURE_COOKIE=true` here** — the fallbacks (`nip.io`, plain HTTP) were not taken and need noting only as the contingency they remained
     - _Requirements: 9.1, 10.11, 12.2, 12.4_
