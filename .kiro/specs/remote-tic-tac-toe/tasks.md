@@ -75,7 +75,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 10.11, 12.4_
     - _Design: ADR-009_
 
-- [ ] 3. The domain layer: `App\Domain\TicTacToe` (independent of group 4)
+- [x] 3. The domain layer: `App\Domain\TicTacToe` (independent of group 4)
   - [x] 3.1 Write the seven domain types
     - `Mark` (with `forSequenceIndex`, `opponent`), `Move`, `MoveList` (`empty`, `fromCellIndices`, `fromMoves`, `append`, `count`, `cellIndices`, iterable), `WinningLine` (eight cases, `cells()`, `all()`), `Board`, `Outcome`, `Analysis`, `InvalidMoveList`
     - `Move` carries plain integers and `MoveList::fromMoves()` accepts ill-formed input verbatim — well-formedness is checked by the engine, not asserted by the type system, because Requirements 11.5 and 14.8 require the engine to be *handed* bad lists
@@ -122,7 +122,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Assert `App\Domain\TicTacToe` references no `Illuminate\*`, no `App\Models\*` and no `App\Http\*`, and that the domain unit tests extend a plain PHPUnit `TestCase` rather than booting the framework
     - **Validates: Requirements 11.1, 11.9, 14.1**
 
-- [ ] 4. Persistence schema and models (independent of group 3)
+- [x] 4. Persistence schema and models (independent of group 3)
   - [x] 4.1 Migration for `games`
     - Columns per the design: `id` (UUIDv7 text primary key), `join_code`, `state`, `winning_mark`, `version_counter` default 0, `x_token_hash`, `o_token_hash`, `rematch_of_game_id` (self reference, `ON DELETE RESTRICT`), timestamps, `last_activity_at`
     - The seven CHECKs exactly as listed, including `join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL` and the one-directional `state <> 'waiting_for_opponent' OR o_token_hash IS NULL`
@@ -154,7 +154,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Property 10: The persisted Move_List is always well formed**
     - **Validates: Requirements 5.1, 5.2, 5.6**
 
-- [ ] 5. Create a Game and join a Game
+- [x] 5. Create a Game and join a Game
   - [x] 5.1 Implement `PlayerTokens`
     - 32 bytes from `random_bytes()` rendered as hex (256 bits, above the 128-bit floor); `issue()` stores `hash('sha256', $raw)` in the game row's mark slot and puts the raw value in `session('player_tokens.'.$game->id)`
     - `resolve()` compares with `hash_equals()` against the two slots of *that game's* row, so a token minted for another game cannot match — the binding is enforced by storage location, not by a claim inside the token
@@ -263,7 +263,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Previously the second half of task 12.3. Not optional; Requirement 14.9 mandates it
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 14.9**
 
-- [ ] 7. Subsequent Game (Rematch)
+- [x] 7. Subsequent Game (Rematch)
   - [x] 7.1 Implement `CreateRematch` and its route
     - Reject a non-terminal preceding game with `invalid_state`; a session with no token for the preceding game is already `not_authorised` from `GameResolver`
     - In a transaction: find the rematch by `rematch_of_game_id`; if absent insert one with `state = 'active'`, empty Move_List, `join_code = NULL`, `version_counter = 0`, **both token slots NULL**, and increment the *preceding* game's Version_Counter so the opponent's next poll sees it. A unique-index violation means a concurrent request won — catch it and re-read
@@ -290,7 +290,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
   - Run the full suite and the enumeration; commit and push. If the budget ran out here, the repository plus tasks 2 and 15 would still be a coherent submission
   - **Everything below this line improves the submission rather than enabling it.** Groups 9 to 11 satisfy the operational requirements; group 12 completes the mandated verification; groups 13 to 15 produce the hosted instance and the documentation
 
-- [ ] 9. Application security and rate limiting
+- [x] 9. Application security and rate limiting
   - [x] 9.1 Confirm the forgery-protection defaults are in force and add no configuration
     - The amended Requirements 10.9 and 10.10 are satisfied by Laravel 13's defaults: `PreventRequestForgery` verifies origin first and falls through to token verification. Task 1.2 settled this against the vendor source; there is nothing to configure
     - Confirm neither `PreventRequestForgery::allowSameSite()` nor `PreventRequestForgery::useOriginOnly()` is called anywhere in `bootstrap/app.php` or a service provider
