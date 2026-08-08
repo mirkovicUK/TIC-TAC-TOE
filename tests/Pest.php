@@ -10,3 +10,11 @@ use Tests\TestCase;
  */
 
 uses(TestCase::class)->in('Feature');
+
+/*
+ * `Browser` needs the same booted framework: the plugin's in-process HTTP server
+ * calls `test()->prepareCookiesForRequest()` and `test()->serverVariables()`
+ * (`vendor/pestphp/pest-plugin-browser/src/Drivers/LaravelHttpServer.php`), both of
+ * which come from Laravel's `TestCase`.
+ */
+uses(TestCase::class)->in('Browser');

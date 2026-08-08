@@ -16,6 +16,11 @@
 /deploy/.provisioned.env
 .phpactor.json
 .phpunit.result.cache
+# Written by `BrowserExpectationFailedException::from()` on any failed browser
+# assertion, and wiped by `Screenshot::cleanup()` at the start of the next browser
+# run — so between a red run and the next green one it would otherwise show as
+# untracked and could be committed by a careless `git add`.
+/tests/Browser/Screenshots
 /.codex
 /.cursor/
 /.idea

@@ -11,6 +11,13 @@
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
+        <!-- The one `browser`-tagged test (Req 14.5). It is listed here because a
+             directory absent from every testsuite is never collected, so a
+             `group=browser` selection would find nothing. Excluding that group is
+             what keeps it out of the quality job. -->
+        <testsuite name="Browser">
+            <directory>tests/Browser</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
