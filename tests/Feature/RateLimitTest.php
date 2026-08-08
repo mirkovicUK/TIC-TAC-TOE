@@ -34,7 +34,7 @@ use function Pest\Laravel\post;
  * Excluded, and where that ground lives instead: the `TrustProxies` configuration and
  * the derivation of the Rate_Limit_Subject from it are
  * `MiddlewareConfigurationTest`'s — the forwarded header below is used only as a means
- * of being a different subject. Property 19 over the other eight rejection outcomes
+ * of being a different subject. Property 9 over the other seven rejection outcomes
  * belongs to the files that produce them; this file covers its `rate_limited` row.
  *
  * Where the boundary comes from. `ThrottleRequests::handleRequest()` tests
@@ -153,7 +153,7 @@ function rateLimitActiveGame(array $cells = []): array
  * in a fixed order.
  *
  * Scoped to the whole world rather than to the Game the refused request named, so a
- * 429 that ran the controller shows up here whichever row it touched (Property 19).
+ * 429 that ran the controller shows up here whichever row it touched (Property 9).
  * `rateLimitActiveGame()` seeds real Move rows so the comparison is not vacuously
  * over an empty table.
  *
@@ -231,7 +231,7 @@ beforeEach(function () {
 });
 
 /*
- * The join boundary (Req 10.6, 14.4, and Property 19's `rate_limited` row). Both
+ * The join boundary (Req 10.6, 14.4, and Property 9's `rate_limited` row). Both
  * halves are asserted, so a limiter set to 19 fails on request twenty and one set to
  * 21 fails on request twenty-one.
  *
@@ -295,10 +295,10 @@ it('does not rate limit the twentieth join request from one subject and rejects 
 
     // Every row of both tables, not the status alone: this is what separates a
     // middleware short-circuit from a controller that ran and then reported a refusal
-    // (Property 19).
+    // (Property 9).
     expect(rateLimitWorldSnapshot())->toBe(
         $snapshot,
-        'the rate-limited join request changed persisted Game state (Property 19)',
+        'the rate-limited join request changed persisted Game state (Property 9)',
     );
 
     $bRow = DB::table('games')->where('id', $b->id)->first();
@@ -308,7 +308,7 @@ it('does not rate limit the twentieth join request from one subject and rejects 
             'state' => GameState::WaitingForOpponent->value,
             'o_token_hash' => null,
             'version_counter' => 0,
-        ], 'the Game the rate-limited request named was joined anyway (Req 10.6, Property 19)')
+        ], 'the Game the rate-limited request named was joined anyway (Req 10.6, Property 9)')
         ->and((new PlayerTokens)->heldFor($b->id))->toBeNull(
             'the rate-limited request left a Player_Token in the session for a Game it never joined',
         );
@@ -492,10 +492,10 @@ it('does not rate limit the sixtieth move request presenting one player token an
         ->and((int) $refused->headers->get('Retry-After'))->toBeLessThanOrEqual(60, 'the move limiter decays over something longer than the 60-second window Requirement 10.7 states');
 
     // Over a Move_List that genuinely holds three Moves and a Cell — 2 — that was free
-    // and would have been taken had the controller run (Property 19).
+    // and would have been taken had the controller run (Property 9).
     expect(rateLimitWorldSnapshot())->toBe(
         $snapshot,
-        'the rate-limited move request changed persisted Game state (Property 19)',
+        'the rate-limited move request changed persisted Game state (Property 9)',
     );
 
     // The bucket is the presented Player_Token's, which is the whole of Req 10.7. Same
