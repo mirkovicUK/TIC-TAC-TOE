@@ -42,15 +42,25 @@ use Illuminate\Support\Str;
  * Nothing here names the `moves` table, so the preceding Move_List is retained (Req
  * 7.14) by there being no such statement.
  *
- * Absent by design: the `rematch.created` log record (task 10.2's `GameEventLogger`
- * is the sole writer), any rate limit (task 9.4 owns the four that exist), and
+ * The `rematch.created` record goes through `GameEventLogger`, the sole writer
+ * (Req 10.3), and is emitted by the request that inserted the row and by no other:
+ * a request that finds the existing Rematch, including the loser of a race, created
+ * nothing to report, and minting a token is not an event.
+ *
+ * Absent by design: any rate limit (task 9.4 owns the four that exist), and
  * everything about the response — `CreateRematchController` maps the two halves of
  * the return type onto the two 303s.
  */
 final class CreateRematch
 {
+    /**
+     * `GameEventLogger` needs no constructor arguments of its own, so the default
+     * is exactly the instance the container would inject and this class stays
+     * constructible without one.
+     */
     public function __construct(
         private readonly PlayerTokens $tokens,
+        private readonly GameEventLogger $events = new GameEventLogger,
     ) {}
 
     /**
@@ -159,7 +169,7 @@ final class CreateRematch
     private function createRematchOf(Game $preceding): Game
     {
         try {
-            return DB::transaction(function () use ($preceding): Game {
+            $rematch = DB::transaction(function () use ($preceding): Game {
                 // Attributes assigned one at a time because mass assignment is
                 // closed on this model: every column written at creation is written
                 // here, visibly. The columns NOT written are as much of the
@@ -213,8 +223,18 @@ final class CreateRematch
                 return $rematch;
             });
         } catch (UniqueConstraintViolationException $lost) {
+            // No record on this path: the Rematch returned here was created by
+            // another request, which emitted its own (Req 10.3).
             return $this->existingRematchOf($preceding) ?? throw $lost;
         }
+
+        // After the commit and outside the closure, which a retry could run twice.
+        // `game_id` is the PRECEDING Game — the row the increment above described and
+        // the one an opponent is polling — and `rematch_game_id` the Game just
+        // inserted.
+        $this->events->rematchCreated($preceding->id, $rematch->id);
+
+        return $rematch;
     }
 
     /**

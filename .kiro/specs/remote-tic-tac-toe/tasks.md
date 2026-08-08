@@ -334,7 +334,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Remove the `health: '/up'` argument from `withRouting()` in `bootstrap/app.php` as part of this task.** The scaffold registered it and the design settled on `/health`, so leaving it in ships two health routes — the framework's renders HTML, answers JSON only when asked, and reports `up`/`down` without ever querying the persistence layer. The argument has to come out rather than be worked around: `withRouting()` registers the health route *before* the `web` group, so a same-URI route in `routes/web.php` would never match and the framework's route cannot be shadowed from the route file
     - _Requirements: 10.1, 10.2_
 
-  - [ ] 10.2 Implement `GameEventLogger` and the JSON log channel
+  - [x] 10.2 Implement `GameEventLogger` and the JSON log channel
     - Monolog channel with `JsonFormatter` to `stderr`, so `docker logs` and any collector see the same lines
     - Six events, one record each: `game.created`, `game.joined`, `move.accepted`, `move.rejected`, `game.finished`, `rematch.created`, with the fields the design tabulates. Typed arguments rather than an array, so a token or a join code cannot be passed by accident
     - A Monolog processor strips any context key matching `token`, `join_code` or `secret` as a second line of defence. For a rejected move whose cell index was not an integer, log the JSON-encoded raw value, truncated

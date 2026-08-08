@@ -38,14 +38,29 @@ use Illuminate\Support\Facades\DB;
  * (Req 3.2, 3.6): no request, payload or session is in scope here, and `moves` has
  * no `mark` column for one to be written to by accident.
  *
- * Absent by design: lifecycle logging (task 10.x's `GameEventLogger` is the sole
- * writer), everything about the response including the 303 that carries every
- * rejection (task 6.2), and `throttle:move` (task 9.4). `cell_index` is checked
- * here rather than by a Form Request because a non-integer or out-of-range Cell
- * must produce `invalid_move` rather than a 422 payload.
+ * Lifecycle logging goes through `GameEventLogger`, the sole writer, and every
+ * record is emitted OUTSIDE the transaction below (Req 10.3): a record written
+ * inside it would survive a rollback that undid the Move it describes, and the
+ * closure may run more than once. An accepted Move that ends the Game emits two
+ * records — `move.accepted` and `game.finished` — because Requirement 10.3 lists
+ * the two events separately.
+ *
+ * Absent by design: everything about the response including the 303 that carries
+ * every rejection (task 6.2), and `throttle:move` (task 9.4). `cell_index` is
+ * checked here rather than by a Form Request because a non-integer or out-of-range
+ * Cell must produce `invalid_move` rather than a 422 payload.
  */
 final class SubmitMove
 {
+    /**
+     * `GameEventLogger` needs no constructor arguments of its own, so the default
+     * is exactly the instance the container would inject and this class stays
+     * constructible without one.
+     */
+    public function __construct(
+        private readonly GameEventLogger $events = new GameEventLogger,
+    ) {}
+
     /**
      * Attempts `$cellIndex` for `$actingMark` against the state `$observed`
      * records, and either commits it or returns one of five refusals.
@@ -82,7 +97,7 @@ final class SubmitMove
         // Mark_To_Move on an empty Move_List is `X`, so the Creator moving into
         // their own waiting Game would otherwise pass guard 3 and reach the insert.
         if ($game->state === GameState::WaitingForOpponent) {
-            return MoveOutcome::GameNotStarted;
+            return $this->refuse($observed, $actingMark, $cellIndex, MoveOutcome::GameNotStarted);
         }
 
         // Guard 2 (Req 4.6). Also the persisted state, not
@@ -91,7 +106,7 @@ final class SubmitMove
         // request re-derives. Where they disagree the Game is corrupt, which the
         // engine catches below rather than a second opinion here.
         if ($game->state->isTerminal()) {
-            return MoveOutcome::GameEnded;
+            return $this->refuse($observed, $actingMark, $cellIndex, MoveOutcome::GameEnded);
         }
 
         // Guard 3 (Req 3.5). Turn ownership, checked BEFORE cell validity on
@@ -101,7 +116,7 @@ final class SubmitMove
         // `$actingMark` is compared against the derived Mark_To_Move and nothing
         // else. There is no payload in scope to have taken a Mark from (Req 3.6).
         if ($observed->analysis->markToMove !== $actingMark) {
-            return MoveOutcome::NotYourTurn;
+            return $this->refuse($observed, $actingMark, $cellIndex, MoveOutcome::NotYourTurn);
         }
 
         // Guard 4 (Req 4.3, 4.4). Three conditions, one outcome: not an integer,
@@ -113,11 +128,11 @@ final class SubmitMove
         // cast turns `'banana'` into `0`, a legal Cell, making a malformed payload
         // into a Move in the top-left corner.
         if (! is_int($cellIndex) || $cellIndex < 0 || $cellIndex > 8) {
-            return MoveOutcome::InvalidMove;
+            return $this->refuse($observed, $actingMark, $cellIndex, MoveOutcome::InvalidMove);
         }
 
         if ($observed->analysis->board->isOccupied($cellIndex)) {
-            return MoveOutcome::InvalidMove;
+            return $this->refuse($observed, $actingMark, $cellIndex, MoveOutcome::InvalidMove);
         }
 
         // Guards 1 to 4 have written nothing, which is Requirements 4.3–4.6's "SHALL
@@ -125,7 +140,7 @@ final class SubmitMove
         // being no write above this line rather than by a rollback.
 
         try {
-            return DB::transaction(
+            $accepted = DB::transaction(
                 fn (): MoveAccepted => $this->commit($game, $actingMark, $cellIndex, $observed->moveList),
             );
         } catch (UniqueConstraintViolationException) {
@@ -143,8 +158,53 @@ final class SubmitMove
             // other half of Property 9 for this outcome). Catching inside the
             // closure would let `DB::transaction` commit a transaction whose insert
             // had failed.
-            return MoveOutcome::Conflict;
+            return $this->refuse($observed, $actingMark, $cellIndex, MoveOutcome::Conflict);
         }
+
+        // Both records describe committed facts: the transaction has returned, so
+        // there is no path from here on which the Move is undone (Req 10.3).
+        $this->events->moveAccepted(
+            $game->id,
+            $accepted->mark,
+            $accepted->cellIndex,
+            $accepted->sequenceIndex,
+        );
+
+        // The Terminal_State transition is a second event, not a field of the first
+        // (Req 10.3), so a winning or drawing Move emits two records. `Outcome`
+        // carries both `result` and `winning_mark`, which is why the pair on the
+        // record cannot disagree with the pair the UPDATE above wrote.
+        if ($accepted->outcome->isTerminal()) {
+            $this->events->gameFinished($game->id, $accepted->outcome);
+        }
+
+        return $accepted;
+    }
+
+    /**
+     * Emits the `move.rejected` record for `$outcome` and returns it unchanged, so
+     * that a refusal is one expression at each guard and no guard can return without
+     * its record (Req 10.3, 10.4).
+     *
+     * The Sequence_Index is the length of the OBSERVED Move_List — the position this
+     * Move would have taken — which is defined for every rejection, including those
+     * refused before a Move was derived. The Mark is the acting Mark, from the
+     * Player_Token, never the Mark_To_Move.
+     *
+     * Writes nothing and reads nothing, so the "zero queries on every rejection
+     * path" invariant above still holds: `GameEventLogger` goes to a stream.
+     */
+    private function refuse(GameSnapshot $observed, Mark $actingMark, mixed $cellIndex, MoveOutcome $outcome): MoveOutcome
+    {
+        $this->events->moveRejected(
+            $observed->game->id,
+            $actingMark,
+            $cellIndex,
+            $observed->moveList->count(),
+            $outcome,
+        );
+
+        return $outcome;
     }
 
     /**
@@ -208,9 +268,11 @@ final class SubmitMove
             // inside the transaction is what delivers the "no state change" half,
             // because the insert above rolls back with it.
             //
-            // Task 10.x adds the log record, keyed on this exception class — which
-            // is why it carries the Game_Id rather than being a bare
-            // `RuntimeException` with a message to match on.
+            // No record is emitted here. `game.invariant_violation` is not one of the
+            // six lifecycle events Requirement 10.3 enumerates, and `GameEventLogger`
+            // has a method per event rather than a general one. The exception carries
+            // the Game_Id so a record can be keyed on this class rather than on a
+            // message, whoever adds it.
             throw new CorruptMoveListException($game->id);
         }
 

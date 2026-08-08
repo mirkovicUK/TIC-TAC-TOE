@@ -26,6 +26,13 @@ namespace App\Games;
  * it is never a prop, a response body, or a `GameEventLogger` payload (Req 10.4).
  * Adding serialisation here, or handing an instance to something that serialises,
  * is the change that turns a contained secret into a leaked one.
+ *
+ * The log half of that is now carried by types rather than by convention:
+ * `GameEventLogger` declares a method per event whose parameters are `string`,
+ * `int` and enums, so an instance of this class satisfies none of them and the
+ * absence of `__toString()` above is what makes that a `TypeError`. Its one
+ * `mixed` parameter, the raw cell index of a rejected Move, records any object as
+ * its `get_debug_type()` name and never reads a property.
  */
 final readonly class MintedToken
 {

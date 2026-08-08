@@ -44,15 +44,23 @@ use Illuminate\Support\Facades\DB;
  * session value against the row's two hash columns, so it can come before the
  * UPDATE but not before the lookup.
  *
- * No logging here; the `game.joined` record belongs to `GameEventLogger` (task
- * 10.x), sole writer of lifecycle records because of Requirement 10.4's
- * redaction. Nothing about the response either — task 5.6 maps outcomes to
+ * The `game.joined` record goes through `GameEventLogger` (Req 10.3), sole writer
+ * of lifecycle records because of Requirement 10.5's redaction, and only from the
+ * branch whose UPDATE claimed the slot: the session short-circuit joins nobody and
+ * `game_full` claimed nothing, so neither is an event. The submitted Join_Code is
+ * never passed to it. Nothing about the response either — task 5.6 maps outcomes to
  * statuses, and `throttle:join` is route middleware (Req 10.6).
  */
 final class JoinGame
 {
+    /**
+     * `GameEventLogger` needs no constructor arguments of its own, so the default
+     * is exactly the instance the container would inject and this class stays
+     * constructible without one.
+     */
     public function __construct(
         private readonly PlayerTokens $tokens,
+        private readonly GameEventLogger $events = new GameEventLogger,
     ) {}
 
     /**
@@ -151,6 +159,12 @@ final class JoinGame
         // Won, so the hash is persisted and the session write is safe —
         // `remember()`'s "call this last" on the conditional path.
         $this->tokens->remember($game->id, $token);
+
+        // Below the `$claimed === 0` return, so the one record describes a Player who
+        // actually joined (Req 10.3). The Game_Id is all it carries, and `$token`
+        // could not be passed instead: no parameter of `GameEventLogger` accepts a
+        // `MintedToken`.
+        $this->events->gameJoined($game->id);
 
         // Re-read so the returned model agrees with the row: the guarded UPDATE went
         // through the query builder, which knows nothing of this instance, so `$game`

@@ -23,10 +23,12 @@ use Illuminate\Support\Str;
  * An empty Move_List (Req 1.1) needs no write — a Move_List is a Game's `moves`
  * rows, not a column, so a Game with no `moves` rows already has one.
  *
- * Do not add a uniqueness pre-check, and do not log from here: the `game.created`
- * record belongs to `GameEventLogger` (Req 10.3), which owns lifecycle records
- * exclusively because of Req 10.4's redaction and does not exist yet. Response
- * shape is the controller's, and `GameRepresentation` is the only serialiser.
+ * Do not add a uniqueness pre-check. The one `game.created` record goes through
+ * `GameEventLogger` (Req 10.3), which stays the exclusive writer of lifecycle
+ * records so that Req 10.5's redaction has a single place to hold — nothing here
+ * formats a record of its own, and in particular the Join_Code on this row is
+ * never handed to it. Response shape is the controller's, and
+ * `GameRepresentation` is the only serialiser.
  */
 final class CreateGame
 {
@@ -36,8 +38,14 @@ final class CreateGame
      */
     private const int MAX_INSERT_ATTEMPTS = 3;
 
+    /**
+     * `GameEventLogger` needs no constructor arguments of its own, so the default
+     * is exactly the instance the container would inject and this class stays
+     * constructible without one.
+     */
     public function __construct(
         private readonly PlayerTokens $tokens,
+        private readonly GameEventLogger $events = new GameEventLogger,
     ) {}
 
     /**
@@ -98,6 +106,11 @@ final class CreateGame
 
             try {
                 $game->save();
+
+                // After the insert, which is what makes one record per created Game
+                // (Req 10.3) rather than one per attempt: a collision throws before
+                // this line, and a success leaves the loop immediately below it.
+                $this->events->gameCreated($game->id);
 
                 return $game;
             } catch (UniqueConstraintViolationException $collision) {

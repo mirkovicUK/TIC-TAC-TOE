@@ -36,10 +36,11 @@ use Illuminate\Http\Request;
  * Both answers are a 303 to the game page; the difference is the flash. Accepted
  * flashes nothing, and the following GET reports the new state through
  * `GameRepresentation` (Req 8.3) — which is also why `MoveAccepted` is not read
- * here; its fields exist for `GameEventLogger`. Rejected flashes `outcome`, and the
- * redirect is what makes Requirements 5.4 and 5.5 true: the fresh `GameSnapshot`
- * pairs the fieldless outcome with the *current* state, which for `conflict` is
- * precisely the state this request did not observe.
+ * here; `SubmitMove` passes its fields to `GameEventLogger` before returning it
+ * (Req 10.4), and nothing on this side of the boundary needs them. Rejected
+ * flashes `outcome`, and the redirect is what makes Requirements 5.4 and 5.5
+ * true: the fresh `GameSnapshot` pairs the fieldless outcome with the *current*
+ * state, which for `conflict` is precisely the state this request did not observe.
  *
  * A 4xx is not used for a rejection: Inertia expects a state-changing visit to
  * answer with a redirect, and 409 is reserved by its asset-version mechanism. The

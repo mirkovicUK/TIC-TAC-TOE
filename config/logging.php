@@ -1,5 +1,7 @@
 <?php
 
+use App\Logging\RedactSecrets;
+use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -103,6 +105,27 @@ return [
             ],
             'formatter' => env('LOG_STDERR_FORMATTER'),
             'processors' => [PsrLogMessageProcessor::class],
+        ],
+
+        /*
+        | The six Game lifecycle events of Requirement 10.3, written by
+        | `App\Games\GameEventLogger` and nothing else: one JSON object per line
+        | on stderr, so `docker logs` and any collector downstream of it read the
+        | same bytes. `LOG_LEVEL` is deliberately not consulted — these records
+        | are mandated rather than diagnostic, so raising the level of the
+        | application's other channels must not silence them. The stream is
+        | overridable only so the test suite can point it somewhere other than the
+        | terminal it is reporting into.
+        */
+        'game_events' => [
+            'driver' => 'monolog',
+            'level' => 'info',
+            'handler' => StreamHandler::class,
+            'handler_with' => [
+                'stream' => env('LOG_GAME_EVENTS_STREAM', 'php://stderr'),
+            ],
+            'formatter' => JsonFormatter::class,
+            'processors' => [RedactSecrets::class],
         ],
 
         'syslog' => [
