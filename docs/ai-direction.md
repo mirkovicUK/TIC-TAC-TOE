@@ -228,6 +228,16 @@ The requirement settles it: at exactly 30 days the record has been retained for 
 
 The reason it is worth a note at all is the asymmetry it exposes, which is now stated in both places instead of left to be inferred: the two *eligibility* thresholds are inclusive, because Requirements 13.1 and 13.2 fire *when* an elapsed time is reached, while the *purge* is exclusive, because 13.4 grants a minimum retention. Two boundaries in one transaction, deliberately of opposite polarity, and previously nothing said so.
 
+### A comment was specified about a rate limiter that the endpoint does not have
+
+Task 13.2 asked for a Compose healthcheck on `/health` and for "a comment that it resolves to a different limiter key than a browser request". The comment would have been false.
+
+`GET /health` carries no middleware at all. It is registered in the `then` callback of `withRouting()` in `bootstrap/app.php` rather than in `routes/web.php` specifically so the `web` group cannot reach it, and no `throttle:` is attached to it, so there is no limiter and therefore no key — not a different one. The claim is the kind that survives review easily, because a healthcheck probing a socket from inside the container genuinely does present a different client address, and "different limiter key" sounds like the consequence of that.
+
+What is actually true was written instead: the probe never passes through Caddy, so `X-Forwarded-For` is absent and `REMOTE_ADDR` is 127.0.0.1, and what the probe establishes is that php-fpm accepts connections, the framework boots, and the persistence layer answers. Corrected in the task rather than in the design, which never made the claim.
+
+The related finding is smaller and is recorded in the task: there was no way to make the probe at all, because php-fpm speaks FastCGI and nothing else and the image had no FastCGI client. That is why `libfcgi-bin` is now in the `app` stage, and why the healthcheck was tested against a container with its database file deleted rather than only against a working one.
+
 ### A UUIDv7 does not carry 74 random bits when you generate two in the same millisecond
 
 Smaller than the above, and included because the shape of the error is common: a figure that is correct in general, quoted in a context where it is not.

@@ -1,0 +1,190 @@
+# The production stack (task 13.2, ADR-009, ADR-011). Two services from the one
+# `Dockerfile`: `app` runs the PHP through php-fpm, `web` runs Caddy in front of it
+# terminating TLS and serving the static assets from its own copy of `public/`.
+#
+# Deployed by `docker compose up -d --build` on the instance, from /srv/tic-tac-toe.
+# The image is built on the box; there is no registry and no CD pipeline, which ADR-009
+# records as a scoping decision rather than an omission.
+#
+# Two things must exist before the first `up`, and neither is created by this file:
+#
+#   docker volume create caddy-data       # done in task 2.2; holds the certificate
+#   cp deploy/app.env.example deploy/app.env && edit it   # holds APP_KEY
+#
+# Brought down with `down`, never `down -v`. `down -v` deletes the volumes, and one of
+# them holds a certificate whose replacement depends on a rate limit shared with
+# strangers.
+
+# The project name is set explicitly rather than derived from the invoking directory,
+# because everything Compose namespaces by it — the `sqlite-data` volume, the container
+# names, what `docker compose exec` in task 13.3's crontab entry resolves — would
+# otherwise change if the repository were ever cloned to a differently named path. The
+# instance clones to /srv/tic-tac-toe, so this matches what the directory would have
+# given; stating it means the two cannot drift.
+name: tic-tac-toe
+
+services:
+  app:
+    build:
+      context: .
+      target: app
+    restart: unless-stopped
+
+    # NO `ports:` KEY, DELIBERATELY, AND THIS IS LOAD-BEARING. php-fpm listens on 9000 and
+    # the only thing that may reach it is the `web` container over the project network.
+    # `TrustProxies` is configured with `*` (bootstrap/app.php), which task 9.2 confirmed
+    # against the vendor source expands to `0.0.0.0/0` and `::/0` — so the application
+    # believes `X-Forwarded-For` and `X-Forwarded-Proto` from any peer able to open a
+    # FastCGI connection. That is safe only while `web` is the only such peer. Publish
+    # 9000 for local debugging and forget to remove it, or add a second service that can
+    # reach `app`, and the IP-keyed half of the rate limiter (Req 10.6, 10.8) can be
+    # spoofed away by anyone who can reach the host.
+    #
+    # Nothing in the test suite fails if this is violated — 9.5 asserts the trusted range
+    # is `*`, which is true either way — so the constraint holds only because it is
+    # honoured here and checked on the box. Task 13.3 checks it with `ss -ltnp | grep
+    # 9000` finding nothing.
+
+    # Secrets only. Everything non-secret is in `environment:` below, where it is visible
+    # in the repository; this file exists so the one value that must not be committed is
+    # not. It is gitignored and excluded from the build context, so it is neither pushed
+    # nor baked into a layer. `deploy/app.env.example` documents it.
+    env_file:
+      - ./deploy/app.env
+
+    environment:
+      # The entrypoint runs `php artisan config:cache`, which resolves the environment
+      # once at container start and stops Laravel reading `.env` at all. `.env` is
+      # gitignored AND in `.dockerignore`, so it does not exist in the image either.
+      # Everything the application is configured with therefore arrives here — editing
+      # `.env.example` alone changes nothing in production, which is exactly how the
+      # `CACHE_STORE` defect below reached a running deployment.
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: https://18-175-88-107.sslip.io
+
+      # `file`, NOT `database`, and this is the one setting here that was found by a
+      # failure rather than chosen. Playing the game against the 13.1 images returned a
+      # 500 to X on the poll that should have shown O's win. Not game logic — the rate
+      # limiter. Laravel's database cache store increments as SELECT-then-UPDATE inside
+      # one transaction with `lockForUpdate()` a no-op on SQLite, so two players polling
+      # every 2 seconds (ADR-001) collide, the loser's UPDATE meets a stale snapshot, and
+      # SQLite answers SQLITE_BUSY *immediately* — `busy_timeout` does not apply, because
+      # waiting cannot help a transaction that has to roll back. Laravel does not retry.
+      # Measured at 13 failures in 30 concurrent requests before the change and zero at
+      # 30 and at 60 after, with the limiter still refusing past its threshold.
+      # `.env.example` carries the full reasoning and the cost of `file`.
+      CACHE_STORE: file
+
+      DB_CONNECTION: sqlite
+
+      # The `sessions` table lives in the same SQLite file as the games, on the
+      # `sqlite-data` volume, so a Player_Session survives a restart. It has to: a
+      # Player_Token is held only in the session and there are no accounts, so a lost
+      # session is a Game nobody can re-enter (ADR-005, Req 12.10). 30 days in minutes,
+      # which outlives the 7-day retention window of Requirement 13.1.
+      SESSION_DRIVER: database
+      SESSION_LIFETIME: "43200"
+
+      # `true` here and false in `.env.example`, which is the difference between the two
+      # environments rather than an inconsistency. Task 2.2 obtained a real certificate
+      # for the hostname, so this deployment is HTTPS and Requirement 10.11's `Secure`
+      # attribute applies. Over plain HTTP a Secure cookie is never sent back and no
+      # Player_Token would survive a request, which is why local development leaves it
+      # false. Had TLS not been obtainable, the recorded fallback was plain HTTP with
+      # this false.
+      SESSION_SECURE_COOKIE: "true"
+
+      # stderr rather than the default `stack`/`single`, so `docker logs app` carries the
+      # application log next to the `game_events` JSON of Requirement 10.3, which
+      # `config/logging.php` already writes there. `single` would write into
+      # `storage/logs` inside the container, where a rebuild discards it and nothing
+      # collects it first. `game_events` sets its own level and does not consult
+      # `LOG_LEVEL`, so raising this cannot silence the mandated records.
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: info
+
+    volumes:
+      # The database file, and the `sessions` table with it. Project-scoped rather than
+      # external, and the asymmetry with `caddy-data` below is deliberate: only this
+      # stack ever mounts this one, and its contents are rebuilt by `php artisan migrate`
+      # if lost. The Dockerfile creates this directory owned by www-data, which is what
+      # an empty volume inherits on first run — SQLite needs to create `-wal` and `-shm`
+      # siblings next to the file, so a writable file in a read-only directory is not
+      # enough.
+      - sqlite-data:/var/www/html/database
+
+    # `/health` reached over the local FastCGI socket, which is why `libfcgi-bin` is in
+    # the `app` stage: php-fpm speaks FastCGI and nothing else, so `curl` cannot probe it.
+    # `cgi-fcgi` exits 0 whenever the FastCGI exchange completes, including for a 503, so
+    # the body is what decides — `{"status":"ok",...}` on success against
+    # `{"status":"error","persistence":"unreachable"}` when the database is unreachable.
+    # Verified both ways by removing the database file from a running container.
+    #
+    # This probe is not equivalent to a browser request and should not be read as
+    # covering one. It never passes through Caddy, so `X-Forwarded-For` is absent and
+    # `REMOTE_ADDR` is 127.0.0.1; what it establishes is that php-fpm is accepting
+    # connections, that the framework boots, and that the persistence layer answers
+    # (Req 10.1, 10.2).
+    #
+    # `start_period` covers the entrypoint's `migrate` and the two `artisan` cache builds
+    # on a cold start, so a slow first boot is not counted as a failure.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          REQUEST_METHOD=GET
+          SCRIPT_NAME=/health
+          SCRIPT_FILENAME=/var/www/html/public/index.php
+          REQUEST_URI=/health
+          cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q '"status":"ok"'
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+
+    # 80 as well as 443, and not only for the redirect: ACME's HTTP-01 challenge is
+    # answered on 80, so closing it would leave the certificate unrenewable.
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./deploy/Caddyfile.production:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+    # `service_started`, NOT `service_healthy`, and the healthcheck above is not the
+    # reason to change it. Caddy renews the certificate itself, on its own schedule, and
+    # gating its start on the application's health would mean a database problem could
+    # also cost the certificate. Started first, Caddy answers 502 while `app` comes up —
+    # a page a player can retry, rather than a connection refused with no TLS behind it.
+    depends_on:
+      - app
+
+volumes:
+  # Project-scoped, so this materialises as `tic-tac-toe_sqlite-data`. See the mount
+  # above for why that is right here and wrong for the volume below.
+  sqlite-data:
+
+  # `external: true` with the fixed name is what pins this to the volume created by hand
+  # in task 2.2 with `docker volume create caddy-data`, holding the certificate issued
+  # then, its private key and the ACME account state.
+  #
+  # Naming it `caddy-data` in both files is NOT enough, and this is the trap the
+  # declaration exists to avoid. Compose prefixes volumes with the project name, so a
+  # plain `caddy-data:` here would resolve to `tic-tac-toe_caddy-data` while
+  # `deploy/compose.placeholder.yaml` — invoked from `deploy/` — resolved to
+  # `deploy_caddy-data`. Two distinct volumes: this stack would come up with empty
+  # certificate storage and perform a *second* issuance against the rate-limit bucket
+  # `sslip.io` shares with every other user of it, on the one day a refusal cannot be
+  # absorbed. ADR-009's mitigation 2 would be inert while looking correct.
+  # `docker volume ls` showing any prefixed `*_caddy-data` is the early warning.
+  caddy-data:
+    external: true
+    name: caddy-data

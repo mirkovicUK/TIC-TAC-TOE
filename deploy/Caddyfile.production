@@ -1,0 +1,54 @@
+# The production Caddyfile (task 13.2), mounted read-only by `compose.yaml`. It replaces
+# the placeholder `Caddyfile` in this directory, which task 2.2 used to complete one ACME
+# issuance ahead of the deployment; that file stays as it is, because
+# `compose.placeholder.yaml` still refers to it.
+#
+# Committed rather than copied to a `.local` variant. The placeholder needed an untracked
+# copy because its hostname had to be filled in on the instance, and editing a tracked
+# file there would have made task 13.3's `git pull` a conflict instead of a fast-forward.
+# This file has nothing left to fill in: the hostname below is the one task 2.2 obtained,
+# and it holds no secret. The APP_KEY is the only secret in the deployment and it reaches
+# the `app` container through `deploy/app.env`, not through here.
+#
+# The hostname is the dashed sslip.io form of the instance's Elastic IP, which resolves
+# without registering a domain. Issuance against it succeeded in task 2.2 and the
+# certificate, its private key and the ACME account state are in the external `caddy-data`
+# volume that `compose.yaml` mounts at /data — so a normal `docker compose up` reuses that
+# certificate rather than asking Let's Encrypt for a second one. The two documented
+# fallbacks (`nip.io` for a separate rate-limit bucket, plain HTTP with
+# `SESSION_SECURE_COOKIE=false`) were never needed and remain contingencies only.
+#
+# Automatic HTTPS is everything this file does not say: naming a qualifying hostname is
+# enough for Caddy to obtain and renew the certificate, redirect :80 to :443, and serve
+# HTTP/2. There is no TLS block to write, which is the whole of ADR-009's reason for
+# choosing Caddy.
+18-175-88-107.sslip.io {
+	# Caddy's OWN copy of `public/`, baked into the `web` image at build time by the
+	# Dockerfile's fourth stage. There is no shared code volume between the two
+	# containers, and that is deliberate: two containers cannot disagree about what
+	# they are serving if only one copy is ever built.
+	root * /srv/public
+
+	# The `root` override is load-bearing and is the one real consequence of copying
+	# `public/` in rather than sharing it. Caddy resolves paths in ITS filesystem, php-fpm
+	# resolves `SCRIPT_FILENAME` in ITS OWN, and the document roots differ — /srv/public
+	# here, /var/www/html/public in the `app` container. Without the override Caddy asks
+	# for /srv/public/index.php, which does not exist over there, and every PHP request
+	# fails while the static files keep working. Found by smoke-testing the two images
+	# together in task 13.1.
+	php_fastcgi app:9000 {
+		root /var/www/html/public
+	}
+
+	file_server
+
+	# Compresses the Inertia JSON and the JS bundle. Brotli is not in this build of Caddy
+	# and gzip is what every browser accepts, so this is the whole of it.
+	encode gzip
+
+	# Access logging is off by default in Caddy 2, so this one word is what puts the
+	# request log where task 13.3 can read it. `docker logs web` then carries the requests
+	# and `docker logs app` the application's own records and the `game_events` JSON of
+	# Requirement 10.3 — two streams, neither interleaved with the other.
+	log
+}

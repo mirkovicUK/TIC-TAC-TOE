@@ -11,9 +11,12 @@
 .env
 .env.backup
 .env.production
-# Both are specific to one provisioned instance: its hostname and its resource ids.
+# Specific to one provisioned instance: its hostname, its resource ids, and the APP_KEY
+# its stack runs with. `deploy/app.env.example` is the tracked template for the last of
+# them, and `compose.yaml` reads `deploy/app.env` through `env_file:`.
 /deploy/Caddyfile.local
 /deploy/.provisioned.env
+/deploy/app.env
 .phpactor.json
 .phpunit.result.cache
 # Written by `BrowserExpectationFailedException::from()` on any failed browser

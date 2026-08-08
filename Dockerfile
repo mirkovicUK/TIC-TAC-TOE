@@ -169,13 +169,20 @@ FROM php:8.5-fpm AS app
 # push through. If image size ever matters, the fix is to derive the runtime package from
 # `apt-cache depends libicu-dev` and `apt-mark manual` it by name before purging — not to
 # reinstate a pipeline that silently produced the wrong result.
+# `libfcgi-bin` is not an application dependency: it provides `cgi-fcgi`, and the Compose
+# healthcheck is the only thing that uses it. php-fpm speaks FastCGI and nothing else, so
+# the `curl` this image already carries cannot probe it — a healthcheck has to either
+# speak FastCGI or go around through the `web` container, and going around makes `app`'s
+# health depend on Caddy. `command -v` is asserted for the same reason as the two `php -m`
+# greps below: a missing probe would leave a healthcheck that fails for the wrong reason.
 RUN set -eux; \
     apt-get update; \
-    apt-get install --no-install-recommends -y libicu-dev; \
+    apt-get install --no-install-recommends -y libicu-dev libfcgi-bin; \
     docker-php-ext-install -j"$(nproc)" intl bcmath; \
     rm -rf /var/lib/apt/lists/*; \
     php -m | grep -q '^intl$'; \
-    php -m | grep -q '^bcmath$'
+    php -m | grep -q '^bcmath$'; \
+    command -v cgi-fcgi >/dev/null
 
 # `validate_timestamps=0` is what makes opcache worth enabling and is only safe because
 # the code is immutable in the image: PHP never stats a file to ask whether it changed,

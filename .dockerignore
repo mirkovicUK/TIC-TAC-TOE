@@ -38,8 +38,12 @@
 .env
 .env.*
 !.env.example
-/deploy/.provisioned.env
-/deploy/Caddyfile.local
+
+# `deploy/` in full, rather than the three files in it that must not ship. Nothing in the
+# image reads any of it — the Caddyfile is mounted by Compose at runtime, and `app.env`
+# reaches the container through `env_file:` — so excluding the directory is a guarantee
+# that survives someone adding a fourth file, where a list of names would not.
+/deploy
 
 # Development-only material with no runtime role. Excluded so a production image cannot
 # be read for the challenge brief, and so the test suite and specs do not inflate layers.
