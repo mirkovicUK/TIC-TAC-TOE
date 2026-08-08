@@ -1,12 +1,37 @@
 # How this project was directed, and where the generated output was wrong
 
-Satisfies Requirements 12.6 and 12.8.
+This is the record Requirement 12.6 asks the repository to contain: the spec documents, and the corrections made to the generated output. Requirement 12.8's obligation sits on the README rather than here — it asks the README to state which tooling was used, for which parts, and to identify where the output was corrected or rejected. This file is the substance that statement points at.
 
-This file records how AI tooling was used to build Remote Tic-Tac-Toe, and — more usefully — the places where its output was wrong and had to be corrected. It is written as work proceeds rather than reconstructed at the end, because the detail that makes a correction log worth reading is the first thing lost to memory.
+It records how AI tooling was used to build Remote Tic-Tac-Toe, and — more usefully — the places where its output was wrong and had to be corrected. It is written as work proceeds rather than reconstructed at the end, because the detail that makes a correction log worth reading is the first thing lost to memory.
+
+## Contents
+
+- [How the tooling was used](#how-the-tooling-was-used)
+- [Corrections](#corrections) — the spec-stage defects
+  - [The spec-stage defects at a glance](#the-spec-stage-defects-at-a-glance) — summary table
+  - [Which of these implicate the generated output, and which do not](#which-of-these-implicate-the-generated-output-and-which-do-not)
+  - [Confidently wrong claims about framework behaviour](#confidently-wrong-claims-about-framework-behaviour)
+  - [Self-contradictions within a single document](#self-contradictions-within-a-single-document)
+  - [Requirements that specified impossible or vacuous behaviour](#requirements-that-specified-impossible-or-vacuous-behaviour)
+  - [Gaps found by asking what was missing rather than what was wrong](#gaps-found-by-asking-what-was-missing-rather-than-what-was-wrong)
+  - [Precision errors](#precision-errors)
+- [Inconsistencies the implementation surfaced](#inconsistencies-the-implementation-surfaced) — found by building, not by reading
+- [Decisions recorded rather than corrected](#decisions-recorded-rather-than-corrected)
+- [Requirements narrowed rather than met](#requirements-narrowed-rather-than-met) — scoping decisions, not errors
+- [Verification items settled on first run](#verification-items-settled-on-first-run) — the dependency and convention checks
+- [Evidence rather than assertion, for the one part that had to be right](#evidence-rather-than-assertion-for-the-one-part-that-had-to-be-right)
 
 ## How the tooling was used
 
-The specification was produced through an AI-assisted, spec-driven workflow: a requirements document in EARS form, a technical design, and an implementation plan, each reviewed and revised before the next was written. Implementation follows the plan.
+**The tool was Claude Opus 5, used through the AI-assisted spec-driven workflow in the Kiro IDE**, with sub-agents dispatched per task from a written implementation plan. It produced first drafts of every artefact here that is not Laravel's own scaffolding. Which parts, specifically:
+
+| Part of the work | How the tooling was used | What the human did |
+| --- | --- | --- |
+| Specification | Generated `requirements.md` in EARS form, `design.md`, and `tasks.md`, each revised across several review passes | Set the brief, read every criterion, ruled on each defect and amendment recorded below |
+| Implementation | Wrote all application code — domain layer, services, HTTP layer, Inertia client, migrations | Directed task order, refused workarounds, ruled where two documents conflicted |
+| Tests | Wrote the unit, feature, property-based, architecture and browser suites | Restored the falsification habit that caught the vacuous-assertion defect |
+| Infrastructure | Wrote the Dockerfile, `compose.yaml`, the Caddyfile and the CI workflow | Provisioned the instance and hostname, played the game that found the rate-limiter defect |
+| Documentation | Wrote this file, and the decision records and README alongside it in the same group of tasks | Required that corrections be recorded at their true size, its own tool's included |
 
 The workflow's value was not that the first draft was good. It was that a written specification is reviewable in a way that a half-built application is not, and almost every defect listed below was found by reading a document rather than by debugging code.
 
@@ -15,6 +40,43 @@ The exception is recorded under "Inconsistencies the implementation surfaced", a
 ## Corrections
 
 Grouped by the kind of failure, because the kinds are more instructive than the count.
+
+One thing to note before the entries. The spec-stage corrections were all made *before* the specification was first committed, so `git log` on `requirements.md` shows the document arriving already corrected and none of the fixes below appears as a diff. There is nothing in version control to point at. That is exactly why this file exists, and it is also why a criterion number quoted for a pre-amendment draft — Requirement 13's in particular — need not line up with the numbering in the committed document.
+
+### The spec-stage defects at a glance
+
+Every row was caught by reading a document, before any code depended on it. The prose entries that follow give each one its detail; this table is for orientation.
+
+| What the spec claimed | What was true | How it was caught |
+| --- | --- | --- |
+| CSRF protection forces a session into existence, so the IP-keyed rate-limit branch is unreachable | Laravel 13 accepts a `Sec-Fetch-Site: same-origin` request without touching the session | Read the middleware source |
+| One configuration flag would close the resulting Requirement 10.9 gap, and a test could assert it | No such flag exists; the same-origin bypass is unconditional, and the middleware short-circuits in tests | Read the same source properly, after the first correction was itself wrong |
+| A CHECK constraint required `x_token_hash IS NOT NULL` on a rematch | The rematch flow four paragraphs above inserted both token slots null | Checked the DDL against the flow |
+| Property 10 held sequence contiguity "because each is a persisted constraint" | The schema section had already established contiguity is not schema-enforced | Read the property against the section it cited |
+| Requirement 12's record must comprise three components, prompts included | Two were deliverable in the stated time budget; recorded as a scoping decision, not an error | Costed against the brief's few-hours budget |
+| A rematch issues Player_Tokens to both players at creation | Only the requester's session is in the request; the absent player's browser cannot be written to | Asked who holds the session |
+| Clients stop polling when a game is terminal with no rematch | True at the instant it is evaluated, so both clients stopped and neither could discover a rematch | Traced the condition at the moment it fires |
+| One criterion deleted a Game as it expired; the next gave a command to delete expired Games | The command's working set was permanently empty | Read two adjacent criteria together |
+| Concurrent moves at one Sequence_Index: exactly one is accepted | Said nothing about authorisation, so it obliged accepting one of two unauthenticated requests | Read it against Requirements 3 and 4 |
+| Concurrent joins | Undefined; two visitors on one code could both be assigned the same mark | Asked what was missing, not what was wrong |
+| Idle indication after 60 seconds with no move | Vacuously true on an empty board, so it fired on the viewer's own turn | Reasoned about an empty Move_List |
+| A test suite | No criterion required one to exist; README and CI criteria were satisfiable by a command that ran nothing | Asked what was missing |
+| Reverse-proxy deployment | `TrustProxies` never configured, collapsing a per-visitor rate limit into a global one | Asked what the deployment needed |
+| "The completed winning line" | A single move can complete two lines at once, and the position is legally reachable | Reasoned about the exhaustive walk |
+| 549,946 board positions | 549,946 move sequences; positions number 5,478 | Checked the noun against the figure |
+| Volume named `caddy-data` in two Compose files shares one volume | Compose namespaces by project, so it would have been two volumes and two certificate issuances | Read the Compose semantics |
+
+### Which of these implicate the generated output, and which do not
+
+Worth separating, because a correction log that only catalogues other people's errors does not demonstrate reviewing AI output, which is what Requirement 12.8 asks for.
+
+Most rows above are defects in a specification that the tooling itself drafted, so the whole table is in that sense self-implicating. But three entries go further, because in each the generated *reasoning* was confident, specific, and wrong — offered as settled fact rather than as a draft:
+
+1. **The CHECK constraint** requiring a token slot that per-request rematch minting leaves null. The DDL and the flow were generated into the same document, four paragraphs apart, and the constraint was justified as protecting an invariant the flow made impossible.
+2. **The Property 10 contradiction**, which asserted a persisted constraint that the same document had already established does not exist — and asserted it in a *correctness property*, the part of the design a reviewer trusts most.
+3. **The CSRF inversion**, and the two further wrong claims built on top of it. This is the worst of the three: framework behaviour was asserted from memory three times, and each correction was itself partly wrong until the vendor source was read.
+
+Two later entries have the same shape and are recorded in their own sections because they were found by building rather than reading: the [inverted account of Pest's `toContain()`](#seventeen-assertions-asserted-nothing-and-the-explanation-of-why-that-was-harmless-was-the-inverse-of-the-truth), which was *reassuring* and nearly closed a real defect, and the [74-bit UUIDv7 figure](#a-uuidv7-does-not-carry-74-random-bits-when-you-generate-two-in-the-same-millisecond) that was right in general and wrong where it was quoted.
 
 ### Confidently wrong claims about framework behaviour
 
@@ -26,7 +88,9 @@ The most persistent failure mode, and the one worth taking seriously. In each ca
 2. Having been corrected, claimed the resulting requirement gap could be closed by "one configuration line" disabling a same-site flag. Also wrong. `PreventRequestForgery::$allowSameSite` already defaults to `false`, and it governs the broader `same-site` case. The `same-origin` bypass at the top of `hasValidOrigin()` is unconditional and no flag disables it.
 3. On top of that, added a test asserting the state of the non-existent flag. Unreachable regardless: `handle()` calls `runningUnitTests()` before anything else, so the middleware short-circuits entirely in the test environment.
 
-Resolved by reading `vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/PreventRequestForgery.php`. The outcome was to amend Requirement 10.9 rather than subclass the middleware — the framework's origin check is set by the browser and cannot be forged cross-site, so it defends the case CSRF tokens exist to defend without depending on a secret threaded correctly through every form. Overriding a deliberate framework security design to make an earlier draft's wording come out true was the weaker option.
+Resolved by reading `vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/PreventRequestForgery.php`. `handle()` proceeds when any of five conditions holds, in order — read verb, running unit tests, route excepted, `hasValidOrigin()`, `tokensMatch()` — and `hasValidOrigin()` returns `true` on the first line of its body for `Sec-Fetch-Site: same-origin`, with nothing guarding it. Re-verified against the vendor source while completing this record; unchanged at `laravel/framework` v13.24.0.
+
+**The outcome was to amend Requirement 10.9** rather than subclass the middleware. The criterion now reads that the Game_Service verifies the origin of a state-changing request and, *where that origin cannot be established as same-origin*, additionally requires a valid forgery token — origin verification first, token verification as the fallback, which is what the framework does. The rejected alternative was a subclass overriding `hasValidOrigin()` to force the token path on every request. The framework's origin check is set by the browser and cannot be forged cross-site, so it defends the case CSRF tokens exist to defend without depending on a secret threaded correctly through every form; overriding a deliberate framework security design to make an earlier draft's wording come out true was the weaker option. No application configuration follows from the amendment, which is why tasks 9.1 and 9.5 were reduced rather than expanded.
 
 The lesson is narrow and worth stating plainly: framework behaviour was asserted from memory three times and was wrong three times, and each correction was itself partly wrong until the source was read.
 
@@ -41,31 +105,45 @@ The second is the more interesting of the two, because the decision it was defen
 
 Defects that survived generation because each half was locally plausible.
 
-**A CHECK constraint contradicting the flow four paragraphs above it.** The schema required `x_token_hash IS NOT NULL` on a rematch, while the rematch flow in the same document inserted rematches with both token slots null and minted tokens per request. The insert would have failed immediately. Caught by checking the DDL against the flow rather than reading either alone.
+**A CHECK constraint contradicting the flow four paragraphs above it.** One of the generated `games` CHECKs required `x_token_hash IS NOT NULL` on any row with a `rematch_of_game_id`, on the reasoning that a Rematch always has a Creator. The rematch flow in the same design inserted a Rematch with *both* token slots null and minted each Player's token when that Player's session next presented a valid token for the preceding Game — the per-request scheme recorded in ADR-010, adopted precisely because a Rematch cannot write into the absent Player's browser. So the very first insert of a Rematch would have failed on the constraint, and rematch would have been broken outright rather than subtly.
 
-**A correctness property contradicting the schema section.** Property 10 claimed sequence-index contiguity held "against direct writes, because each is a persisted constraint" — after the schema section had established that contiguity is *not* schema-enforced and rows carrying 0, 1, 2, 4, 5 satisfy every constraint. The schema section had been corrected; the property had not been updated to match.
+The mark swap makes it worse than a missing default: Requirement 7.3 gives `X` to whoever held `O`, so the first requester may fill `o_token_hash` and leave `x_token_hash` null indefinitely. There is no ordering under which the constraint holds. Caught by checking the DDL against the flow rather than reading either alone, and the removal is recorded in task 4.1 with an explicit instruction not to reintroduce it — a constraint that reads as an obvious invariant is the kind a later reader adds back.
 
-**Volume sharing that would not have shared anything.** The plan had a placeholder container and the real stack mount "the same named `caddy-data` volume" to carry a TLS certificate across. Docker Compose namespaces volumes by project name, so the two invocation directories would have produced two distinct volumes, a second certificate issuance against a rate limit shared with strangers, and a mitigation that looked correct while doing nothing. Fixed by making the volume external with a fixed name.
+**A correctness property contradicting the schema section.** Property 10 claimed sequence-index contiguity held "against direct writes, because each is a persisted constraint" — after the schema section of the same design had established that contiguity is *not* schema-enforced, since a `moves` table holding sequence indices 0, 1, 2, 4, 5 satisfies both unique indexes and both range CHECKs. The schema section had been corrected in an earlier pass; the property still asserted the pre-correction position.
+
+What makes it worth its own entry rather than a footnote is where it sat. A correctness property is the part of a design a reviewer reads to find out what is guaranteed, and this one named a guarantee that nothing enforced. Had it reached the test suite unamended it would have produced either an untestable assertion or a green one that proved nothing, which is the same failure mode as the seventeen vacuous assertions recorded further down.
+
+**Volume sharing that would not have shared anything.** The plan had a placeholder container and the real stack mount "the same named `caddy-data` volume" to carry a TLS certificate across. Docker Compose namespaces volumes by project name, so the two invocation directories would have produced `deploy_caddy-data` and `tic-tac-toe_caddy-data` — two distinct volumes, a second certificate issuance against a rate limit shared with strangers, and a mitigation that looked correct while doing nothing. Fixed by making the volume external with a fixed name.
+
+Group 13 has since shipped, and the fix held: `compose.yaml` declares `caddy-data` with `external: true` and `name: caddy-data`, alongside a project-scoped `sqlite-data` that deliberately does not. The two declarations sitting adjacent, with a comment saying why they differ, is what makes the distinction survive the next reader.
 
 ### Requirements that specified impossible or vacuous behaviour
 
-**Rematch token issuance no implementation could satisfy.** The requirement had the service issue Player_Tokens to *both* players when a rematch is created. Only the requesting player's session is present in the request; there is no way to write a token into the absent player's browser. Rewritten so each token is minted when that player's session next presents a valid token for the preceding game.
+**Rematch token issuance no implementation could satisfy.** The requirement had the Game_Service issue Player_Tokens to *both* Players at the moment a Rematch is created. Only the requesting Player's session is present in that request. There is no mechanism — none exists in HTTP — by which a response to one browser writes a session value into another, and the design has no accounts, no push channel and no server-side identity to attach a pending credential to. The criterion was not merely hard; nothing could have satisfied it.
 
-**A polling stop condition that was always true.** Clients stopped polling when a game reached a terminal state and no rematch was associated with it. At the moment a game becomes terminal no rematch can exist, so the condition was always true and *both* clients stopped — meaning neither could ever discover a rematch the other created. This broke the one behaviour the brief names explicitly.
+Rewritten as Requirement 7.6: each Player's token for the Rematch is minted at the time *that* Player's session next presents a valid Player_Token for the preceding Game. Continuity of identity across a Rematch then rests solely on the token held for the preceding Game, which is Requirement 7.7, and the two criteria together are what ADR-010 records.
 
-**A retention command with nothing to find.** One criterion deleted a game at the moment it was marked expired; the next required a command that deletes every expired game. The command's working set was permanently empty. Restructured around a single actor and a single transition.
+**A polling stop condition that was always true.** Clients stopped polling when a Game reached a Terminal_State and no Rematch was associated with it. At the moment a Game becomes terminal no Rematch can exist — a Rematch is created by a later request — so the condition was true for both clients the instant it began to be evaluated, both stopped, and neither could ever discover a Rematch the other created. This broke the one behaviour the brief names explicitly, and it would have broken it silently: each screen would simply have sat on a finished board.
 
-**A concurrency guarantee contradicting the authorisation rules.** The requirement said that when two concurrent move requests target the same sequence index, exactly one must be accepted — without requiring either to be authorised. Read literally it obliged the service to accept one of two unauthenticated requests, contradicting the criteria that require rejecting both.
+The fix separates the two things the draft had conflated. Requirement 8.5 keeps terminal-with-no-Rematch as a *slower polling rate*, 5 seconds rather than 2, and Requirement 8.6 makes stopping conditional on something that actually terminates the interest — a Rematch having been discovered, or the viewer navigating away.
 
-**An idle indication that fired on your own turn.** "No move accepted for 60 seconds" is vacuously true on an empty board, so a player was told their opponent may have stopped playing while waiting for their own first move.
+**A retention command with nothing to find.** One criterion deleted a Game at the moment it was marked expired; the next required a command that deletes every expired Game. The command's working set was therefore permanently empty, and a test of it would have passed against an implementation that did nothing. Restructured around a single actor and a single transition: eligibility is a state a Game is *treated as* being in (Requirements 13.1 and 13.2), deletion happens only in the command (13.3), and 13.5 says explicitly that the elapsed times are lower bounds on retention rather than times of deletion. The criterion numbers quoted in the plan for this defect are the pre-amendment ones and no longer correspond to the committed document.
+
+**A concurrency guarantee contradicting the authorisation rules.** Requirement 5.3 said that when two concurrent move requests target the same Sequence_Index, exactly one must be accepted — and said nothing about either being authorised or valid. Read literally, two unauthenticated requests racing for the same index obliged the Game_Service to accept one of them, which contradicts the criteria in Requirements 3 and 4 that require rejecting both. It is the kind of defect that survives review because the sentence is about concurrency and the reader's attention is on the race. The criterion now opens by requiring that both requests satisfy every authorisation condition of Requirement 3 and every move-validity condition of Requirement 4 as evaluated against the state each observed, and only then guarantees that exactly one is accepted.
+
+**An idle indication that fired on your own turn.** "No Move accepted for 60 seconds" is vacuously true on an empty Board, so the Creator was told their opponent may have stopped playing while the Application was in fact waiting for the Creator's own first Move. Closed by adding the Mark_To_Move clause to Requirement 9.4. The same vacuity had a second face on the other screen, which the implementation later surfaced and which is recorded under "Requirements narrowed rather than met" — one defect, two clauses needed.
 
 ### Gaps found by asking what was missing rather than what was wrong
 
-**No requirement that a test suite exist.** The requirements specified that the README state the commands to run the tests and that CI run them and fail on failure — and never that any test be written. Both criteria were satisfiable by a README documenting a command that ran nothing.
+**No requirement that a test suite exist.** The draft requirements specified that the README state the commands that run the automated test suites, and that CI run those suites and report failure — and nowhere required that any test be written. Both criteria were satisfiable by a README documenting a command that ran nothing and a CI job that ran it. For a brief whose stated purpose is executable evidence, the gap is the largest of the spec-stage defects by consequence, and it is invisible to a reviewer checking whether the criteria are *met*: they were.
 
-**Concurrent joins undefined.** Concurrent *moves* were covered by two persisted uniqueness invariants. Two visitors submitting the same join code simultaneously could both be assigned the same mark.
+Closed by adding the whole of Requirement 14, which names the artefacts rather than the activity — unit tests reaching the Rules_Engine without persistence, session or transport; the exhaustive enumeration with both counts asserted; feature tests for each distinct rejection outcome; the rate-limit boundary at the twentieth and twenty-first request; one end-to-end test driving two sessions; and the not-well-formed Move_List classes. Nine criteria, each falsifiable by looking in the repository.
 
-**`TrustProxies` never configured.** Behind a reverse proxy, php-fpm sees the proxy's address unless the middleware is configured to honour `X-Forwarded-For`. Without it the join rate limit collapses from twenty per visitor per minute into twenty per minute for the entire application. This would have passed every test in the suite, because the feature tests exercise the application directly rather than through a proxy.
+**Concurrent joins undefined.** Concurrent *moves* were covered by two persisted uniqueness invariants on `moves`. Nothing covered two visitors submitting the same Join_Code at the same moment, and the join path is where it matters most, because both would have been assigned the mark `O` and each would have believed itself the Joiner. Closed by requiring the claim to be a conditional update whose affected-row count decides the outcome — the mechanism that later produced the `PlayerTokens` contradiction recorded below, which is a reasonable price for the invariant.
+
+**`TrustProxies` never configured.** Behind a reverse proxy, php-fpm sees the proxy's address unless the middleware is configured to honour `X-Forwarded-For`. Without it the join rate limit of Requirement 10.6 collapses from twenty per visitor per minute into twenty per minute for the entire application — the first twenty visitors of a minute exhaust it for everyone. This would have passed every test in the suite, because the feature tests exercise the application directly rather than through a proxy, and it would have passed a manual check too, because one person testing alone never trips a limit they share with nobody.
+
+Now `$middleware->trustProxies(at: '*')` in `bootstrap/app.php`, with the comment stating why the wildcard is safe here: port 9000 is never published, so the only thing that can reach php-fpm is Caddy in the same Compose network. The wildcard is a deliberate consequence of a deployment decision rather than a shortcut, which is the sort of thing worth writing down next to the code rather than only in a design document.
 
 **A CI job sequenced before the tests it runs.** The browser-test job was scheduled thirteen waves before the only browser test was written, so it would have run an empty selection — either failing the build or, worse, passing vacuously while appearing to verify something.
 
@@ -110,7 +188,7 @@ The decisions that followed were the human's, and there were three.
 
 **Third, which of the two fixes to take.** The options were a structural one — separate minting from remembering, so the session is never written on a losing path — and a procedural one, where `JoinGame` writes the session and then forgets the key if the update loses. The procedural option is functionally adequate: it is all one request, single-threaded, and no other request observes the intermediate state. The structural one was chosen anyway, on the stated ground that a guarantee holding by construction beats one holding because someone remembered the cleanup. That is the same reasoning that produced the token scheme's location-binding in the first place, applied consistently.
 
-**What was built.** `mint()` returns a `MintedToken` and has no side effects; `remember()` is the session write alone; `issue()` survives as the composition of both, because `CreateGame` inserts a fresh row with no competing writer and therefore no losing path. `JoinGame` mints, runs its guarded statement, and calls `remember()` only on the winning branch — so no orphan credential exists because nothing wrote one, not because something cleaned one up. The design's skeleton was amended to match, including a note that task 7.1's `CreateRematch` will want the same primitives for the same reason.
+**What was built.** `mint()` returns a `MintedToken` and has no side effects; `remember()` is the session write alone; `issue()` survives as the composition of both, because `CreateGame` inserts a fresh row with no competing writer and therefore no losing path. `JoinGame` mints, runs its guarded statement, and calls `remember()` only on the winning branch — so no orphan credential exists because nothing wrote one, not because something cleaned one up. The design's skeleton was amended to match, including a note that task 7.1's `CreateRematch` would want the same primitives for the same reason. That prediction held: `CreateRematch::mintFor()` now mints, persists, then calls `remember()`, in that order, and its docblock states that it uses the two primitives rather than `issue()` because a session must not be told it holds a credential before the row that binds it exists.
 
 **A smaller decision inside that one.** `mint()` returns a two-property value object rather than a raw string plus a public `hashOf()` helper. Both strings are `string` to PHP and to PHPStan, and `JoinGame` interpolates one of them into `SET o_token_hash = ?` — so a transposition would write the secret into the database, which is the exact disclosure Requirement 8.7 exists to prevent, at the exact point Requirement 3.1's binding is established, with no type checker objecting. Named properties make the mistake visible at the call site. The object's docblock is also explicit about what it does *not* protect: `readonly` prevents mutation, not disclosure, and `raw` is public, so `var_dump` or `json_encode` would print it. What protects the secret is that no instance is ever handed to a serialiser.
 
@@ -177,7 +255,7 @@ per player, so two clients issue overlapping increments continuously. One reads 
 counter, the other commits first, and the first's UPDATE now holds a stale snapshot.
 
 **The part that is genuinely counter-intuitive, and why the existing settings did not
-save it.** WAL was on and `busy_timeout` was 60 s — both verified inside the running
+save it.** WAL was on and a busy timeout was set — both verified inside the running
 container, not assumed. Neither applies. SQLite returns SQLITE_BUSY for a stale-snapshot
 upgrade *immediately*, because waiting cannot help: the transaction has to roll back and
 be retried, and no amount of timeout changes that. Laravel does not retry. So the
@@ -187,6 +265,35 @@ This is the same class of error as the entries above, in a new place: `config/da
 sets `busy_timeout` and the design's error table reasons about it at length, and both
 quietly assume that a busy timeout covers SQLITE_BUSY. It covers one kind and not this
 one.
+
+**A correction to this entry, and it is the orchestrator's own.** The paragraph above first
+said `busy_timeout` "was 60 s — both verified inside the running container, not assumed",
+and the figure was wrong. The sub-agent writing the decision records found it while drafting
+ADR-004, because four other sources say 5 s: `config/database.php` sets
+`env('DB_BUSY_TIMEOUT', 5000)` with no override anywhere in `compose.yaml`, `deploy/` or
+`.env.example`; `HealthController`'s docblock says 5 s; `SqliteConnectionSettingsTest`
+asserts exactly `5000`; and the design's ADR-004 says 5 s.
+
+Measured against the deployed container to settle it, and both numbers turn out to be real:
+
+```
+PRAGMA busy_timeout   on a raw PDO connection   -> 60000
+artisan db:show       Laravel's own connection  -> busy_timeout 5000, WAL, NORMAL
+```
+
+The 60,000 is PDO's own default — `PDO::ATTR_TIMEOUT` defaults to 60 seconds and
+`pdo_sqlite` maps it onto `busy_timeout` — so the original "verification" opened its own
+connection and measured the driver's default rather than the application's setting. **These
+PRAGMAs are per-connection**, which is the same footgun ADR-004 names for foreign keys, and
+the same connection confirms it: `PRAGMA foreign_keys` reports `0` there while Laravel's
+connection has them on.
+
+The substance of the entry is untouched — at 5 s or 60 s, a busy timeout does not apply to a
+transaction that must roll back. But the claim was presented as a measurement, and it was a
+measurement of the wrong thing. It is recorded here rather than silently edited because a
+file about reviewing generated output has no business quietly fixing its own errors, and
+because the lesson generalises: a probe that opens its own connection is not observing the
+application's connection.
 
 **Why the suite was blind to it, which is the more useful half of this entry.**
 `phpunit.xml` sets `CACHE_STORE=array` and `SESSION_DRIVER=array`. So every one of the 298
@@ -321,7 +428,9 @@ Not everything below was an error; these are choices where the reasoning matters
 
 ## Requirements narrowed rather than met
 
-Two acceptance criteria were amended rather than satisfied, and they belong here as scoping decisions rather than among the corrections above.
+Two acceptance criteria were amended rather than satisfied. They sit here, apart from the corrections, because the distinction matters to a reader: **nothing in this section was an error.** Above, a criterion was amended because it stated something false, impossible or vacuous, and the amendment made the document correct. Here, each criterion was coherent and satisfiable, and was narrowed because meeting it in full was judged not worth its cost. That is a scoping decision, and it is recorded so a reviewer can weigh the judgement rather than discover the shortfall.
+
+Both amendments were made in the open and both state their consequence. Requirement 10.9's amendment, recorded among the corrections above, is deliberately *not* here: it belongs there because the wording it replaced described framework behaviour that does not exist.
 
 ### The opponent-idle indication now begins only once a Move has been accepted
 
@@ -339,17 +448,34 @@ The ruling was to narrow the criterion: it now carries an "at least one Move has
 
 Requirement 12.6 originally asked this documentation to comprise three things: the spec documents, the significant prompts issued, and the corrections made to the generated output. The prompts component was dropped against the brief's "no more than a few hours" budget, and the criterion now names only the two components actually delivered.
 
-The reasoning is the part worth keeping. An unmet criterion that a reviewer can find by reading your own specification is worse than a narrower criterion honestly stated. The choice was between satisfying it cheaply and amending it openly; leaving it quietly unsatisfied was not one of the options. Requirement 12.8 — recording where the generated output was wrong — is untouched and still in force, and this file satisfies it.
+The reasoning is the part worth keeping. An unmet criterion that a reviewer can find by reading your own specification is worse than a narrower criterion honestly stated. The choice was between satisfying it cheaply and amending it openly; leaving it quietly unsatisfied was not one of the options.
+
+**What was dropped and what was not.** A prompt log is the component whose cost scales with the length of the work and whose value to a reviewer is the lowest of the three: it records what was asked, not what was wrong, and the second is the thing a reviewer cannot reconstruct for themselves. The two components kept are the ones that carry the evidence — the spec documents, committed in full, and the corrections, which are this file. Requirement 12.8 is untouched and still in force: it obliges the README to state which tooling was used, for which parts of the work, and to identify where the generated output was corrected or rejected. This file supplies all three, and the entries where the generated *reasoning* was wrong — flagged near the top and detailed in the sections above — are what make it evidence rather than an inventory.
+
+**This is the one amendment in this file that narrows a criterion about the record itself**, which is worth naming, because a documentation criterion is the easiest kind to quietly reinterpret. It is recorded as a scoping decision, not as a correction of an error: nothing about the three-component wording was false or impossible. It was simply more than the time budget bought.
 
 ## Verification items settled on first run
 
-Recorded here so a reader can see which strategy the project actually uses rather than which one was planned. Three of the four items were flagged in advance as things that could force a fallback; naming them before starting is what made each one a short check rather than a mid-build surprise.
+Recorded here so a reader can see which strategy the project actually uses rather than which one was planned. Of the six items, three were named in the design as verify-on-first-run risks that could force a fallback — Larastan, Eris, the node-count convention — and a fourth, the enumeration runtime, had four mitigations staged against it in advance. Naming them before starting is what made each one a short check rather than a mid-build surprise.
 
-- **Larastan against Laravel 13** — resolved. Larastan 3.10 installs cleanly and `phpstan` reports 2.2.8. The recorded fallback (plain PHPStan over `App\Domain\TicTacToe` only) was not needed.
-- **Eris on PHP 8.5** — resolved. Eris 1.1 installs and its generators run under PHP 8.5.9, verified by constructing a `ChooseGenerator` and drawing a value rather than by trusting Composer's resolution. The hand-picked-dataset fallback was not needed. Worth distinguishing the two checks: Composer resolving a package says only that its constraints are satisfiable, not that its code runs on the interpreter in use.
-- **Pest 4** — resolved. Pest 4.7.8, with the Laravel and browser plugins. The browser plugin is what makes Requirement 14.5 satisfiable without adding Dusk.
-- **Requirement 10.9 against `PreventRequestForgery`** — resolved by amending the criterion, as described above. No application configuration follows.
-- **The enumeration node count convention** — resolved, and earlier than planned. It was recorded as open until task 3.6, but verifying task 3.2's rules engine meant walking the tree anyway, so the answer arrived with the engine rather than with the test that formalises it. The root counts: incrementing on entry to each node, the empty move list included, gives exactly 549,946, and 549,945 means the root was skipped. Task 3.6 now states the convention instead of asking the implementer to choose one — the open version invited whoever got the right answer to go hunting for a discrepancy that does not exist.
+**Every version below was re-read out of `composer.lock` and `php -v` while completing this record, rather than carried across from the plan.** They agree with what task 1.2 recorded.
+
+| Item | Recorded risk | Outcome | Fallback needed |
+| --- | --- | --- | --- |
+| Larastan against Laravel 13 | Might not resolve | `larastan/larastan` v3.10.0, `phpstan/phpstan` 2.2.8 | No |
+| Eris on PHP 8.5 | Might resolve but not run | `giorgiosironi/eris` 1.1.0, running on PHP 8.5.9 | No |
+| Pest 4 | — | `pestphp/pest` v4.7.8, Laravel and browser plugins | — |
+| Requirement 10.9 | Might need a middleware subclass | Criterion amended; no configuration follows | Not applicable |
+| Enumeration node count | Convention ambiguous | Root counts; 549,946 | Not applicable |
+| Enumeration runtime | Might overrun the CI budget | About 5 s against a 60 s budget | No |
+
+- **Larastan against Laravel 13** — resolved. Larastan v3.10.0 installs cleanly against `laravel/framework` v13.24.0 and brings `phpstan/phpstan` 2.2.8 with it. The recorded fallback (plain PHPStan over `App\Domain\TicTacToe` only) was not needed, so the project runs Larastan at level 8 over `app/`, `database/` and `tests/` plus level `max` over the domain namespace.
+- **Eris on PHP 8.5** — resolved. Eris 1.1.0 installs and its generators run under PHP 8.5.9, verified by constructing a `ChooseGenerator` and drawing a value rather than by trusting Composer's resolution. The hand-picked-dataset fallback was not needed. Worth distinguishing the two checks: Composer resolving a package says only that its constraints are satisfiable, not that its code runs on the interpreter in use. `composer.json` requires `php: ^8.5` and `composer.lock` records that platform requirement, so there is no second interpreter for the check to have been run against.
+- **Pest 4** — resolved. Pest v4.7.8, with the Laravel and browser plugins. The browser plugin is what makes Requirement 14.5 satisfiable without adding Dusk.
+- **Requirement 10.9 against `PreventRequestForgery`** — resolved by amending the criterion, which is the outcome task 1.2 records as taken (its outcome 3) of those left open when the question was raised. The criterion now describes origin verification with token verification as the fallback, matching what the middleware does; the rejected alternative was a subclass overriding `hasValidOrigin()` to force the token path on every request. No application configuration follows, and the full account, including the two further wrong claims made along the way, is under "Confidently wrong claims about framework behaviour" above.
+- **The enumeration node count convention** — resolved, and earlier than planned. It was recorded as open until task 3.6, but verifying task 3.2's rules engine meant walking the tree anyway, so the answer arrived with the engine rather than with the test that formalises it. **The convention adopted is that the root counts**: the node counter increments on entry to each node, the empty Move_List included, which gives exactly 549,946. A run reporting 549,945 has skipped the root — a harness bug with a known fix, not a rules defect and not a convention left open. Task 3.6 now states this rather than asking the implementer to choose, because the open version invited whoever got the right answer to go hunting for a discrepancy that does not exist.
+
+  **The terminal count, 255,168, has no such latitude and the task says so.** The node count depends on a counting convention because "how many nodes are in this tree" is a question about the walk; whether a position is terminal is a question about the position, and the empty Move_List is unambiguously not terminal, so no convention can move the figure. A mismatch there means the engine and the independently written oracle disagree with the accepted combinatorial result, and the instruction is to stop and debug rather than adjust the expectation. Both counts are asserted in Requirement 14.2 itself, which is what makes them ground truth rather than a restatement of the implementation's own opinion.
 - **The enumeration runtime** — measured, and the flagged risk did not materialise. The design named the exhaustive walk as the most likely thing to overrun the CI budget and staged four mitigations against a 60-second limit. The full walk, engine plus an independently written oracle in plain PHP with no optimisation, took about five seconds. The mitigations stay on record as contingency rather than being deleted, because naming them in advance is what made this a five-second check instead of a mid-build surprise.
 
 ## Evidence rather than assertion, for the one part that had to be right
