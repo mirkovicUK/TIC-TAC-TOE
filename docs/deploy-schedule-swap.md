@@ -327,18 +327,49 @@ debugging here.
 
 ## 10. Check the disk, and prune
 
-Each `--build` leaves the previous images dangling, and the `app` image is about 640 MB. This
-is a larger claim on the 19 G volume than the logs, which are capped at 30 MB per service.
+Building on the box means two things accumulate, and they need different commands. Both are a
+larger claim on the 19 G volume than the logs, which are capped at 30 MB per service.
 
 ```bash
 df -h /
 docker system df
-docker image prune -f
-df -h /
 ```
 
-Expected: reclaimed space on the second `df`, and plenty free either way on the first deploy.
-Worth repeating after every future rebuild.
+`docker system df` is the one that tells you which. Measured on the first deploy:
+
+```
+Images          4     ACTIVE 2   1.007GB   reclaimable 13.35MB
+Build Cache    63     ACTIVE 0   1.851GB   reclaimable 1.822GB
+```
+
+**Dangling images** — each `--build` untags the previous image, and the `app` image is about
+640 MB:
+
+```bash
+docker image prune -f
+```
+
+On the *first* deploy this reclaims 0 B, and that is correct rather than a failure: nothing is
+dangling until a second build replaces something. It matters from the second rebuild onward.
+
+**The build cache** — BuildKit's layer cache, which `image prune` does not touch and which was
+the larger figure above:
+
+```bash
+docker builder prune -f
+```
+
+Do not run this reflexively. That cache is what makes the next `--build` fast; clearing it
+forces a full rebuild including Composer and npm. Clear it when `df -h /` passes roughly 70%,
+or deliberately before a build you want uncached.
+
+**Never `docker system prune -a --volumes`.** It removes volumes, which here means
+`caddy-data` and the certificate whose replacement depends on a rate limit shared with
+strangers.
+
+An earlier version of this step named only `docker image prune -f`, which is why the split is
+spelled out: on a build-on-the-box deployment the build cache is the thing that grows, and the
+command most people reach for does not clear it.
 
 ---
 

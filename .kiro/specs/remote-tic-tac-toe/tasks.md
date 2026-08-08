@@ -403,7 +403,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - `composer test` runs `php artisan test` with no group filter, so it now needs a browser. Task 15.1 should say so, or add the exclusion there
     - _Requirements: 14.5_
 
-- [ ] 13. Containerisation and deployment
+- [x] 13. Containerisation and deployment
   - [x] 13.1 Write the multi-stage `Dockerfile`
     - Target `app`: `php:8.5-fpm`, `composer install --no-dev`, required extensions, entrypoint running `php artisan migrate --force` then `php-fpm`
     - Target `web`: `caddy:2-alpine` with `public/` and the Vite build output copied in from the app build stage, so no shared code volume is needed
@@ -442,11 +442,17 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 9.1, 10.11, 12.2, 12.4_
     - _Design: ADR-009_
 
-  - [ ] 13.3 Deploy and schedule the sweep
+  - [x] 13.3 Deploy and schedule the sweep
     - **The command-by-command runbook is `docs/deploy-schedule-swap.md`**, written against the instance's actual state rather than from the repository: the clone at `/srv/tic-tac-toe` and the `caddy-data` certificate are already in place, and 911 MiB of RAM with no swap is why swap is step 2 rather than a troubleshooting note
     - `docker compose up -d --build` on the instance; confirm the app answers over the hostname from 2.1 and that `/health` reports the persistence layer reachable
     - **NEGATIVE check, after the stack is up: `sudo ss -ltnp | grep 9000` finds nothing, and `docker compose ps` shows no published port on `app`.** This is the only point at which 9.2's trusted-proxy precondition is actually observed rather than asserted — `docs/aws-infra.md` carries the same check for the pre-deployment instance, and this is its post-deployment twin
     - Add the host crontab entry `17 3 * * * cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep`; no scheduler process runs inside the application
+    - **Deployed and verified. `https://18-175-88-107.sslip.io/` is live.** `/health` returns `{"status":"ok","persistence":"reachable"}` over HTTP/2 in 62 ms, `/` renders, and `http://` answers 308 to `https://`. The certificate is the one task 2.2 obtained — Let's Encrypt, `CN = 18-175-88-107.sslip.io`, `notBefore Aug 6 13:10`, so the external `caddy-data` volume did carry it across and no second issuance was made against the shared `sslip.io` bucket. Caddy's only ACME traffic was `got renewal info`, which is ARI rather than an issuance
+    - **The negative check passed: `sudo ss -ltnp | grep 9000` finds nothing, and `docker compose ps` shows `app | 9000/tcp` with no host binding.** Port 22 does appear in `ss` — that is `sshd` running locally, closed by the security group rather than by the host, which is worth knowing before the output is misread. This is the only point at which task 9.2's trusted-proxy precondition is observed rather than asserted
+    - **The crontab entry was verified the way cron will run it, not merely installed.** Running the exact line under `env -i` with `PATH=/usr/bin:/bin` as `ssm-user` and no TTY exited 0 and put the three counts in the journal under the `games-sweep` tag. `-T` is what makes that work; without it cron fails with `the input device is not a TTY`. It is on `ssm-user`'s crontab, the account in the `docker` group, and on no other user's. Three zeroes from a manual run is the correct result: the thresholds are lower bounds, so nothing minutes old is eligible
+    - **Where the data went, checked rather than assumed.** Game state is 160 KB of SQLite on the `tic-tac-toe_sqlite-data` volume (4 games, 22 moves, 11 sessions after a play session with rematches); the log records are `json-file` files on the root disk, 65 KB for `app` against 833 KB for `web`, which is the 62-versus-886 bytes per request measured before deployment showing up in production; the rate-limit counters are 380 KB of file cache inside the container and deliberately not on a volume. **The `cache` table holds 0 rows, which is the production confirmation that the rate limiter is off the SQLite cache store** — a climbing count there would mean the mid-game 500 was back
+    - **Step 10 of the runbook was wrong and is corrected there.** It named `docker image prune -f`, which reclaimed 0 B: on a first deploy nothing is dangling, and the accumulation on a build-on-the-box deployment is BuildKit's build cache — 1.85 GB of the 5.9 GB used, cleared by `docker builder prune -f` and untouched by `image prune`. Keeping it is the better default, since it is what makes the next `--build` fast
+    - Swap was added before the build rather than after a failure: 911 MiB of RAM with none configured, and the asset build is what gets OOM-killed. `free` reported 99 MiB of swap in use once the stack was running, so the headroom was used
     - **Check disk headroom, and prune after a rebuild.** `--build` on the instance leaves the previous images dangling, and the `app` image alone is 637 MB, so repeated deploys are a larger claim on the 20 GB root volume than the logs task 13.2 capped. `df -h /` before and after, then `docker image prune -f`. `t3.micro` is 1 GiB of RAM and `npm run build` inside the image build can be OOM-killed — the symptom is Vite reporting `Killed` — for which `docs/aws-infra.md` carries the swapfile step
     - _Requirements: 12.4, 12.12_
 
