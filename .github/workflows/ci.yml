@@ -12,15 +12,25 @@ permissions:
   contents: read
 
 jobs:
-  # Two jobs, `quality` and `browser`, and neither depends on the other. The split is
-  # not about wall-clock time — it is about which signal a red tick carries. A browser
-  # flake must never mask a domain regression, so the one Playwright test is fenced off
-  # in its own job and the suite here keeps `--exclude-group=browser`: that exclusion is
-  # what makes the two ticks independent, and running the whole suite in both jobs would
-  # undo it. `browser` red with `quality` green reads as "the automation wobbled"; a
-  # single tick over both would read as nothing in particular.
+  # Two jobs, `quality` and `browser`, with `browser` gated behind this one.
   #
-  # Nothing is duplicated across the two beyond the setup they both need. `composer lint`,
+  # The split is not about wall-clock time, and measuring says so: locally the whole
+  # suite in one command is 19.5s, of which the browser test is about 7s and the
+  # exhaustive enumeration alone is 10.1s. Splitting wins no time at all — on a runner
+  # it costs time, because each job starts from an empty VM and pays checkout, PHP with
+  # ten extensions, `composer install`, `npm ci` and `npm run build` over again.
+  #
+  # What it buys is which signal a red tick carries. Browser automation is the flakiest
+  # thing in any pipeline, and if a flake and a real regression both surface as one red
+  # tick on one job, the tick stops meaning anything — at which point nobody
+  # investigates a red build, and that is the actual failure rather than the flake.
+  # Split, the location of the red is information before a log is opened: `browser` red
+  # with `quality` green reads as "the automation wobbled", `quality` red reads as
+  # "something is broken". The `--exclude-group=browser` below is what keeps the two
+  # ticks disjoint; running the whole suite in both jobs would undo the split while
+  # appearing to keep it.
+  #
+  # Nothing is duplicated beyond the setup both jobs need. `composer lint`,
   # `composer analyse` and `npx tsc --noEmit` belong to this job only — running them
   # twice doubles their cost and adds no signal.
   quality:
@@ -139,11 +149,24 @@ jobs:
   # binaries live outside the project, under `~/.cache/ms-playwright`. Skip that step
   # and the test fails launching chromium, not on an assertion.
   #
-  # No `needs:` on `quality`. Serialising the two would not stop a flake here from
-  # obscuring a regression there; only separate jobs do that, and they already do.
+  # `needs: quality`, and the tradeoff is real rather than one-sided — an earlier
+  # version of this file left it out and justified that by saying serialising would not
+  # protect the signal, which was true and beside the point. `needs:` costs nothing in
+  # signal: a red tick here still reads as a browser problem and a red tick there as a
+  # domain problem, whichever order they run in. What it actually trades is runner time
+  # against feedback latency.
+  #
+  # Gating is the better side of that trade here. This job is the expensive one — it
+  # downloads chromium and apt-installs its shared libraries on a cold cache — and
+  # spending that on a push whose static analysis or unit tests have already failed buys
+  # nothing, because the push is going to be fixed and pushed again regardless. The cost
+  # is that browser feedback now arrives after `quality` finishes instead of beside it,
+  # which matters only for a push that is otherwise green, and for those the wait is the
+  # length of one `quality` run.
   browser:
     name: browser
     runs-on: ubuntu-24.04
+    needs: quality
 
     steps:
       - name: Check out the repository
