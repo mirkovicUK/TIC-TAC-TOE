@@ -25,8 +25,8 @@ return new class extends Migration
         // it.
         //
         // The foreign key is `ON DELETE CASCADE` where the `games` self-reference uses
-        // RESTRICT: a Move has no life of its own once its Game is gone, so cascading
-        // reduces the sweep to a single delete of the game rows (Req 13.3). There is no
+        // RESTRICT: a Move has no life of its own once its Game is gone, so the sweep
+        // deletes game rows only and never names this table (Req 13.3). There is no
         // `updated_at` and no update path in the application — the only write to a Move
         // is the INSERT that records it.
         DB::statement(<<<'SQL'

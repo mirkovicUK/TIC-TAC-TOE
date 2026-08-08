@@ -99,7 +99,9 @@ final class Game extends Model
      * `HasOne` rather than `HasMany` because the unique index on
      * `rematch_of_game_id` makes at most one rematch per Game a persisted fact
      * (Req 7.8). The inverse direction is deliberately absent: nothing navigates
-     * it, and the sweep clears the back-reference with a bulk `UPDATE`.
+     * it, and `SweepExpiredGames` reads both directions of the pointer as plain
+     * `rematch_of_game_id` values rather than through a relationship, because it
+     * needs the whole chain at once and never a single row's parent.
      *
      * @return HasOne<Game, $this>
      */
