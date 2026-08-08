@@ -382,7 +382,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - A dataset of the eleven outcomes — `not_authorised`, `not_your_turn`, `invalid_move`, `game_not_started`, `game_ended`, `conflict`, `game_full`, `not_recognised`, `game_expired`, `invalid_state`, `rate_limited` — one scenario each, asserting the expected value and that the eleven observed values are pairwise distinct. The CSRF rejection is excluded by Requirement 14.3
     - **Validates: Requirements 2.2, 2.3, 3.3, 3.5, 4.3, 4.4, 4.5, 4.6, 5.4, 7.10, 7.11, 10.6, 13.6, 13.7, 13.8, 14.3**
 
-  - [-] 12.2 Write `VisibilityTest`
+  - [x] 12.2 Write `VisibilityTest`
     - **Property 7: Authorisation precedes validity and denies all visibility**
     - Every Game_State × every route naming a Game_Id, for a session with no token and a session holding a token bound elsewhere: assert no Board, no Move_List, no Game_State, no Mark_To_Move and no token value in the response, and that the three failure modes are indistinguishable
     - **Validates: Requirements 3.3, 3.4, 3.7, 3.9, 3.10, 8.7, 9.6, 14.6**
