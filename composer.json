@@ -64,7 +64,11 @@
         ],
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
-            "@php artisan test"
+            "@php artisan test --exclude-group=browser"
+        ],
+        "test:browser": [
+            "@php artisan config:clear --ansi @no_additional_args",
+            "@php artisan test --group=browser"
         ],
         "lint": [
             "pint --test"
