@@ -479,8 +479,8 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Sequenced after task 12.5, not with the rest of group 14.** `PlayAGameTest` is the only `browser`-tagged test, so until it exists the job runs an empty selection: either it fails the workflow, or it passes vacuously. A job that passes vacuously while claiming to run browser tests is worse than no job at all, because nobody investigates a green tick. It also pays a chromium download on every push to test nothing. 14.1 and 14.2 stay early — config problems are cheaper to find against fifty lines than five hundred, and a trivially passing first run of Pint and static analysis costs nothing
     - _Requirements: 12.9_
 
-- [-] 15. Documentation and records
-  - [ ] 15.1 Write the README
+- [x] 15. Documentation and records
+  - [x] 15.1 Write the README
     - Prerequisites; the commands that start the application locally and the URL it is reachable at; the commands that run each test suite, the static analysis and the formatting check; the URL of the hosted instance
     - Which AI tooling was used, for which parts, and where its output was corrected or rejected
     - That access to a Game cannot be recovered after loss of the Player_Session, and that this follows from the deliberate absence of user accounts
