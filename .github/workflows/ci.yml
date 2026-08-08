@@ -12,17 +12,17 @@ permissions:
   contents: read
 
 jobs:
-  # The `browser` job is deliberately absent and arrives with task 14.3. The reason
-  # it was held back is now discharged rather than still standing: until task 12.5
-  # wrote the one `browser`-tagged test a `--group=browser` selection was empty, and
-  # an empty selection exits 1 (verified), so the job would have turned the workflow
-  # red for want of a test rather than a defect. That test now exists and the
-  # selection resolves to it, so all that remains is 14.3 itself, which adds the job
-  # with its own `npx playwright install --with-deps chromium` step — the browsers
-  # are not fetched by `npm ci`, since the `playwright` package ships no install hook.
+  # Two jobs, `quality` and `browser`, and neither depends on the other. The split is
+  # not about wall-clock time — it is about which signal a red tick carries. A browser
+  # flake must never mask a domain regression, so the one Playwright test is fenced off
+  # in its own job and the suite here keeps `--exclude-group=browser`: that exclusion is
+  # what makes the two ticks independent, and running the whole suite in both jobs would
+  # undo it. `browser` red with `quality` green reads as "the automation wobbled"; a
+  # single tick over both would read as nothing in particular.
   #
-  # The step below keeps `--exclude-group=browser` regardless: a browser flake must
-  # never mask a domain regression, which is why the two are separate jobs at all.
+  # Nothing is duplicated across the two beyond the setup they both need. `composer lint`,
+  # `composer analyse` and `npx tsc --noEmit` belong to this job only — running them
+  # twice doubles their cost and adds no signal.
   quality:
     name: quality
     runs-on: ubuntu-24.04
@@ -118,10 +118,119 @@ jobs:
       - name: Build front-end assets
         run: npm run build
 
-      # Excludes the `browser` group, which task 14.3 runs in its own job. The
+      # Excludes the `browser` group, which the `browser` job below runs. The
       # exhaustive enumeration (549,946 nodes, Req 14.2) stays in this job and is
       # NOT split out: it measures 9.8s of a 10.4s suite locally on PHP 8.5,
       # comfortably inside the design's 60s budget, so mitigation 3 in the design's
       # runtime-budget list is not taken.
       - name: Run the test suite (excluding the browser group)
         run: vendor/bin/pest --exclude-group=browser
+
+  # One end-to-end browser test, and one on purpose (ADR-008): Requirement 14.5 asks
+  # for a single test driving two Player_Sessions to a Terminal_State, browser
+  # automation is the slowest and least reliable part of any pipeline, and a second
+  # test would buy coverage the feature suite already has at a cost paid on every push.
+  # `PlayAGameTest` is the whole selection, which is why `--group=browser` is a
+  # one-test run rather than a suite.
+  #
+  # The step that is not self-explanatory is `npx playwright install`. `playwright` is
+  # a pinned devDependency, so `npm ci` writes the package into `node_modules` — but
+  # the package ships no install hook (its `scripts` block is empty) and the browser
+  # binaries live outside the project, under `~/.cache/ms-playwright`. Skip that step
+  # and the test fails launching chromium, not on an assertion.
+  #
+  # No `needs:` on `quality`. Serialising the two would not stop a flake here from
+  # obscuring a regression there; only separate jobs do that, and they already do.
+  browser:
+    name: browser
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Same PHP as `quality` and as the Dockerfile: the browser test drives the real
+      # application through the plugin's in-process HTTP server, so it needs the same
+      # extensions the feature suite does — sqlite included, since the test selects the
+      # `database` session driver and `RefreshDatabase` builds that schema in memory.
+      - name: Set up PHP 8.5
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.5'
+          extensions: mbstring, dom, xml, curl, intl, bcmath, fileinfo, tokenizer, sqlite3, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+
+      - name: Resolve the Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      # Deliberately the same keys as `quality` uses: the two jobs want the same
+      # downloads, and a shared entry is the point. Whichever job finishes second
+      # finds the key already written and logs a warning; a cache save is not a step
+      # failure, so the workflow is unaffected.
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php8.5-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php8.5-
+
+      - name: Create the environment file
+        run: cp .env.example .env
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Generate a throwaway application key
+        run: php artisan key:generate
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Cache npm downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      # `resources/views/app.blade.php` carries `@vite(...)` and `public/build/manifest.json`
+      # is gitignored, so the pages this test drives do not render without a build. Not
+      # optional decoration: without it the first `visit('/')` gets "Vite manifest not found".
+      - name: Build front-end assets
+        run: npm run build
+
+      # Read the version out of the installed package rather than restating `1.62.1`
+      # here. A literal in this file is a second place to remember on a version bump,
+      # and a stale one would restore chromium for the wrong version — which
+      # `playwright install` then silently re-downloads, making the cache a no-op that
+      # still reports a hit. Keying on `package-lock.json` instead would work, but it
+      # discards the whole browser cache whenever any unrelated dependency moves.
+      - name: Resolve the pinned Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # No `restore-keys`: a near-miss restore is worse than a miss here, because the
+      # binaries for another version are dead weight that never gets used.
+      - name: Cache the Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      # Runs on a cache hit too, and must. The cache covers `~/.cache/ms-playwright`,
+      # the browser binaries; `--with-deps` also installs the apt packages chromium
+      # links against, which live in system paths no cache here restores. On a hit this
+      # step finds the binaries present and skips the download, so what it costs is the
+      # apt work alone — which is the part that cannot be skipped.
+      - name: Install the chromium browser and its OS dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the browser test
+        run: vendor/bin/pest --group=browser

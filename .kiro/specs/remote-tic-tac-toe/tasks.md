@@ -426,7 +426,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Add the host crontab entry `17 3 * * * cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep`; no scheduler process runs inside the application
     - _Requirements: 12.4, 12.12_
 
-- [ ] 14. Static analysis, formatting, and CI (may proceed alongside any group after 1.2)
+- [x] 14. Static analysis, formatting, and CI (may proceed alongside any group after 1.2)
   - [x] 14.1 Configure Pint and static analysis
     - `pint --test` in check mode; Larastan at level 8 over `app/`, `database/` and `tests/` plus level `max` over `App\Domain\TicTacToe`. The recorded fallback — plain PHPStan at level `max` over the domain namespace alone, had 1.2 found Larastan unresolvable — was not taken; Larastan 3.10 resolved
     - **Level 8 covers `database/` and `tests/`, not `app/` alone.** This corrects the task's own scope rather than extending the requirement: `paths` is not a leniency setting, PHPStan does not open files outside it at all, so `app/` alone left roughly two thirds of the project's PHP unanalysed. `tests/` is now the largest tree — 1,886 lines against `app/`'s 567 and `database/`'s 309 — and holds real logic rather than assertions in the enumeration walk, the architecture checker and the Eris properties, while `database/factories/` carries the fixtures every feature test depends on from group 5 onwards, where a type error surfaces as a confusing test failure instead of an honest analyser complaint. The original wording predates the test suite, when `tests/` held two scaffold placeholders; nothing in Requirement 12.3 limited the scope
@@ -442,7 +442,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - If task 3.6 measured the enumeration beyond the budget, split it into its own job here rather than reducing its coverage
     - _Requirements: 12.9_
 
-  - [-] 14.3 Add the `browser` CI job
+  - [x] 14.3 Add the `browser` CI job
     - `npm ci`, `npm run build`, `npx playwright install --with-deps chromium`, `pest --group=browser`, in its own job so a browser flake never masks a domain regression
     - **Sequenced after task 12.5, not with the rest of group 14.** `PlayAGameTest` is the only `browser`-tagged test, so until it exists the job runs an empty selection: either it fails the workflow, or it passes vacuously. A job that passes vacuously while claiming to run browser tests is worse than no job at all, because nobody investigates a green tick. It also pays a chromium download on every push to test nothing. 14.1 and 14.2 stay early — config problems are cheaper to find against fifty lines than five hundred, and a trivially passing first run of Pint and static analysis costs nothing
     - _Requirements: 12.9_
