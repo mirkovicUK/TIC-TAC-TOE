@@ -259,18 +259,29 @@ The suite covers this, but nothing has yet driven the deployed stack through two
 Then check the mandated records arrived:
 
 ```bash
-docker compose logs app | grep -o '"message":"game\.[a-z_]*"' | sort | uniq -c
+docker compose logs app | grep -oE '"message":"(game|move|rematch)\.[a-z_]+"' | sort | uniq -c
 ```
 
-Expected: counts for `game.created`, `game.joined`, `game.move_accepted`, `game.finished` and
-`game.rematch_created`. These are Requirement 10.3's lifecycle records, on stderr as one JSON
-object per line, and no Player_Token or Join_Code should appear anywhere in that stream.
+**Match all three prefixes, not just `game.`.** The event vocabulary is `game.created`,
+`game.joined`, `game.finished`, `move.accepted`, `move.rejected` and `rematch.created` — a
+pattern of `game\.` alone silently reports two of the six as missing, which is exactly what
+happened the first time this was checked and briefly looked like a defect in the application.
 
-Spot-check that last point:
+Expected after a game with a rematch: one `game.created`, one `game.joined`, one
+`game.finished` per completed game, one `move.accepted` per move, and one `rematch.created`
+per rematch. The `move.accepted` count should equal the number of rows in `moves` — that
+reconciliation is the useful check, because it catches a record that failed to emit rather than
+one you forgot to look for.
+
+Requirement 10.3 puts these on stderr as one JSON object per line, and no Player_Token or
+Join_Code may appear in that stream. Spot-check it:
 
 ```bash
-docker compose logs app | grep -cE '"(token|join_code|player_token)":"[^"]' || echo "no secrets in the log — correct"
+docker compose logs app | grep -oE '"(token|player_token|join_code)":"[^"]*"' | sort | uniq -c
 ```
+
+Expected: no output at all. No key of those names is ever written — `RedactSecrets` is the
+backstop rather than the mechanism, so an absence of `[REDACTED]` markers is also correct.
 
 ---
 
