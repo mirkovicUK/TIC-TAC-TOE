@@ -143,6 +143,24 @@ services:
       retries: 3
       start_period: 40s
 
+    # Rotation is stated because Docker's default is not to rotate at all: `json-file`
+    # with no `max-size` grows until the disk is full, and this instance has a 20 GB root
+    # volume that also holds every image and build layer. Measured on the two images, one
+    # Inertia poll writes about 62 bytes here (the php-fpm access line) plus roughly 250
+    # for a `game_events` record when one is emitted. Two players polling a live game at
+    # the 2-second ceiling is 1 request per second, and a FINISHED game left open in a tab
+    # still polls at 5 seconds (`useGamePolling` stops only once a Rematch exists), so the
+    # rate has no natural end while a browser is open.
+    #
+    # 30 MB is around five days of continuous two-player polling, which matters here more
+    # than on `web`: the Requirement 10.3 lifecycle records are in this stream, and
+    # rotating them away is losing the observability the requirement asks for.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   web:
     build:
       context: .
@@ -166,6 +184,25 @@ services:
     # a page a player can retry, rather than a connection refused with no TLS behind it.
     depends_on:
       - app
+
+    # The noisy half of the stack, and the reason both services state a limit. Caddy's
+    # access log is one JSON object per request carrying the request and response headers:
+    # measured at 886 bytes for an Inertia poll, fourteen times what `app` writes for the
+    # same request, so at 1 request per second this is about 82 MB a day of log text before
+    # `json-file`'s own per-line envelope. 30 MB is roughly nine hours of continuous
+    # two-player polling — enough to investigate something that just happened, which is
+    # what an access log is for here. Raise `max-file` if a longer window is wanted; the
+    # cost is disk on a volume shared with the images.
+    #
+    # Credentials are not the concern they would be with a hand-written log format: Caddy
+    # replaces the `Cookie` and `Set-Cookie` values with `REDACTED` by default, verified
+    # against a real request rather than assumed, so the encrypted session cookie does not
+    # reach the log.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   # Project-scoped, so this materialises as `tic-tac-toe_sqlite-data`. See the mount
