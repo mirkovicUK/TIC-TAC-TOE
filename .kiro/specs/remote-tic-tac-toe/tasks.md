@@ -329,7 +329,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Validates: Requirements 10.6, 10.7, 10.8, 14.4**
 
 - [ ] 10. Observability
-  - [ ] 10.1 Implement the Health_Endpoint
+  - [x] 10.1 Implement the Health_Endpoint
     - `GET /health`, no middleware, plain JSON, one persistence query per request; success status reserved for the reachable case, `503` with `{"status":"error","persistence":"unreachable"}` otherwise; answers within 1 second either way
     - **Remove the `health: '/up'` argument from `withRouting()` in `bootstrap/app.php` as part of this task.** The scaffold registered it and the design settled on `/health`, so leaving it in ships two health routes — the framework's renders HTML, answers JSON only when asked, and reports `up`/`down` without ever querying the persistence layer. The argument has to come out rather than be worked around: `withRouting()` registers the health route *before* the `web` group, so a same-URI route in `routes/web.php` would never match and the framework's route cannot be shadowed from the route file
     - _Requirements: 10.1, 10.2_

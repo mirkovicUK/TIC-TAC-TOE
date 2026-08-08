@@ -11,7 +11,10 @@ use Illuminate\Support\Facades\Route;
 
 /*
  * The HTTP surface of tasks 5.6, 6.2 and 7.1, in the order the design's table
- * lists them. Only the Health_Endpoint (task 10.1) is still deliberately absent.
+ * lists them. The Health_Endpoint is deliberately not among them: every route in this
+ * file is registered inside `Route::middleware('web')->group()`, and `GET /health`
+ * carries no middleware at all, so it is registered in the `then` callback of
+ * `withRouting()` in `bootstrap/app.php` instead.
  *
  * No `{game}` route may bind the model: there is no `Route::model()` or
  * `Route::bind()` for that name, and no controller here type-hints

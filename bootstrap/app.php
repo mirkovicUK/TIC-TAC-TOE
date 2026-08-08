@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\HealthController;
 use App\Http\Exceptions\GameNotVisibleException;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveActingPlayer;
@@ -7,13 +8,27 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         commands: __DIR__.'/../routes/console.php',
-        health: '/up',
+        then: function (): void {
+            // The Health_Endpoint carries no middleware at all, and `then` is what
+            // gives it that: `ApplicationBuilder::buildRoutingCallback()` invokes this
+            // callback after `Route::middleware('web')->group($web)` has returned, so
+            // the group stack is empty and the route inherits nothing.
+            //
+            // This replaces the scaffolded `health: '/up'`, which is removed rather
+            // than repointed. That argument registers its own route — HTML, `up`/`down`,
+            // and no query against the persistence layer — before the `web` group, so a
+            // same-URI route in `routes/web.php` could never have shadowed it. What goes
+            // with it is `PreventRequestsDuringMaintenance::except()` on the path, inert
+            // because maintenance mode is never enabled here.
+            Route::get('/health', HealthController::class)->name('health');
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // Forgery protection stays at Laravel 13's defaults by decision, not omission:
