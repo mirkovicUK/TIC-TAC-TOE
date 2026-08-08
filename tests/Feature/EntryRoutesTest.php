@@ -266,8 +266,8 @@ it('joins a waiting game and lands on the game page holding the mark O', functio
 /*
  * A stranger gets 403 and no game data (Req 3.7, 9.6).
  *
- * The absence is asserted by searching the response body rather than by listing the
- * props this controller remembered to omit, so a `game` prop added by accident or a
+ * The absence is asserted by searching the response rather than by listing the props
+ * this controller remembered to omit, so a `game` prop added by accident or a
  * Game_State leaking through another key fails either way. The Game is in a terminal
  * state with Moves and a winning Mark, so there is real state to leak.
  */
@@ -296,16 +296,26 @@ it('refuses a stranger with 403, the NotAPlayer page, and no game data anywhere 
         ->and(array_key_exists('game', $props))->toBeFalse('the refusal carries a game prop (Req 3.10)');
 
     $body = (string) $response->getContent();
+    $payload = (string) json_encode($props);
 
+    // Two haystacks, split by the entropy of the needle. The Join_Code and the token
+    // digest are long enough that a match anywhere in the response means a disclosure,
+    // so they are looked for in the whole body. The short lower-case needles are looked
+    // for in the DECODED PROPS only: the body also carries the Vite asset filenames,
+    // which are content hashes that change on every rebuild, and one of them containing
+    // `won` would fail this test for a reason nobody could reproduce. `VisibilityTest`
+    // splits its own searches the same way, and its authorised-session case is what
+    // shows the prop search fires when there is something to find.
     expect($body)->not->toBe('', 'the response is empty, so this scan asserts nothing')
+        ->and($payload)->not->toBe('[]', 'the response carries no props, so the searches over them would prove nothing')
         ->and(str_contains($body, '10ABCDEFGH'))->toBeFalse('the refusal discloses the Join_Code')
         ->and(str_contains($body, '10ABC-DEFGH'))->toBeFalse('the refusal discloses the Join_Code')
         ->and(str_contains($body, $hash))->toBeFalse('the refusal discloses a Player_Token hash (Req 8.7)')
-        ->and(str_contains($body, 'won'))->toBeFalse('the refusal discloses the Game_State (Req 3.7)')
-        ->and(str_contains($body, 'markToMove'))->toBeFalse('the refusal discloses the Mark_To_Move (Req 3.7)')
-        ->and(str_contains($body, 'winningLines'))->toBeFalse('the refusal discloses the winning lines (Req 3.7)')
-        ->and(str_contains($body, 'yourMark'))->toBeFalse('the refusal discloses a Mark (Req 3.7)')
-        ->and(str_contains($body, 'moves'))->toBeFalse('the refusal discloses the Move_List (Req 3.7)');
+        ->and(str_contains($payload, 'won'))->toBeFalse('the refusal discloses the Game_State (Req 3.7)')
+        ->and(str_contains($payload, 'markToMove'))->toBeFalse('the refusal discloses the Mark_To_Move (Req 3.7)')
+        ->and(str_contains($payload, 'winningLines'))->toBeFalse('the refusal discloses the winning lines (Req 3.7)')
+        ->and(str_contains($payload, 'yourMark'))->toBeFalse('the refusal discloses a Mark (Req 3.7)')
+        ->and(str_contains($payload, 'moves'))->toBeFalse('the refusal discloses the Move_List (Req 3.7)');
 });
 
 /*

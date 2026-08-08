@@ -387,7 +387,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Every Game_State × every route naming a Game_Id, for a session with no token and a session holding a token bound elsewhere: assert no Board, no Move_List, no Game_State, no Mark_To_Move and no token value in the response, and that the three failure modes are indistinguishable
     - **Validates: Requirements 3.3, 3.4, 3.7, 3.9, 3.10, 8.7, 9.6, 14.6**
 
-  - [-] 12.4* Write `RepresentationTest`
+  - [x] 12.4* Write `RepresentationTest`
     - **Property 11: The representation is the derivation**
     - Board, Mark_To_Move, Outcome and winning lines equal `RulesEngine::analyse` over the persisted Move_List; `isYourTurn == (markToMove == yourMark)`; the persisted `winning_mark` equals the derived winner; the Version_Counter is present on every response; the rematch id appears once a rematch exists; and the response is identical whatever version value the request presents
     - **Validates: Requirements 6.3, 6.7, 7.12, 8.3, 8.4**
