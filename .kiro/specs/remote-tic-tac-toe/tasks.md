@@ -377,7 +377,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
 - [ ] 12. Complete the mandated verification suite
   - Requirement 14.9's concurrency coverage is deliberately **not** in this group. Task 12.3 was split in two and both halves moved earlier so each sits next to the code it guards: the join race is now task **5.8** (beside 5.7, after `JoinGame`) and the move conflict is now task **6.8** (beside 6.6, after `SubmitMove`). Both remain non-optional. The 12.3 slot is left vacant rather than renumbered so existing references still resolve
 
-  - [-] 12.1 Write `OutcomeVocabularyTest`
+  - [x] 12.1 Write `OutcomeVocabularyTest`
     - **Property 16: Rejection outcomes are pairwise distinct**
     - A dataset of the eleven outcomes — `not_authorised`, `not_your_turn`, `invalid_move`, `game_not_started`, `game_ended`, `conflict`, `game_full`, `not_recognised`, `game_expired`, `invalid_state`, `rate_limited` — one scenario each, asserting the expected value and that the eleven observed values are pairwise distinct. The CSRF rejection is excluded by Requirement 14.3
     - **Validates: Requirements 2.2, 2.3, 3.3, 3.5, 4.3, 4.4, 4.5, 4.6, 5.4, 7.10, 7.11, 10.6, 13.6, 13.7, 13.8, 14.3**
