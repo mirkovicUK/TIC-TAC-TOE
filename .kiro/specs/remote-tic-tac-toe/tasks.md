@@ -342,7 +342,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 10.3, 10.4, 10.5_
     - _Properties: 19_
 
-  - [ ] 10.3* Write `HealthTest` and `LoggingTest`
+  - [-] 10.3* Write `HealthTest` and `LoggingTest`
     - Health: reachable and unreachable branches, and that the success status is not returned for the unreachable case
     - Logging: exactly one record per event with the required fields, move records carrying mark, cell, sequence and outcome, and no issued Player_Token or Join_Code value anywhere in the output produced while exercising every action
     - Also cover the `game.invariant_violation` record of task 10.4, which is otherwise pinned by nothing: deleting the `report` hook from `bootstrap/app.php` leaves the whole suite green. Assert it separately from the six rather than folding it into their count, since it is not one of Requirement 10.3's events
