@@ -146,6 +146,18 @@ The cost is that Property 17 stops being literally true as written. "The survivi
 
 **What makes this worth the length.** Neither constraint was wrong. The reachability CHECK is right, the `RESTRICT` is right, and the deletion step that sat between them was written without checking either — three documents each locally consistent, jointly describing an operation the database refuses. Nothing in reviewing any one of them would have shown it, and no test existed to fail, because the code that would have failed had not been written yet.
 
+### The client's handling of a rate-limited request was described, and never built
+
+Found by task 12.1, which had to observe what each of the eleven rejections actually produces and so could not accept the design's account of this one.
+
+The design said, of the two rejections that come from framework middleware, that `rate_limited` and the 419 forgery rejection "are surfaced by the client's Inertia error handling", and its error table said the client "renders a 'too many requests' message". Neither is true. `resources/js` contains no `onError`, no `router.on` and no status branch anywhere, so a 429 and a 419 both fall through to Inertia's default and the player sees nothing. `resources/js/lib/outcomes.ts` omits `rate_limited` deliberately and says so, which is the one place the repository was already honest about it.
+
+The related fact, established by search rather than assumed: `rate_limited` has no value anywhere in the application. The string appears in no enum, no route, no config and no client module — only in prose. The rejection *is* the 429, produced by `ThrottleRequests` before any controller runs. So Requirement 14.3's "each of those rejections returns its own distinct outcome value" cannot be satisfied literally for this one, and the test observes the status instead, asserting additionally that no outcome value is flashed — the assertion that fails if the application ever gains one and this account goes stale.
+
+**No code was written to close it, and that is the decision rather than an oversight.** No criterion asks for the client half: Requirements 10.6 and 10.7 oblige the Game_Service to reject with a rate-limited outcome, which it does, and Requirement 14.3 excludes the forgery rejection from coverage entirely. The design now states what is implemented and records the consequence — a player who trips a limiter sees a button that appears to do nothing until the window passes — and task 15.1 carries it into the README's Known Limitations beside the opponent-idle one.
+
+What makes it worth recording is the shape, which is the same as the `keepAlive` entry above and the opposite of most of this file: the *decision* was defensible and only the *description* was false. The design asserted an implementation that a reader would have had no reason to doubt, and the sub-agent that caught it was not reviewing the paragraph — it was trying to find out what the eleventh rejection returns.
+
 ### The 30-day purge boundary was specified three ways
 
 Found in the same investigation, and much smaller, but recorded because the disagreement was between a requirement, the design and a committed code comment.
