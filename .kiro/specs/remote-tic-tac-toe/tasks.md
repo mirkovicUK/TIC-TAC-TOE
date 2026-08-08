@@ -461,7 +461,8 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Requirements: 10.11, 12.1, 12.2, 12.3, 12.4, 12.8, 12.10, 12.12, 12.13_
 
   - [ ] 15.2 Write the decision records under `docs/decisions/`
-    - One file per ADR 001 to 010, each stating the decision, the alternatives considered and the reason. ADR-001 (polling as the state-synchronisation transport) is the record Requirement 12.11 mandates specifically
+    - One file per ADR 001 to 011, each stating the decision, the alternatives considered and the reason. ADR-001 (polling as the state-synchronisation transport) is the record Requirement 12.11 mandates specifically
+    - ADR-011 (php-fpm behind Caddy rather than one embedded-PHP container) was written during task 13.1, when the question "why two containers" was put directly and the design turned out to argue the hosting platform but never the topology. Carry its two unusual paragraphs across rather than tidying them away: the one declining to claim the unpublished port 9000 as a benefit of the split, and the one recording that the choice was inherited from the technology table rather than decided
     - Include in ADR-009 the certificate risk and its four mitigations, and the rejection of Let's Encrypt IP-address certificates on renewal-frequency grounds
     - _Requirements: 12.7, 12.11_
 
