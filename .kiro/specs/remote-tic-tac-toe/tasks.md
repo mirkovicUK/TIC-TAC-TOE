@@ -392,7 +392,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - Board, Mark_To_Move, Outcome and winning lines equal `RulesEngine::analyse` over the persisted Move_List; `isYourTurn == (markToMove == yourMark)`; the persisted `winning_mark` equals the derived winner; the Version_Counter is present on every response; the rematch id appears once a rematch exists; and the response is identical whatever version value the request presents
     - **Validates: Requirements 6.3, 6.7, 7.12, 8.3, 8.4**
 
-  - [ ] 12.5 Write `PlayAGameTest` — exactly one browser test
+  - [-] 12.5 Write `PlayAGameTest` — exactly one browser test
     - Two isolated browser contexts: one creates a Game and reads the Join_Code from the page, the other joins with it, they alternate moves to a win, and both assert the winning Mark and the highlighted line appear with no manual refresh — which is also the observational check on Requirement 8.2's three-second budget
     - **Exactly one, on purpose — not a suite.** Playwright is the slowest and most brittle part of CI, and a second browser test buys coverage the feature suite already has at a cost paid on every push (ADR-008)
     - Verify on the first run that the two sessions have independent cookie jars; if `visit()` shares a context, create the second session through the exposed Playwright context API. Assert the two sessions resolve to different Marks, so a shared session fails loudly
