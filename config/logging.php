@@ -108,10 +108,11 @@ return [
         ],
 
         /*
-        | The six Game lifecycle events of Requirement 10.3, written by
-        | `App\Games\GameEventLogger` and nothing else: one JSON object per line
-        | on stderr, so `docker logs` and any collector downstream of it read the
-        | same bytes. `LOG_LEVEL` is deliberately not consulted — these records
+        | The six Game lifecycle events of Requirement 10.3, plus the
+        | `game.invariant_violation` record the design's failure table asks for,
+        | written by `App\Games\GameEventLogger` and nothing else: one JSON object
+        | per line on stderr, so `docker logs` and any collector downstream of it
+        | read the same bytes. `LOG_LEVEL` is deliberately not consulted — these records
         | are mandated rather than diagnostic, so raising the level of the
         | application's other channels must not silence them. The stream is
         | overridable only so the test suite can point it somewhere other than the

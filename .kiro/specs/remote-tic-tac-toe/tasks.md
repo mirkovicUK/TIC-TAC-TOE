@@ -345,10 +345,11 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
   - [ ] 10.3* Write `HealthTest` and `LoggingTest`
     - Health: reachable and unreachable branches, and that the success status is not returned for the unreachable case
     - Logging: exactly one record per event with the required fields, move records carrying mark, cell, sequence and outcome, and no issued Player_Token or Join_Code value anywhere in the output produced while exercising every action
+    - Also cover the `game.invariant_violation` record of task 10.4, which is otherwise pinned by nothing: deleting the `report` hook from `bootstrap/app.php` leaves the whole suite green. Assert it separately from the six rather than folding it into their count, since it is not one of Requirement 10.3's events
     - **Property 19: Log records carry the required fields and no secrets**
     - **Validates: Requirements 10.1, 10.2, 10.3, 10.4, 10.5**
 
-  - [ ] 10.4 Emit the `game.invariant_violation` record
+  - [x] 10.4 Emit the `game.invariant_violation` record
     - **This task exists because the record had no owner.** The design's failure table requires it on the `InvalidMoveList::Error` path — "500, log `game.invariant_violation` with the Game_Id, no state change" — and task 6.1 recorded it as deferred to "`GameEventLogger` in 10.2 as its sole writer". But 10.2's own bullets and Requirement 10.3 enumerate exactly six events and this is not among them, so 10.2 correctly did not add it and left the design's requirement unimplemented. Surfaced by the sub-agent that implemented 10.2
     - A seventh `GameEventLogger` method taking the Game_Id and nothing else. It is not one of Requirement 10.3's six mandated events and must not be presented as one — it reports corruption, not a Game lifecycle event, and no requirement asks for it. The design does
     - Emitted where `CorruptMoveListException` is reported, not from inside `SubmitMove`'s transaction: the exception is thrown inside it precisely so the insert rolls back, and a record written there would survive a rollback whose whole purpose is the "no state change" half of the design's row

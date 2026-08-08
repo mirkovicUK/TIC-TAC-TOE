@@ -1,5 +1,7 @@
 <?php
 
+use App\Games\CorruptMoveListException;
+use App\Games\GameEventLogger;
 use App\Http\Controllers\HealthController;
 use App\Http\Exceptions\GameNotVisibleException;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -89,4 +91,30 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(fn (GameNotVisibleException $exception, Request $request) => Inertia::render('NotAPlayer', [
             'outcome' => $exception->outcome->value,
         ])->toResponse($request)->setStatusCode($exception->getStatusCode()));
+
+        // A corrupt persisted Move_List: the design's failure table asks for a 500, a
+        // `game.invariant_violation` record carrying the Game_Id, and no state change.
+        // Reporting rather than rendering, because the 500 and the error page are
+        // already the framework's answer to an unhandled exception; the record is the
+        // only part missing. It is emitted here and not from `SubmitMove`, which throws
+        // inside its transaction so the insert rolls back — see that method's comment.
+        //
+        // The exception is ALSO logged to the default channel afterwards, with its
+        // stack trace, and that is wanted: this record names the Game, the default
+        // record says which line found the corruption.
+        // `Illuminate\Foundation\Exceptions\Handler::reportThrowable()` walks the
+        // report callbacks and skips the default logger only when one returns `false`,
+        // so this closure must keep returning nothing.
+        //
+        // Exactly one record per throw. `Illuminate\Routing\Pipeline::handleException()`
+        // calls `report()` once and then renders, returning a response, so the same
+        // throw cannot reach `Foundation\Http\Kernel::reportException()` as well; the
+        // kernel's is the only other `report()` call on the request path.
+        //
+        // No try/catch: `GameEventLogger::emit()` already swallows every `Throwable`,
+        // so a broken log channel cannot turn this into a second failure while the
+        // first is being reported.
+        $exceptions->report(function (CorruptMoveListException $exception): void {
+            (new GameEventLogger)->gameInvariantViolation($exception->gameId);
+        });
     })->create();

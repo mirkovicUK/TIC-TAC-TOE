@@ -13,6 +13,11 @@ use Throwable;
  * The sole writer of the six Game lifecycle log records (Req 10.3–10.5): one
  * method per event, emitted as one JSON line on the `game_events` channel.
  *
+ * `gameInvariantViolation()` is a seventh method on the same channel and is NOT one
+ * of the six: no requirement asks for it, only the design's error-handling table
+ * does, because it reports corruption rather than a Game lifecycle event. Its own
+ * docblock says so; do not fold it into a count of Requirement 10.3's events.
+ *
  * Every method takes typed arguments and there is no array, no `...$context` and
  * no public `emit()`, so there is no key-value bag for a secret to be dropped
  * into. `MintedToken`, `PlayerTokens` and `JoinCode` are objects with no
@@ -145,6 +150,29 @@ final class GameEventLogger
     public function rematchCreated(string $gameId, string $rematchGameId): void
     {
         $this->emit('rematch.created', $gameId, ['rematch_game_id' => $rematchGameId]);
+    }
+
+    /**
+     * A persisted Move_List the Rules_Engine rejected: the design's error-handling
+     * table for `InvalidMoveList::Error` — "500, log `game.invariant_violation` with
+     * the Game_Id, no state change".
+     *
+     * Not one of the six events Requirement 10.3 enumerates, and no requirement asks
+     * for it: it reports corruption, not a Game lifecycle event. The design is its
+     * only source.
+     *
+     * The Game_Id and nothing else, because that is all `CorruptMoveListException`
+     * carries and all the design's row asks for. The stack trace naming the corrupt
+     * row is on the default channel's own record of the same exception, which
+     * `bootstrap/app.php` deliberately leaves in place.
+     *
+     * Called from the `report` hook in `bootstrap/app.php`, never from
+     * `SubmitMove::commit()`, where the exception is thrown inside a transaction so
+     * that the insert rolls back with it.
+     */
+    public function gameInvariantViolation(string $gameId): void
+    {
+        $this->emit('game.invariant_violation', $gameId);
     }
 
     /**

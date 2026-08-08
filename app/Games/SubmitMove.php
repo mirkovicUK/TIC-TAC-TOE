@@ -268,11 +268,12 @@ final class SubmitMove
             // inside the transaction is what delivers the "no state change" half,
             // because the insert above rolls back with it.
             //
-            // No record is emitted here. `game.invariant_violation` is not one of the
-            // six lifecycle events Requirement 10.3 enumerates, and `GameEventLogger`
-            // has a method per event rather than a general one. The exception carries
-            // the Game_Id so a record can be keyed on this class rather than on a
-            // message, whoever adds it.
+            // No record is emitted here, and
+            // `GameEventLogger::gameInvariantViolation()` must not be called from
+            // inside this closure: the record would survive the rollback the throw
+            // exists to cause, and the closure may run more than once. The `report`
+            // hook in `bootstrap/app.php` emits it once the exception has left the
+            // transaction, keyed on the exception class and carrying this Game_Id.
             throw new CorruptMoveListException($game->id);
         }
 

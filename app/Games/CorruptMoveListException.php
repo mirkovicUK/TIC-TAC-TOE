@@ -13,17 +13,18 @@ use RuntimeException;
  * table went through `SubmitMove`, which validates against an already
  * well-formed list and appends at `count($observed->moveList)`. So this is data
  * corruption, not a user error, and the design's failure table says how it is
- * handled — 500, a `game.invariant_violation` record carrying the Game_Id, and
- * no state change.
+ * handled — 500, no state change, and a `game.invariant_violation` record carrying
+ * the Game_Id, emitted by the `report` hook in `bootstrap/app.php` through
+ * `GameEventLogger::gameInvariantViolation()`.
  *
- * IT IS DELIBERATELY NOT AN `invalid_move` OUTCOME. Mapping it there would
- * report a corrupt database row to the player as "that cell is not available",
- * hide a defect behind an ordinary rejection, and leave the corruption in place
- * to be met again on the next request.
+ * It is deliberately not an `invalid_move` outcome. Mapping it there would report a
+ * corrupt database row to the player as "that cell is not available", hide a defect
+ * behind an ordinary rejection, and leave the corruption in place to be met again on
+ * the next request.
  *
- * A dedicated type rather than a bare `RuntimeException` so the log record can
- * be keyed on the class and can carry the Game_Id it names, without a caller
- * having to match on a message string.
+ * A dedicated type rather than a bare `RuntimeException`, and both halves of that
+ * are load-bearing: the report hook selects on the parameter type, and the record's
+ * Game_Id is read off `$gameId`, so neither depends on matching a message string.
  */
 final class CorruptMoveListException extends RuntimeException
 {
