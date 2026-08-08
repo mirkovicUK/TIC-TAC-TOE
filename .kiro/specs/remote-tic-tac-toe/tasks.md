@@ -348,6 +348,13 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - **Property 19: Log records carry the required fields and no secrets**
     - **Validates: Requirements 10.1, 10.2, 10.3, 10.4, 10.5**
 
+  - [ ] 10.4 Emit the `game.invariant_violation` record
+    - **This task exists because the record had no owner.** The design's failure table requires it on the `InvalidMoveList::Error` path — "500, log `game.invariant_violation` with the Game_Id, no state change" — and task 6.1 recorded it as deferred to "`GameEventLogger` in 10.2 as its sole writer". But 10.2's own bullets and Requirement 10.3 enumerate exactly six events and this is not among them, so 10.2 correctly did not add it and left the design's requirement unimplemented. Surfaced by the sub-agent that implemented 10.2
+    - A seventh `GameEventLogger` method taking the Game_Id and nothing else. It is not one of Requirement 10.3's six mandated events and must not be presented as one — it reports corruption, not a Game lifecycle event, and no requirement asks for it. The design does
+    - Emitted where `CorruptMoveListException` is reported, not from inside `SubmitMove`'s transaction: the exception is thrown inside it precisely so the insert rolls back, and a record written there would survive a rollback whose whole purpose is the "no state change" half of the design's row
+    - The 500 itself is the framework default and needs no code
+    - _Design: the failure table row for `RulesEngine` returning `InvalidMoveList::Error`_
+
 - [ ] 11. Retention and expiry
   - [ ] 11.1 Implement `SweepExpiredGames` and the `games:sweep` command
     - Eligibility in one query over the `(state, last_activity_at)` index: never-joined and created over 24 hours ago, OR no accepted move or state change for 7 days

@@ -116,6 +116,16 @@ The decisions that followed were the human's, and there were three.
 
 **Why this was surfaced at all.** Worth recording, because it is a property of how the work was directed rather than of the tooling. The standing instructions throughout were to reason about review feedback rather than accept it, to report before changing, and to say plainly when something in the spec was wrong or unimplementable rather than working around it silently. A sub-agent told to satisfy its brief would have shipped something that satisfied the brief. One told that flagging a contradiction is part of the job flagged it.
 
+### A log record required by the design belonged to no task
+
+Found the way the `PlayerTokens` conflict was: by building, not by reading. Each document was locally consistent and the gap only appeared when something had to satisfy all three.
+
+The design's failure table requires a `game.invariant_violation` record on the path where the Rules_Engine returns `InvalidMoveList::Error` — 500, the Game_Id, no state change. Task 6.1 implemented that path and recorded the record as deferred, naming `GameEventLogger` "in 10.2 as its sole writer". Task 10.2's own bullets, and Requirement 10.3 behind them, enumerate exactly six events, and this is not one of them.
+
+So the sub-agent implementing 10.2 was correct to leave it out and correct to say so. Had it split the difference — adding a seventh method quietly, or deleting the deferral comment — the record would have shipped either unrequested or unimplemented, and in both cases invisibly. It is now task 10.4, with the distinction stated in the task text: Requirement 10.3 mandates six Game lifecycle events, and this is a corruption report that the design alone asks for.
+
+The general shape is worth naming, because a deferral is the one kind of comment that rots without anything failing. A note saying "task N owns this" is a claim about a document the writer has not re-read, and nothing checks it when task N is written to a narrower scope than the note assumed.
+
 ### A UUIDv7 does not carry 74 random bits when you generate two in the same millisecond
 
 Smaller than the above, and included because the shape of the error is common: a figure that is correct in general, quoted in a context where it is not.
