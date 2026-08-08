@@ -12,10 +12,17 @@ permissions:
   contents: read
 
 jobs:
-  # The `browser` job is deliberately absent — it arrives with task 14.3, after
-  # task 12.5 writes the one `browser`-tagged test. Until then a `--group=browser`
-  # selection is empty, and an empty selection exits 1 (verified), so adding the
-  # job now would turn the workflow red for want of a test rather than a defect.
+  # The `browser` job is deliberately absent and arrives with task 14.3. The reason
+  # it was held back is now discharged rather than still standing: until task 12.5
+  # wrote the one `browser`-tagged test a `--group=browser` selection was empty, and
+  # an empty selection exits 1 (verified), so the job would have turned the workflow
+  # red for want of a test rather than a defect. That test now exists and the
+  # selection resolves to it, so all that remains is 14.3 itself, which adds the job
+  # with its own `npx playwright install --with-deps chromium` step — the browsers
+  # are not fetched by `npm ci`, since the `playwright` package ships no install hook.
+  #
+  # The step below keeps `--exclude-group=browser` regardless: a browser flake must
+  # never mask a domain regression, which is why the two are separate jobs at all.
   quality:
     name: quality
     runs-on: ubuntu-24.04
