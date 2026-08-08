@@ -443,6 +443,7 @@ Language and stack are fixed by the design: PHP 8.5 / Laravel 13 on the server, 
     - _Design: ADR-009_
 
   - [ ] 13.3 Deploy and schedule the sweep
+    - **The command-by-command runbook is `docs/deploy-schedule-swap.md`**, written against the instance's actual state rather than from the repository: the clone at `/srv/tic-tac-toe` and the `caddy-data` certificate are already in place, and 911 MiB of RAM with no swap is why swap is step 2 rather than a troubleshooting note
     - `docker compose up -d --build` on the instance; confirm the app answers over the hostname from 2.1 and that `/health` reports the persistence layer reachable
     - **NEGATIVE check, after the stack is up: `sudo ss -ltnp | grep 9000` finds nothing, and `docker compose ps` shows no published port on `app`.** This is the only point at which 9.2's trusted-proxy precondition is actually observed rather than asserted — `docs/aws-infra.md` carries the same check for the pre-deployment instance, and this is its post-deployment twin
     - Add the host crontab entry `17 3 * * * cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep`; no scheduler process runs inside the application
