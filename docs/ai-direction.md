@@ -158,6 +158,66 @@ The related fact, established by search rather than assumed: `rate_limited` has 
 
 What makes it worth recording is the shape, which is the same as the `keepAlive` entry above and the opposite of most of this file: the *decision* was defensible and only the *description* was false. The design asserted an implementation that a reader would have had no reason to doubt, and the sub-agent that caught it was not reviewing the paragraph — it was trying to find out what the eleventh rejection returns.
 
+### The rate limiter took the application down mid-game, and 298 tests could not see it
+
+The most serious defect found in this project, and the only one found by *playing the
+game* rather than by reading, building or testing. It would have shipped.
+
+**What happened.** Two browsers, a real game against the containerised build. O won, and
+at that moment X's screen turned into a 500. Nothing had been clicked. The game itself was
+fine — `state=won`, `winning_mark=o`, six moves, the Version_Counter where it should be.
+
+**The chain.** `.env.example` shipped `CACHE_STORE=database`, which is also Laravel's own
+default, so the rate limiters' counters lived in the `cache` table of the same SQLite file
+as the games and the sessions. Every request passes a `throttle:` middleware, and
+`Illuminate\Cache\DatabaseStore::incrementOrDecrement()` performs the increment as a
+SELECT followed by an UPDATE inside one transaction — with `lockForUpdate()` a no-op,
+because SQLite has no `FOR UPDATE`. Polling is the design's transport (ADR-001) at 2000 ms
+per player, so two clients issue overlapping increments continuously. One reads the
+counter, the other commits first, and the first's UPDATE now holds a stale snapshot.
+
+**The part that is genuinely counter-intuitive, and why the existing settings did not
+save it.** WAL was on and `busy_timeout` was 60 s — both verified inside the running
+container, not assumed. Neither applies. SQLite returns SQLITE_BUSY for a stale-snapshot
+upgrade *immediately*, because waiting cannot help: the transaction has to roll back and
+be retried, and no amount of timeout changes that. Laravel does not retry. So the
+exception surfaced as a 500 on a polling request, to the player who was not even acting.
+
+This is the same class of error as the entries above, in a new place: `config/database.php`
+sets `busy_timeout` and the design's error table reasons about it at length, and both
+quietly assume that a busy timeout covers SQLITE_BUSY. It covers one kind and not this
+one.
+
+**Why the suite was blind to it, which is the more useful half of this entry.**
+`phpunit.xml` sets `CACHE_STORE=array` and `SESSION_DRIVER=array`. So every one of the 298
+tests — `RateLimitTest` included, which drives the limiter to its exact twentieth and
+twenty-first request — exercises an in-memory counter and never touches the database cache
+store at all. And the concurrency coverage Requirement 14.9 mandates is *sequential by
+instruction*: two calls over one snapshot, no parallelism, no sleeps. That was the right
+call for what it tests, and it means nothing in the suite ever issues two genuinely
+concurrent HTTP requests. The defect sat in the intersection of two deliberate testing
+decisions, each defensible alone.
+
+**Measured, not argued.** 30 concurrent requests against the deployed images: 13 returned
+500. After changing one environment variable: 0 at 30 concurrent, 0 at 60. The limiter was
+then checked separately to confirm the fix had not simply disabled it — roughly 120
+requests allowed and the rest refused with 429, which is the configured window.
+
+**The tradeoff is stated rather than hidden.** `FileStore::increment` is an unlocked
+read-then-write, so heavy concurrency can lose an increment and leave the limiter
+marginally permissive; its write is `LOCK_EX` atomic, so nothing corrupts. That is the
+right failure to prefer — one extra request admitted, rather than an error page for a
+player whose turn it was. `array` was rejected outright: it is per-request, so nothing
+accumulates and rate limiting would stop existing while appearing configured. A separate
+SQLite file for the cache was rejected too, because the race is between concurrent
+requests on the same counter and moving the file does not change it.
+
+**What it says about the process.** Every layer of verification in this project passed:
+level-8 static analysis, 8,394 assertions, an exhaustive 549,946-node walk, a browser test
+driving two isolated sessions to a win. None of them could see this, because it needs two
+clients acting at once against the real storage engine. The thing that found it was one
+person playing one game and noticing a screen go blank.
+
 ### The 30-day purge boundary was specified three ways
 
 Found in the same investigation, and much smaller, but recorded because the disagreement was between a requirement, the design and a committed code comment.
