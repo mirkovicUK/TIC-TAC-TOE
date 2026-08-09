@@ -39,9 +39,10 @@ final class CreateGame
     private const int MAX_INSERT_ATTEMPTS = 3;
 
     /**
-     * `GameEventLogger` needs no constructor arguments of its own, so the default
-     * is exactly the instance the container would inject and this class stays
-     * constructible without one.
+     * The `GameEventLogger` default is exactly the instance the container would
+     * inject — it takes no constructor arguments of its own — so this class stays
+     * constructible without one. `JoinGame`, `SubmitMove` and `CreateRematch` do
+     * the same for the same reason.
      */
     public function __construct(
         private readonly PlayerTokens $tokens,

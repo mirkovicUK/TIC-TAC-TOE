@@ -20,8 +20,8 @@ use Illuminate\Http\Request;
  * whole of the identity continuity Requirement 7.7 permits.
  *
  * A POST and not a link, which is the client-side consequence of minting tokens per
- * request rather than at creation. Both controls
- * task 7.2 renders post here, because a plain link to the Rematch's URL would land
+ * request rather than at creation. Both controls in `RematchControl.tsx` POST here,
+ * because a plain link to the Rematch's URL would land
  * the second Player on a Game their session holds no Player_Token for — the token
  * is minted BY this request. Hence idempotent rather than create-only.
  *

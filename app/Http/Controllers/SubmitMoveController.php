@@ -20,7 +20,7 @@ use Illuminate\Http\Request;
  * one condition (Req 4.3, 4.4), where a Form Request would answer with a 422 that
  * is not in the design's outcome table. A cast is worse still because it succeeds:
  * `->integer()` turns `'banana'` into `0`, a perfectly legal Cell, so a malformed
- * payload becomes a Move in the top-left corner. Task 6.6 asserts this over HTTP
+ * payload becomes a Move in the top-left corner. `SubmitMoveTest` asserts this over HTTP
  * with `'4'`, `'banana'` and an array, the only place the absence of a cast is
  * falsifiable.
  *

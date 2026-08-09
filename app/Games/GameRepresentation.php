@@ -43,7 +43,7 @@ use App\Models\Game;
  * request gets the whole representation, with the Version_Counter sent every time
  * (Req 8.3) as the client's change detector.
  *
- * No HTTP status, prop name or `Inertia::render` here; task 5.6 owns those.
+ * No HTTP status, prop name or `Inertia::render` here; the controllers own those.
  */
 final class GameRepresentation
 {
@@ -60,8 +60,10 @@ final class GameRepresentation
      *
      * Two queries, both single-row reads on the polling path (Req 8.1). `rematch`
      * is a back-reference — `rematch_of_game_id` lives on the *rematch* row
-     * (unique index, Req 7.8) — read through the `HasOne`, so `with('rematch')`
-     * makes it free. `lastMoveAt` is a *second* read of `moves` after
+     * (unique index, Req 7.8) — read through the `HasOne`, and NOT eager-loaded:
+     * no caller passes `with('rematch')`, so `$game->rematch?->id` below is a lazy
+     * read on every build, including every poll. One row by unique index, so it is
+     * cheap rather than free. `lastMoveAt` is a *second* read of `moves` after
      * `GameSnapshot::of()`'s, kept separate because a persistence timestamp is not
      * part of the snapshot's domain Move_List.
      *

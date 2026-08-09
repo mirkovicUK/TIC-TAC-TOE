@@ -42,9 +42,8 @@ use App\Models\Game;
  * `PlayerTokens::resolve()` answers null to all of them. Rows 2 and 5 reach the
  * same `return`.
  *
- * This class does not know what an HTTP status is, does not render and does not
- * throw; `ResolveActingPlayer` translates a rejection into 403/404/410. It also
- * performs no lifecycle check: `waiting_for_opponent` and the terminal states
+ * Does not render and does not throw; `ResolveActingPlayer` translates a rejection
+ * into 403/404/410. It also performs no lifecycle check: `waiting_for_opponent` and the terminal states
  * resolve exactly as `active` does, because a Player of a finished Game is still a
  * Player of it (Req 9.2, 9.5) and authorisation is settled first (Req 3.9).
  */

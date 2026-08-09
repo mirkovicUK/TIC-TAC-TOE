@@ -46,17 +46,13 @@ use Illuminate\Support\Str;
  * a request that finds the existing Rematch, including the loser of a race, created
  * nothing to report, and minting a token is not an event.
  *
- * Absent by design: any rate limit (task 9.4 owns the four that exist), and
+ * Absent by design: any rate limit (`AppServiceProvider` owns the four that exist), and
  * everything about the response — `CreateRematchController` maps the two halves of
  * the return type onto the two 303s.
  */
 final class CreateRematch
 {
-    /**
-     * `GameEventLogger` needs no constructor arguments of its own, so the default
-     * is exactly the instance the container would inject and this class stays
-     * constructible without one.
-     */
+    /** The `GameEventLogger` default: see `CreateGame::__construct()`. */
     public function __construct(
         private readonly PlayerTokens $tokens,
         private readonly GameEventLogger $events = new GameEventLogger,

@@ -69,6 +69,13 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // No `api/*` route exists, so this predicate is always false — which is the
+        // point, not an oversight. It pins exception rendering to HTML/Inertia on
+        // every path, instead of letting Laravel's default `expectsJson()` decide
+        // from an `Accept` header the client controls. Every rejection this
+        // application answers is a page or a redirect (see the outcome table below),
+        // so a JSON error body has no renderer on the client and no criterion asks
+        // for one. Delete this and exception rendering becomes header-dependent.
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );

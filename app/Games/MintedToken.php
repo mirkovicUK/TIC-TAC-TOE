@@ -5,34 +5,22 @@ declare(strict_types=1);
 namespace App\Games;
 
 /**
- * One freshly minted Player_Token, before anything has been done with it: the raw
- * 256-bit secret and its SHA-256, as two named properties.
+ * One freshly minted Player_Token: the raw 256-bit secret and its SHA-256, as two
+ * named properties.
  *
- * Named rather than returned as two bare strings because the two are not
- * interchangeable but are both `string` to PHP and PHPStan. `JoinGame` is where
- * that matters: it interpolates one of them into a guarded
- * `UPDATE ... SET o_token_hash = ?`, and the raw value there would write the
- * secret into the database (Req 8.7) with no type checker objecting.
+ * Named rather than two bare strings because they are not interchangeable and are
+ * both `string` to PHP and PHPStan. `JoinGame` interpolates one into a guarded
+ * `UPDATE ... SET o_token_hash = ?`, where the raw value would write the secret
+ * into the database (Req 8.7) with no type checker objecting.
  *
- * There is deliberately no `__toString()`, no `JsonSerializable` and no accessor
- * that dresses the raw value up as anything else, so `"...{$token}"` is a
- * `TypeError` at the point of the mistake rather than a silent Req 8.7 violation.
+ * No `__toString()`, no `JsonSerializable`, no accessor — so `"...{$token}"` is a
+ * `TypeError` at the mistake rather than a silent Req 8.7 violation.
  *
- * `readonly` stops mutation, not disclosure: `raw` is a public property, so
- * `var_dump()`, `print_r()`, `json_encode()` and `dd()` would each print the
- * secret. The protection is situational — no instance is ever handed to a
- * serialiser. `PlayerTokens::mint()` returns one, `CreateGame` and `JoinGame` hold
- * one for a request and pass it to `PlayerTokens::remember()`, and there it ends;
- * it is never a prop, a response body, or a `GameEventLogger` payload (Req 10.4).
- * Adding serialisation here, or handing an instance to something that serialises,
- * is the change that turns a contained secret into a leaked one.
- *
- * The log half of that is now carried by types rather than by convention:
- * `GameEventLogger` declares a method per event whose parameters are `string`,
- * `int` and enums, so an instance of this class satisfies none of them and the
- * absence of `__toString()` above is what makes that a `TypeError`. Its one
- * `mixed` parameter, the raw cell index of a rejected Move, records any object as
- * its `get_debug_type()` name and never reads a property.
+ * `readonly` stops mutation, not disclosure: `raw` is public, so `var_dump()`,
+ * `json_encode()` or `dd()` would print the secret. What protects it is that no
+ * instance is ever handed to a serialiser — `mint()` returns one, a request passes
+ * it to `remember()`, and there it ends. Never a prop, a response body or a log
+ * payload (Req 10.4).
  */
 final readonly class MintedToken
 {

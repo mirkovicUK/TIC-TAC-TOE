@@ -26,7 +26,7 @@ use Inertia\Response;
  * `GameNotVisibleException` for every refusal, so reaching `__invoke()` is the
  * authorisation answer (Req 3.9), and a second check could only disagree with it.
  *
- * One prop, named `game`, because `useGamePolling` (task 6.4) reloads with
+ * One prop, named `game`, because `useGamePolling` reloads with
  * `only: ['game']` — the key is part of the client contract, not a local choice.
  *
  * `GameSnapshot::of()` may throw `CorruptMoveListException` and is allowed to: a

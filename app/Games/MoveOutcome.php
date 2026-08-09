@@ -27,9 +27,10 @@ namespace App\Games;
  * union aliases — so a caller must narrow with `instanceof` and static analysis
  * catches the one that forgets.
  *
- * The HTTP status is not here; nothing in `App\Games` knows what one is. Nor are
- * `not_authorised` (`GameResolver`'s, Req 3.9), `rate_limited` (middleware) or a
- * corrupt persisted Move_List (`CorruptMoveListException`, a 500).
+ * Three rejections a caller might expect here are elsewhere: `not_authorised`
+ * (`GameResolver`'s, Req 3.9), `rate_limited` (middleware) and a corrupt persisted
+ * Move_List (`CorruptMoveListException`, a 500). No HTTP status either — see
+ * `VisibilityOutcome`.
  */
 enum MoveOutcome: string
 {

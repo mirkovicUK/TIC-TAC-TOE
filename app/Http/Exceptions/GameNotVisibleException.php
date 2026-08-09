@@ -15,7 +15,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  * short-circuit that cannot be undone downstream — no controller, no action, no
  * snapshot, on GET and POST alike (Req 3.9).
  *
- * Task 5.6 renders `NotAPlayer.tsx` keyed by outcome and needs only two facts from
+ * `NotAPlayer.tsx` is rendered keyed by outcome and needs only two facts from
  * a refusal, both here: `$exception->outcome` and `$exception->getStatusCode()`.
  * There is no Game on this exception to leak (Req 3.10). Extending `HttpException`
  * means the status is honoured with no renderer registered, so the middleware is

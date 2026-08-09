@@ -22,8 +22,8 @@ use Illuminate\Support\Facades\DB;
  * issues no `SELECT` for Game state. That is what makes Requirement 5.3's "exactly
  * one of two concurrent Moves is accepted" a persisted invariant: two competing
  * requests derive the same `sequence_index` from their own snapshot, and the unique
- * index on `(game_id, sequence_index)` settles the collision. It also lets task 6.8
- * model concurrency by passing one snapshot to two successive calls.
+ * index on `(game_id, sequence_index)` settles the collision. It also lets
+ * `ConcurrencyTest` model concurrency by passing one snapshot to two successive calls.
  *
  * Do not add `$game->refresh()`, a second `GameSnapshot::of()`, `lockForUpdate()`,
  * or a transaction around the guards that re-reads. No single-request outcome
@@ -31,8 +31,8 @@ use Illuminate\Support\Facades\DB;
  * Move, fail the `markToMove` guard and return `not_your_turn` — so the `conflict`
  * path would stop being exercised while its test carried on passing. The only
  * mechanical guards are `SubmitMoveMechanismTest`'s query-log assertions (one
- * INSERT, one UPDATE, no `SELECT`; empty log on every rejection) and task 6.8's
- * two-call test.
+ * INSERT, one UPDATE, no `SELECT`; empty log on every rejection) and
+ * `ConcurrencyTest`'s two-call test.
  *
  * `$actingMark` arrives as a parameter, from the Player_Token and from nothing else
  * (Req 3.2, 3.6): no request, payload or session is in scope here, and `moves` has
@@ -46,17 +46,13 @@ use Illuminate\Support\Facades\DB;
  * the two events separately.
  *
  * Absent by design: everything about the response including the 303 that carries
- * every rejection (task 6.2), and `throttle:move` (task 9.4). `cell_index` is
+ * every rejection (`SubmitMoveController`), and `throttle:move`. `cell_index` is
  * checked here rather than by a Form Request because a non-integer or out-of-range
  * Cell must produce `invalid_move` rather than a 422 payload.
  */
 final class SubmitMove
 {
-    /**
-     * `GameEventLogger` needs no constructor arguments of its own, so the default
-     * is exactly the instance the container would inject and this class stays
-     * constructible without one.
-     */
+    /** The `GameEventLogger` default: see `CreateGame::__construct()`. */
     public function __construct(
         private readonly GameEventLogger $events = new GameEventLogger,
     ) {}
@@ -123,7 +119,7 @@ final class SubmitMove
         // outside 0..8, or already occupied in the observed Board. One vocabulary
         // for one condition, so nothing here distinguishes them.
         //
-        // `is_int()` is STRICT, so `'4'` is refused. Task 6.2 must therefore hand
+        // `is_int()` is STRICT, so `'4'` is refused. The controller must therefore hand
         // over the decoded JSON value rather than a cast or a `->integer()` read: a
         // cast turns `'banana'` into `0`, a legal Cell, making a malformed payload
         // into a Move in the top-left corner.
@@ -277,9 +273,8 @@ final class SubmitMove
             throw new CorruptMoveListException($game->id);
         }
 
-        // One UPDATE, and `version_counter + 1` is an expression the DATABASE
-        // evaluates (Req 4.7) — never a value read into PHP and incremented, which
-        // would be a read-modify-write with a window of its own. The design names
+        // One UPDATE, and the increment is evaluated by the DATABASE (Req 4.7) — see
+        // `MoveAccepted` for why it is never read into PHP first. The design names
         // exactly three increment sites and requires all three to take this shape.
         //
         // `state` and `winning_mark` are the two derived facts persisted rather than
@@ -303,7 +298,7 @@ final class SubmitMove
             ]);
 
         // The in-memory `$game` is deliberately NOT refreshed: the caller redirects
-        // and the GET that follows reads the row afresh (task 6.2), so a refresh
+        // and the GET that follows reads the row afresh (`ShowGameController`), so a refresh
         // here would be a query serving nothing.
         return new MoveAccepted(
             mark: $actingMark,

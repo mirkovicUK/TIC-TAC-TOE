@@ -79,7 +79,12 @@ return new class extends Migration
             // control for two simultaneous rematch requests.
             $table->unique('rematch_of_game_id', 'games_rematch_of_unique');
 
-            // Req 13.1, 13.2: the sweep's eligibility query.
+            // Req 13.1, 13.2. NOT used by the sweep's eligibility query as written:
+            // that query ORs two branches, and `EXPLAIN QUERY PLAN` reports
+            // `SCAN games` for the pair. Only the first branch alone would use this
+            // index, and only on `state`. See `SweepExpiredGames::eligible()`, which
+            // carries the measurement. Kept because it is the right index for the
+            // shape, not because the current query reads it.
             $table->index(['state', 'last_activity_at'], 'games_expiry_index');
         });
     }

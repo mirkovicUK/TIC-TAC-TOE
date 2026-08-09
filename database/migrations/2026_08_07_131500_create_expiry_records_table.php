@@ -54,8 +54,9 @@ return new class extends Migration
             // game thresholds, which are inclusive because Requirements 13.1 and
             // 13.2 fire WHEN the elapsed time is reached. The sweep performs two
             // deletions in the one transaction: games too old to keep (Req 13.1,
-            // 13.2, read through `games_expiry_index`), and tombstones too old to
-            // still be useful (read through this one).
+            // 13.2), and tombstones too old to still be useful (read through this
+            // one). The games half does NOT read `games_expiry_index` — see
+            // `SweepExpiredGames::eligible()`.
             $table->index('deleted_at', 'expiry_records_deleted_at_index');
         });
 

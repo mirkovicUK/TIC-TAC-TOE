@@ -47,16 +47,12 @@ use Illuminate\Support\Facades\DB;
  * of lifecycle records because of Requirement 10.5's redaction, and only from the
  * branch whose UPDATE claimed the slot: the session short-circuit joins nobody and
  * `game_full` claimed nothing, so neither is an event. The submitted Join_Code is
- * never passed to it. Nothing about the response either — task 5.6 maps outcomes to
+ * never passed to it. Nothing about the response either — `JoinGameController` maps outcomes to
  * statuses, and `throttle:join` is route middleware (Req 10.6).
  */
 final class JoinGame
 {
-    /**
-     * `GameEventLogger` needs no constructor arguments of its own, so the default
-     * is exactly the instance the container would inject and this class stays
-     * constructible without one.
-     */
+    /** The `GameEventLogger` default: see `CreateGame::__construct()`. */
     public function __construct(
         private readonly PlayerTokens $tokens,
         private readonly GameEventLogger $events = new GameEventLogger,
@@ -129,9 +125,8 @@ final class JoinGame
         $token = $this->tokens->mint();
 
         // One statement. The three WHERE conditions are the whole of the concurrency
-        // control, and `version_counter + 1` is an expression the database evaluates
-        // (Req 2.6) — never read into PHP and incremented, which would be a
-        // read-modify-write with a window of its own.
+        // control, and the increment is evaluated by the database (Req 2.6) — see
+        // `MoveAccepted` for why it is never read into PHP first.
         //
         // Eloquent's builder rather than `DB::table()` so `updated_at` is maintained
         // as it is for every other write to this row; the enums go in as their

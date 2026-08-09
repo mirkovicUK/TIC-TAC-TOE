@@ -33,8 +33,8 @@ use Monolog\Processor\ProcessorInterface;
 final class RedactSecrets implements ProcessorInterface
 {
     /**
-     * Substrings of a normalised key that mean "do not log this". Task 10.2 names
-     * these three; `joincode` is `join_code` after normalisation.
+     * Substrings of a normalised key that mean "do not log this". Three of them;
+     * `joincode` is `join_code` after normalisation.
      *
      * @var list<string>
      */

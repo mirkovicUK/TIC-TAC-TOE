@@ -21,10 +21,11 @@ namespace App\Games;
  * Game and nothing", and `NotAuthorised` is the single value for all three failure
  * modes of Req 9.6, which is what lets the Web_Client render one message.
  *
- * The HTTP status is not here: 403, 404 and 410 live in
+ * NO HTTP STATUS ANYWHERE IN `App\Games`, and this is the namespace-wide rule the
+ * other outcome enums refer to. 403, 404 and 410 live in
  * `App\Http\Exceptions\GameNotVisibleException`, on the transport side of the
- * boundary. Backing values are the design's outcome vocabulary; task 12.1 asserts
- * all eleven rejection outcomes are pairwise distinct (Property 16).
+ * boundary. Backing values are the design's outcome vocabulary; the eleven rejection
+ * outcomes are asserted pairwise distinct (Property 16).
  */
 enum VisibilityOutcome: string
 {
