@@ -2,11 +2,11 @@
     "Version": "2012-10-17",
     "Statement": [
         {
-            "Sid": "RunTheDeployScriptOnTheOneInstance",
+            "Sid": "RunOnlyTheDeployDocumentOnTheOneInstance",
             "Effect": "Allow",
             "Action": "ssm:SendCommand",
             "Resource": [
-                "arn:aws:ssm:eu-west-2:*:document/AWS-RunShellScript",
+                "arn:aws:ssm:eu-west-2:811362454196:document/DeployTicTacToe",
                 "arn:aws:ec2:eu-west-2:811362454196:instance/i-0c6bab4bc4644e760"
             ]
         },

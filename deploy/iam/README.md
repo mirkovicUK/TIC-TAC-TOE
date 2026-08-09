@@ -52,16 +52,25 @@ Two statements, and one of them is broader than I would like.
 instance are separate resource types in the same statement: omit the instance and the role could
 target anything in the account; omit the document and the call fails.
 
-**The document ARN wildcards only the account segment, and here is why.** The service
-authorization reference defines the `document` resource type as
-`arn:${Partition}:ssm:${Region}:${Account}:document/${DocumentName}`. `AWS-RunShellScript` is an
-AWS-managed document and is not owned by this account, and I could not establish from the
-documentation which account segment IAM evaluates for a managed document. So the segment is
-wildcarded while the region and the document name stay exact — one document, in one region,
-rather than any document anywhere.
+**The document is one we own, so its ARN is exact.** `DeployTicTacToe` is registered in this
+account from `deploy/ssm/DeployTicTacToe.json`, so the ARN carries the account id with no
+wildcard in any segment. An earlier version of this policy named `AWS-RunShellScript` and had to
+wildcard the account segment, because an AWS-managed document is not owned by this account and
+the documentation does not say which account IAM evaluates. Naming our own document retired that
+uncertainty as a side effect.
 
-That is worth tightening once the pipeline has run: read the ARN CloudTrail records for the
-first successful `SendCommand` and replace the wildcard with the literal value.
+**Why a custom document at all, which is the substantive change here.** `ssm:SendCommand` on
+`AWS-RunShellScript` is arbitrary command execution as root — the caller supplies the commands.
+Scoping the resource to one document and one instance constrains *where* a command runs, not
+*what* it is, so that policy read as least privilege while granting a root shell. `DeployTicTacToe`
+fixes its own command steps and accepts only a `ReleaseTag` matching `^[0-9a-f]{40}$` and a `Mode`
+of `deploy` or `fallback`.
+
+**No document-write actions are granted, deliberately.** No `ssm:CreateDocument`,
+`ssm:UpdateDocument` or `ssm:DeleteDocument`. A role that can rewrite the document it is
+restricted to is restricted by nothing. The consequence is that changing the deploy script means
+running `aws ssm update-document` by hand, and that is the price of the constraint rather than an
+oversight.
 
 **`ssm:GetCommandInvocation` is granted on `*` because it cannot be scoped.** This is not
 laziness — the resource-types table of the service authorization reference defines no `command`

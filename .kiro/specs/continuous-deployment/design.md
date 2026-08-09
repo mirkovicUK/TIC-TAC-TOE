@@ -76,9 +76,21 @@ services:
 
 Everything else in the file is untouched — no `ports:` on `app`, the two volumes with their deliberate asymmetry, `env_file: ./deploy/app.env`, the healthcheck, and the log rotation. The header comment that says the image is built on the instance is corrected (Req 9.9).
 
-### The Run Command document and the deploy script
+### The Deploy_Document and the deploy script
 
-`AWS-RunShellScript`, the AWS-managed document, with the script passed as the `commands` parameter. No custom SSM document is registered — one fewer resource to provision by hand, and the permissions policy pins the document by ARN either way.
+**A custom document, `DeployTicTacToe`, not `AWS-RunShellScript`** — tracked source at `deploy/ssm/DeployTicTacToe.json`, registered by hand.
+
+This reverses an earlier decision in this design and the reason is worth stating, because the earlier version looked like least privilege and was not. `ssm:SendCommand` on `AWS-RunShellScript` is **arbitrary command execution as root**: the caller supplies the commands. Pinning the resource to one document and one instance constrains *where* a command runs, not *what* it is. The permissions policy read as tight while granting a root shell.
+
+A Command document whose `runCommand` block is fixed inverts that. The caller supplies parameter values only, and the document supplies the commands. Three things make it actually hold rather than merely appear to (Req 3.5a, 3.5b, 3.5c):
+
+**Every parameter is constrained.** `ReleaseTag` carries `allowedPattern: ^[0-9a-f]{40}$` and `Mode` an `allowedValues` of `deploy` or `fallback`. A parameter interpolated into a shell command is an injection path, so an unconstrained `ReleaseTag` would hand back the arbitrary execution the document exists to remove. The script re-checks the pattern in `bash` as well, which is redundant until somebody loosens the document.
+
+**The role cannot change the document.** No `ssm:CreateDocument`, `UpdateDocument` or `DeleteDocument` is granted. A pipeline that can rewrite its own permitted script is bounded by nothing, so the document is amended out of band. **The cost is real and ongoing: every change to the deploy script is a manual `aws ssm update-document`.** That is the price of the constraint, not an oversight.
+
+**No doubled curly brace may appear anywhere in the script**, including in a comment, except a reference to one of the two parameters. SSM's own substitution uses that delimiter, so a Go template in `docker inspect --format` would be read as a parameter reference and fail the document. The script therefore reads the revision label with `jq`, which is present on the instance. This was caught by grepping the extracted script for double braces after writing it, and it would otherwise have failed on first use.
+
+One incidental gain: the document is owned by this account, so the permissions policy names `arn:aws:ssm:eu-west-2:811362454196:document/DeployTicTacToe` and the account-segment wildcard that an AWS-managed document forced is gone.
 
 Run Command executes as root. The script drops to `ssm-user` for anything touching the repository clone, because that directory is owned by `ssm-user` and `git` as root there fails with `detected dubious ownership` — an error that reads as a repository fault rather than the permissions one it is (Req 4.10).
 
@@ -126,7 +138,7 @@ The permissions policy grants two actions:
 
 | Action | Resource |
 | --- | --- |
-| `ssm:SendCommand` | the `AWS-RunShellScript` document ARN **and** `arn:aws:ec2:eu-west-2:811362454196:instance/i-0c6bab4bc4644e760` |
+| `ssm:SendCommand` | `arn:aws:ssm:eu-west-2:811362454196:document/DeployTicTacToe` **and** `arn:aws:ec2:eu-west-2:811362454196:instance/i-0c6bab4bc4644e760` |
 | `ssm:GetCommandInvocation` | `*` |
 
 `SendCommand` needs both resource types listed or it is denied; omitting the instance ARN would allow the role to target anything in the account. `GetCommandInvocation` is granted on `*` because no resource-level form for it is documented, and it only reads command output — that is the one place this policy is broader than I would like, and it is stated rather than hidden (Req 3.5).
@@ -311,4 +323,4 @@ ADR-009's rejection of putting an SSH private key in repository secrets **still 
 - **That `t3.micro` can pull ~1 GB inside the 600-second bound.** Untested. The first run measures it; the bound is a guess with headroom.
 - **That `docker/build-push-action` with `cache-from: type=gha` meaningfully reduces the publish step.** Expected but unmeasured on this project's Dockerfile.
 - **That `ssm:GetCommandInvocation` has no resource-level form.** I found no documentation for one, and every AWS example grants it on `*`. If a narrower form exists, the policy should use it.
-- **The exact SSM document ARN format for an AWS-managed document.** `arn:aws:ssm:eu-west-2::document/AWS-RunShellScript` — managed documents have no account segment. Worth confirming against a live `SendCommand` before assuming a denial is a policy error.
+- **~~The exact SSM document ARN format for an AWS-managed document.~~ No longer applicable.** The Deploy_Document is owned by this account, so its ARN carries the account id and needs no wildcard. This assumption is what the switch away from `AWS-RunShellScript` incidentally retired.

@@ -2,7 +2,7 @@
 
 The pipeline cannot create its own permission to exist, and it cannot click a button in
 GitHub's settings. Everything else in `.kiro/specs/continuous-deployment/tasks.md` is a file
-somebody writes; the six steps below are yours, and three of them have to happen at a
+somebody writes; the seven steps below are yours, and three of them have to happen at a
 particular moment or the deployment breaks.
 
 Read the **When** column first. The order is not a suggestion.
@@ -12,9 +12,10 @@ Read the **When** column first. The order is not a suggestion.
 | 1 | Create the GitHub OIDC provider | Any time. Safe now | AWS, your laptop |
 | 2 | Create the `production` environment, restricted to `main` | Any time. Safe now | GitHub settings |
 | 3 | Create the deployment role | After tasks 1.1 and 1.2 write the policy files | AWS, your laptop |
-| 4 | Add the role ARN as a repository variable | Straight after step 3 | GitHub settings |
-| 5 | Seed `release.env` on the instance | **Before task 4.1 lands.** Miss this and the site stops | Session Manager |
-| 6 | Make both GHCR packages public | After the first `publish` run, before task 6.1 lands | GitHub settings |
+| 4 | Register the `DeployTicTacToe` SSM document | After task 1.3 writes it, before task 6.1 lands | AWS, your laptop |
+| 5 | Add the role ARN as a repository variable | Straight after step 3 | GitHub settings |
+| 6 | Seed `release.env` on the instance | **Before task 4.1 lands.** Miss this and the site stops | Session Manager |
+| 7 | Make both GHCR packages public | After the first `publish` run, before task 6.1 lands | GitHub settings |
 
 Facts these steps use, all verified: account `811362454196`, region `eu-west-2`, instance
 `i-0c6bab4bc4644e760`, repository `mirkovicUK/TIC-TAC-TOE`, deployment branch `main`.
@@ -126,13 +127,55 @@ If `create-role` fails with `MalformedPolicyDocument`, the trust policy is missi
 condition entirely. That is AWS enforcing the tenancy claim for a shared provider, and the fix
 is in the policy file rather than in the command.
 
-Note the role ARN from the output. You need it for step 4.
+Note the role ARN from the output. You need it for step 5.
 
 ---
 
-## Step 4 — Add the role ARN as a repository variable
+## Step 4 — Register the deploy document
 
-**When:** straight after step 3.
+**When:** after task 1.3 has written `deploy/ssm/DeployTicTacToe.json`. Before the deploy job
+lands in task 6.1, because the role can execute nothing else.
+
+This is what stops the pipeline having a root shell. The role is permitted to run exactly one
+document, and that document's commands are fixed by the document rather than supplied by the
+caller. It accepts a `ReleaseTag` matching `^[0-9a-f]{40}$` and a `Mode` of `deploy` or
+`fallback`, and nothing else.
+
+```bash
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
+
+aws ssm create-document \
+  --name DeployTicTacToe \
+  --document-type Command \
+  --document-format JSON \
+  --content file://deploy/ssm/DeployTicTacToe.json
+
+aws ssm describe-document --name DeployTicTacToe \
+  --query 'Document.{Name:Name,Status:Status,Owner:Owner,Format:DocumentFormat}'
+```
+
+Expected: `Status` of `Active` and `Owner` showing your account id, `811362454196`.
+
+**The ongoing cost, so it is not a surprise later.** The deployment role is granted no
+`ssm:UpdateDocument`, deliberately — a pipeline that can rewrite its own permitted script is
+constrained by nothing. So **every future change to the deploy script needs a manual update**:
+
+```bash
+aws ssm update-document \
+  --name DeployTicTacToe \
+  --document-version '$LATEST' \
+  --document-format JSON \
+  --content file://deploy/ssm/DeployTicTacToe.json
+```
+
+Editing `deploy/ssm/DeployTicTacToe.json` and pushing changes nothing on its own. That is the
+price of the constraint.
+
+---
+
+## Step 5 — Add the role ARN as a repository variable
+
+**When:** straight after step 3. (Step 4 is independent and can be done either side of this.)
 
 In GitHub: **Settings → Secrets and variables → Actions → Variables → New repository
 variable**.
@@ -146,7 +189,7 @@ where a secret would be masked in logs for no benefit.
 
 ---
 
-## Step 5 — Seed `release.env` on the instance
+## Step 6 — Seed `release.env` on the instance
 
 **When: before task 4.1 lands.** This is the step with teeth. Once `compose.yaml` uses
 `${RELEASE_TAG:?…}`, Compose refuses to start anything without that variable — correct
@@ -181,7 +224,7 @@ stopping the stack.
 
 ---
 
-## Step 6 — Make both GHCR packages public
+## Step 7 — Make both GHCR packages public
 
 **When:** after the `publish` job has run once and before task 6.1 lands. The packages cannot
 be made public until they exist, and the deploy job cannot pull them until they are public.
@@ -206,7 +249,7 @@ If that pull works without `docker login`, the instance will manage it too.
 
 ---
 
-## After the six steps: pushing is the whole workflow
+## After the seven steps: pushing is the whole workflow
 
 ```bash
 composer lint && composer analyse && npx tsc --noEmit && npm run build
@@ -267,9 +310,11 @@ a new migration.
 | `Error: Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` does not match, step 1 skipped, or the job is missing `environment: production` | Compare the `sub` value against `repo:mirkovicUK/TIC-TAC-TOE:environment:production` exactly, and confirm the deploy job declares the environment |
 | `MalformedPolicyDocument` creating the role | Trust policy omits the `sub` condition AWS requires for a shared provider | Add the `sub` condition to the policy file |
 | A deploy ran from a branch other than `main` | The `production` environment has no deployment-branch restriction — step 2 | Restrict it to `main` only |
-| `AccessDeniedException` on `ssm:SendCommand` | Permissions policy missing the instance ARN or the document ARN — it needs both | Re-apply step 2's `put-role-policy` |
-| Deploy fails pulling the image | Packages still private — step 6 | Set both to Public |
-| `RELEASE_TAG must be set` | `release.env` missing or empty — step 5 | Recreate it on the instance |
+| `AccessDeniedException` on `ssm:SendCommand` | Permissions policy missing the instance ARN or the document ARN — it needs both | Re-apply step 3's `put-role-policy` |
+| `InvalidDocument` on `SendCommand` | The document is not registered — step 4 | Run `aws ssm create-document` |
+| A change to the deploy script has no effect | The document was not updated; editing the JSON and pushing does nothing | `aws ssm update-document`, step 4 |
+| Deploy fails pulling the image | Packages still private — step 7 | Set both to Public |
+| `RELEASE_TAG must be set` | `release.env` missing or empty — step 6 | Recreate it on the instance |
 | `detected dubious ownership` | A `git` command ran as root in `/srv/tic-tac-toe` | The deploy script must use `sudo -u ssm-user`; do the same by hand |
 | Health gate fails, previous tag restored, run red | Working as designed | Read `docker compose logs app` on the instance |
 | Every deploy now fails on a migration that "already exists" | A migration applied part way. Laravel opens no transaction for SQLite | Fix by hand on the instance, then keep migrations to one change each |

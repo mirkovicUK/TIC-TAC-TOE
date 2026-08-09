@@ -17,10 +17,18 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Comment in the surrounding documentation, not the JSON, that `StringLike` with `repo:owner/name:*` would let a pull request from a fork assume the role — this is the whole reason the condition is written this way. Note also that AWS classifies GitHub Actions as a shared OIDC provider with `sub` as its tenancy claim, and refuses a trust policy that omits it with `MalformedPolicyDocument`
     - _Requirements: 3.3, 3.4, 3.7_
   - [x] 1.2 Write `deploy/iam/deployment-role-permissions-policy.json`
-    - `ssm:SendCommand` on **both** the `AWS-RunShellScript` document ARN and `arn:aws:ec2:eu-west-2:811362454196:instance/i-0c6bab4bc4644e760`
+    - `ssm:SendCommand` on **both** `arn:aws:ssm:eu-west-2:811362454196:document/DeployTicTacToe` and `arn:aws:ec2:eu-west-2:811362454196:instance/i-0c6bab4bc4644e760`
     - `ssm:GetCommandInvocation` on `*`, which is the one deliberately broad grant and is recorded as such in the design
+    - **No `ssm:CreateDocument`, `UpdateDocument` or `DeleteDocument`.** A pipeline that can rewrite its own permitted script is constrained by nothing
     - No action against any other instance and no action against any other service
     - _Requirements: 3.5, 3.7_
+
+  - [x] 1.3 Write `deploy/ssm/DeployTicTacToe.json`
+    - Command document, schema 2.2, one `aws:runShellScript` step whose `runCommand` block is fixed by the document
+    - Parameters: `ReleaseTag` with `allowedPattern` `^[0-9a-f]{40}$`, and `Mode` with `allowedValues` `deploy` / `fallback`. An unconstrained parameter interpolated into a shell command is an injection path and would restore the arbitrary execution this document exists to remove
+    - **No doubled curly brace anywhere in the script except a reference to those two parameters, including inside a comment.** SSM uses that delimiter for its own substitution, so a Go template in `docker inspect --format` would be read as a parameter reference and fail the document. The script reads the revision label with `jq`, which is present on the instance
+    - Verify by extracting the `runCommand` array, running `bash -n` over it, and grepping for doubled braces that are not one of the two parameters
+    - _Requirements: 3.5a, 3.5b, 4.7, 4.10, 6.1, 7.4_
 
 - [ ] 2. Provision the AWS identity, by hand
   - [ ] 2.1 Create the GitHub OIDC provider
@@ -42,6 +50,12 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - No required reviewers and no wait timer — the friction stays identical to a branch condition; a reviewer gate is a checkbox to add later without touching AWS
     - **This rule is the whole branch boundary.** Task 1.1 scopes the trust policy to `environment:production`, which carries no branch information, so without this restriction a run on any branch that targets the environment could assume the role. GitHub evaluates it before issuing a token, which is why it is stronger than the branch condition it replaces
     - _Requirements: 3.3a_
+
+  - [ ] 2.5 Register the Deploy_Document in Systems Manager
+    - `aws ssm create-document --name DeployTicTacToe --document-type Command --document-format JSON --content file://deploy/ssm/DeployTicTacToe.json`
+    - Confirm with `aws ssm describe-document --name DeployTicTacToe` that it is `Active` and owned by this account
+    - **Every later change to the deploy script needs `aws ssm update-document` by hand.** The Deployment_Role is granted no document-write action on purpose, because a pipeline that can rewrite its own permitted script is constrained by nothing. This is the ongoing cost of the constraint
+    - _Requirements: 3.5a, 3.5c_
 
 - [ ] 3. Prepare the instance
   - [ ] 3.1 Seed `deploy/release.env` with the currently deployed commit
@@ -90,7 +104,7 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - `concurrency: { group: deploy-production, cancel-in-progress: false }` — `false` is load-bearing, because cancelling mid-deploy could leave the stack down or `release.env` half-written
     - _Requirements: 3.1, 3.3b, 3.6, 4.9_
   - [ ] 6.2 Write the deploy script and send it by Run Command
-    - `AWS-RunShellScript` with `--timeout-seconds 600`; no custom SSM document is registered
+    - `ssm:SendCommand --document-name DeployTicTacToe --timeout-seconds 600` with the `ReleaseTag` and `Mode` parameters; the workflow passes no commands, because the document holds them
     - Order: fetch and checkout the SHA **as `ssm-user`**; check free space and prune if below 3 GiB; `docker pull` both explicitly; `docker image inspect` both and stop if either is missing; rewrite `release.env`; `compose --env-file deploy/release.env up -d`
     - **Every repository operation runs as `ssm-user`.** Run Command executes as root, and `git` as root in `/srv/tic-tac-toe` fails with `detected dubious ownership`, which reads as a repository fault rather than the permissions one it is
     - `PREVIOUS_RELEASE_TAG` is written **only** when the tag being deployed differs from the current one
@@ -182,6 +196,7 @@ flowchart TD
     T11["1.1 trust policy"] --> T22["2.2 create role"]
     T12["1.2 permissions policy"] --> T22
     T21["2.1 OIDC provider"] --> T22
+    T13["1.3 DeployTicTacToe.json"] --> T25["2.5 register document"]
     T22 --> T23["2.3 role ARN as variable"]
     T11 --> T24["2.4 production environment<br/>branches: main only"]
 
@@ -195,6 +210,7 @@ flowchart TD
 
     T23 --> T61["6.1 OIDC + concurrency + environment"]
     T24 --> T61
+    T25 --> T61
     T41 --> T61
     T52 --> T61
     T61 --> T62["6.2 deploy script"]
@@ -224,7 +240,7 @@ flowchart TD
 {
   "waves": [
     { "wave": 1, "tasks": ["1.1", "1.2", "2.1", "3.1", "7.1"] },
-    { "wave": 2, "tasks": ["2.2", "5.1", "7.2"] },
+    { "wave": 2, "tasks": ["2.2", "2.5", "5.1", "7.2"] },
     { "wave": 3, "tasks": ["2.3", "2.4", "5.2", "5.3", "3.2", "7.3"] },
     { "wave": 4, "tasks": ["4.1"] },
     { "wave": 5, "tasks": ["4.2", "6.1", "9.2"] },

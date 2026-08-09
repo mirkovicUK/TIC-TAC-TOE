@@ -1,0 +1,101 @@
+{
+    "schemaVersion": "2.2",
+    "description": "Deploy a published Image_Pair of Remote Tic-Tac-Toe by Release_Tag, or restore the previous one. The commands are fixed by this document; the caller supplies only the two parameters below.",
+    "parameters": {
+        "ReleaseTag": {
+            "type": "String",
+            "description": "The 40-character lowercase commit SHA whose Image_Pair is to be deployed.",
+            "allowedPattern": "^[0-9a-f]{40}$"
+        },
+        "Mode": {
+            "type": "String",
+            "description": "deploy for an ordinary deployment, fallback to restore the recorded previous tag without overwriting it.",
+            "default": "deploy",
+            "allowedValues": [
+                "deploy",
+                "fallback"
+            ]
+        }
+    },
+    "mainSteps": [
+        {
+            "action": "aws:runShellScript",
+            "name": "deployReleaseTag",
+            "inputs": {
+                "timeoutSeconds": "600",
+                "workingDirectory": "/srv/tic-tac-toe",
+                "runCommand": [
+                    "#!/bin/bash",
+                    "set -euo pipefail",
+                    "",
+                    "TAG='{{ ReleaseTag }}'",
+                    "MODE='{{ Mode }}'",
+                    "DIR=/srv/tic-tac-toe",
+                    "ENVFILE=\"$DIR/deploy/release.env\"",
+                    "APP=ghcr.io/mirkovicuk/tic-tac-toe-app",
+                    "WEB=ghcr.io/mirkovicuk/tic-tac-toe-web",
+                    "",
+                    "# Belt and braces: the document's allowedPattern already refuses anything",
+                    "# that is not 40 hex characters, so this can only fail if the document is",
+                    "# edited to loosen it. Cheap enough to keep.",
+                    "[[ \"$TAG\" =~ ^[0-9a-f]{40}$ ]] || { echo 'ReleaseTag is not a 40-character hex SHA'; exit 64; }",
+                    "",
+                    "[[ -f \"$ENVFILE\" ]] || { echo \"missing $ENVFILE; seed it before deploying\"; exit 65; }",
+                    "CURRENT=$(grep -E '^RELEASE_TAG=' \"$ENVFILE\" | cut -d= -f2 || true)",
+                    "PREVIOUS=$(grep -E '^PREVIOUS_RELEASE_TAG=' \"$ENVFILE\" | cut -d= -f2 || true)",
+                    "echo \"current=$CURRENT previous=$PREVIOUS requested=$TAG mode=$MODE\"",
+                    "",
+                    "# Repository operations run as the owning user. Run Command executes as root,",
+                    "# and git as root in a directory owned by ssm-user fails with a",
+                    "# dubious-ownership error that reads as a repository fault.",
+                    "sudo -u ssm-user git -C \"$DIR\" fetch --depth 1 origin \"$TAG\"",
+                    "sudo -u ssm-user git -C \"$DIR\" checkout --quiet --detach \"$TAG\"",
+                    "",
+                    "# Disk headroom before the pull, not after. Two retained pairs are about 2 GB",
+                    "# on a 19 GB volume.",
+                    "AVAIL=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')",
+                    "if (( AVAIL < 3 )); then",
+                    "  echo \"only ${AVAIL}G free; pruning images outside $CURRENT and $PREVIOUS\"",
+                    "  docker image prune -f",
+                    "  AVAIL=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')",
+                    "  (( AVAIL >= 3 )) || { echo \"still only ${AVAIL}G free; refusing to deploy\"; exit 66; }",
+                    "fi",
+                    "",
+                    "# Pull both before recreating either, so a partial pull cannot leave a",
+                    "# mismatched pair running.",
+                    "docker pull \"$APP:$TAG\"",
+                    "docker pull \"$WEB:$TAG\"",
+                    "docker image inspect \"$APP:$TAG\" >/dev/null",
+                    "docker image inspect \"$WEB:$TAG\" >/dev/null",
+                    "",
+                    "# A fallback must not overwrite the recorded previous tag, or a second",
+                    "# failure has no last known good version to return to.",
+                    "if [[ \"$MODE\" == deploy && \"$TAG\" != \"$CURRENT\" ]]; then",
+                    "  printf 'RELEASE_TAG=%s\\nPREVIOUS_RELEASE_TAG=%s\\n' \"$TAG\" \"$CURRENT\" > \"$ENVFILE\"",
+                    "else",
+                    "  printf 'RELEASE_TAG=%s\\nPREVIOUS_RELEASE_TAG=%s\\n' \"$TAG\" \"$PREVIOUS\" > \"$ENVFILE\"",
+                    "fi",
+                    "chown ssm-user: \"$ENVFILE\"",
+                    "chmod 600 \"$ENVFILE\"",
+                    "",
+                    "docker compose --env-file \"$ENVFILE\" up -d",
+                    "",
+                    "# Report what is actually running. The label is set by the build, so reading",
+                    "# it back is independent of what Compose was told.",
+                    "#",
+                    "# jq rather than `docker inspect --format`, and that is not a style choice:",
+                    "# a Go template needs the same doubled curly braces that SSM uses for its own",
+                    "# parameter substitution, so SSM would try to resolve it as a parameter and the",
+                    "# document would fail. No doubled curly brace may appear anywhere in this",
+                    "# script except a reference to ReleaseTag or Mode -- including inside a comment.",
+                    "for c in tic-tac-toe-app-1 tic-tac-toe-web-1; do",
+                    "  REV=$(docker inspect \"$c\" | jq -r '.[0].Config.Labels[\"org.opencontainers.image.revision\"] // \"unset\"')",
+                    "  echo \"$c revision=$REV\"",
+                    "done",
+                    "docker compose --env-file \"$ENVFILE\" images",
+                    "cat \"$ENVFILE\""
+                ]
+            }
+        }
+    ]
+}
