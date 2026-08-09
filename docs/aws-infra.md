@@ -1,8 +1,27 @@
-# AWS infrastructure runbook (spec task 2)
+# Provisioning the instance
 
-This provisions one EC2 instance in `eu-west-2` with an Elastic IP, a security group open only on 80 and 443, an instance profile carrying nothing but `AmazonSSMManagedInstanceCore`, Docker with the Compose plugin, and one Let's Encrypt certificate for `<eip-dashed>.sslip.io` in an external Docker volume. Every step is AWS CLI run by hand; nothing here is automated (ADR-009). It runs before the application exists because `sslip.io` is one registered domain shared by all its users, so an issuance can be refused because of strangers' usage, and a refusal is recoverable a week out but not on submission day.
+This is how the hosted instance was built, and the procedure to rebuild it. Every step was AWS CLI
+run by hand; nothing here is automated (ADR-009).
+
+What it provisions: one EC2 instance in `eu-west-2` with an Elastic IP, a security group open only on
+80 and 443, an instance profile carrying nothing but `AmazonSSMManagedInstanceCore`, Docker with the
+Compose plugin, and one Let's Encrypt certificate for `<eip-dashed>.sslip.io` in an external Docker
+volume.
+
+Part 2 ran before the application existed, deliberately. `sslip.io` is one registered domain shared
+by all its users, so an issuance can be refused because of strangers' usage — and a refusal is
+recoverable a week out but not on submission day.
 
 Each fenced block opens with a comment saying which machine it runs on.
+
+- [Prerequisites](#prerequisites)
+- [Decisions](#decisions)
+- [Cost](#cost)
+- [Part 1 — task 2.1: infrastructure](#part-1--task-21-infrastructure)
+- [Part 2 — task 2.2: the certificate](#part-2--task-22-the-certificate)
+- [Fallbacks](#fallbacks)
+- [Teardown](#teardown)
+- [Checklist](#checklist)
 
 ## Prerequisites
 
@@ -477,7 +496,10 @@ Bring the stack down first with `cd /srv/tic-tac-toe && docker compose down` in 
 - [ ] `.crt`, `.key` and `.json` present under `/data/caddy/certificates` in `caddy-data`
 - [ ] `docker volume ls | grep caddy` shows exactly one line, `caddy-data`, with no project prefix
 
+## Opening a shell later
 
-cd /home/ubuntu/Desktop/tic-tac-toe && source deploy/.provisioned.env
-
+```bash
+# Local machine.
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
 aws ssm start-session --target "$IID"
+```

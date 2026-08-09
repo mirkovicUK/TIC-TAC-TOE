@@ -32,5 +32,8 @@ about tic-tac-toe rather than restatements of the implementation's own opinion. 
 exactly, with no disagreement on terminality, winning-line sets, move counts, mark-to-move
 or winner.
 
-`.github/workflows/ci.yml` records the walk at 9.8 s of a 10.4 s suite, comfortably inside
-the design's 60-second budget, so none of the staged runtime mitigations was needed.
+The walk is the dominant cost of the suite — it accounts for most of the roughly 26 s
+`composer test` takes, and runs in a single test rather than 549,946 of them — and it stays
+comfortably inside the design's 60-second budget, so none of the staged runtime mitigations
+was needed. The absolute figure is machine-dependent; the margin is what the budget was set
+against.

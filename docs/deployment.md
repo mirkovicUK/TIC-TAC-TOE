@@ -4,10 +4,10 @@ The one deployment document. It covers the setup that cannot be automated, what 
 ordinary push, deploying a chosen tag by hand, rolling back, and what to do when the pipeline
 itself is the broken thing.
 
-It replaces `docs/deploy-schedule-swap.md`, which documented building the image on the instance
-and was deleted rather than rewritten. Two deployment documents is how one of them comes to
-describe a loop the stack no longer supports — and that one already had a `docker image prune -f`
-step that reclaimed nothing and a crontab line that would have silently stopped the sweep. Git
+It replaced `docs/deploy-schedule-swap.md`, which documented building the image on the instance and
+was deleted rather than rewritten. That document already carried a `docker image prune -f` step that
+reclaimed nothing and a crontab line that would have silently stopped the sweep; keeping two
+deployment documents is how one of them comes to describe a loop the stack no longer supports. Git
 history has it if you want to see how the manual era worked.
 
 - [The setup steps only you can run](#the-setup-steps-only-you-can-run)
@@ -22,13 +22,13 @@ history has it if you want to see how the manual era worked.
 
 ## The setup steps only you can run
 
-The pipeline cannot create its own permission to exist, and it cannot click a button in
-GitHub's settings. Everything else in `.kiro/specs/continuous-deployment/tasks.md` is a file
-somebody writes; the nine steps below are yours, and four of them have to happen at a
-particular moment or the deployment breaks.
+The pipeline cannot create its own permission to exist, and it cannot click a button in GitHub's
+settings. Everything else in `.kiro/specs/continuous-deployment/tasks.md` is a file somebody writes;
+the nine steps below are done by hand, and four of them have to happen at a particular moment or the
+deployment breaks.
 
-**All nine are already done on this deployment.** They are kept because they are how the instance
-got into its current state, and because rebuilding it from scratch means running them again.
+**All nine were done on this deployment.** They are kept because they are how the instance got into
+its current state, and because rebuilding it from scratch means running them again.
 
 Read the **When** column first. The order is not a suggestion.
 

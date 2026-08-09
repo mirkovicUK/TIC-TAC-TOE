@@ -10,14 +10,15 @@ the two boards stay in step without either player refreshing. No accounts, no si
 ## What this is
 
 A Laravel 13 application with an Inertia and React client, built to a written specification.
-The game rules live in a framework-free domain layer that derives the board, whose turn it is
-and the outcome from nothing but the list of moves — no database, no session, no HTTP. That
-purity is what makes the exhaustive test affordable: the suite walks all 549,946 reachable move
-sequences and asserts the 255,168 terminal ones.
+
+The game rules live in a framework-free domain layer that derives the board, whose turn it is and
+the outcome from nothing but the list of moves — no database, no session, no HTTP. That purity is
+what makes the exhaustive test affordable: the suite walks all 549,946 reachable move sequences
+and asserts the 255,168 terminal ones.
 
 Identity is a per-game token held in the server-side session, not a user account. State
-synchronisation is polling — 2 seconds while a game is live, 5 once it is finished — chosen over
-a persistent connection for the reasons in [ADR-001](docs/decisions/adr-001-polling-transport.md).
+synchronisation is polling — 2 seconds while a game is live, 5 once it is finished — chosen over a
+persistent connection for the reasons in [ADR-001](docs/decisions/adr-001-polling-transport.md).
 
 - [Prerequisites](#prerequisites)
 - [Running it locally](#running-it-locally)
@@ -43,8 +44,8 @@ a persistent connection for the reasons in [ADR-001](docs/decisions/adr-001-poll
 Nothing else. There is no database server, no Redis, no queue worker and no external service to
 sign up for. Verified against PHP 8.5.9, Composer 2.10.2, Node 22.19.0 and npm 10.9.3.
 
-Two things are optional. Docker with Compose, if you want to run the production stack rather than
-the development server, and a chromium download, if you want to run the browser test — see
+Two things are optional: Docker with Compose, to run the production stack rather than the
+development server, and a chromium download, to run the browser test. See
 [Commands](#commands) for both.
 
 ## Running it locally
@@ -56,13 +57,13 @@ php artisan serve
 
 Then open **<http://127.0.0.1:8000>**.
 
-`composer setup` does the whole first-run sequence: `composer install`, copy `.env.example` to
+`composer setup` runs the whole first-run sequence: `composer install`, copy `.env.example` to
 `.env` if you have no `.env`, generate an `APP_KEY`, run the migrations — which creates the SQLite
 file, since `migrate --force` touches a missing one — then `npm install --ignore-scripts` and
-`npm run build`. It is safe to re-run; it will not overwrite an existing `.env`.
+`npm run build`. It is safe to re-run and will not overwrite an existing `.env`.
 
-If you are editing the client, `composer dev` instead of `php artisan serve` runs the server, the
-queue listener, the log tail and the Vite dev server together with hot reloading, on the same URL.
+If you are editing the client, `composer dev` runs the server, the queue listener, the log tail
+and the Vite dev server together with hot reloading, on the same URL.
 
 ### Playing a game against yourself
 
@@ -74,21 +75,22 @@ The session is the identity, so a second tab is the *same* player. To see both s
 
 ### The container path
 
-`compose.yaml` is the production stack: php-fpm and Caddy in two containers. **It no longer builds
-anything.** Both services name published images by commit SHA:
+`compose.yaml` is the production stack: php-fpm and Caddy in two containers. **It builds nothing.**
+Both services name published images by commit SHA:
 
 ```yaml
 image: ghcr.io/mirkovicuk/tic-tac-toe-app:${RELEASE_TAG:?RELEASE_TAG must be set}
 ```
 
-so `docker compose up -d --build` has nothing to act on, and `up` without `RELEASE_TAG` refuses to
-start rather than guessing. That is deliberate — see [ADR-012](docs/decisions/adr-012-continuous-deployment.md).
+So `docker compose up -d --build` has nothing to act on, and `up` without `RELEASE_TAG` refuses to
+start rather than guessing. That is deliberate — see
+[ADR-012](docs/decisions/adr-012-continuous-deployment.md).
 
-It is not a local development target either way: it mounts `deploy/Caddyfile.production`, which
-names the hosted hostname and would attempt certificate issuance, and declares an external
-`caddy-data` volume a fresh machine does not have. To run it locally you would need a published
-tag, your own Caddyfile naming a local address, and that volume created by hand. For development,
-the two commands above are the supported route.
+It is not a local development target either way. It mounts `deploy/Caddyfile.production`, which
+names the hosted hostname and would attempt certificate issuance, and it declares an external
+`caddy-data` volume a fresh machine does not have. Running it locally would need a published tag,
+your own Caddyfile naming a local address, and that volume created by hand. For development, the
+two commands above are the supported route.
 
 ## Commands
 
@@ -97,19 +99,19 @@ the two commands above are the supported route.
 | `composer setup` | First-run install: dependencies, `.env`, `APP_KEY`, migrations, asset build |
 | `php artisan serve` | Serves the application at <http://127.0.0.1:8000> |
 | `composer dev` | Server, queue listener, log tail and Vite watcher together |
-| `composer test` | The test suite excluding the `browser` group — **307 tests, 8,415 assertions**, about 29 s |
+| `composer test` | The test suite excluding the `browser` group — **307 tests, 8,415 assertions**, about 26 s |
 | `composer check:migrations` | Rejects a migration that cannot be safely deployed. See [`database/migrations/README.md`](database/migrations/README.md) |
-| `composer test:browser` | The one end-to-end browser test — **1 test, 19 assertions**, about 8 s. Needs chromium; see below |
+| `composer test:browser` | The one end-to-end browser test — **1 test, 19 assertions**, about 7 s. Needs chromium; see below |
 | `composer lint` | Formatting check, `pint --test`. Reports without writing |
 | `composer lint:fix` | Applies the formatting |
 | `composer analyse` | Static analysis: PHPStan level 8 over `app`, `database`, `tests`, then level max over the domain layer |
 | `npx tsc --noEmit` | Type-checks the client. Vite strips types without checking them, so this is the only check of the props contract |
 
 All of those were run against this commit and all pass. The two commands at the top of
-[Running it locally](#running-it-locally) were also checked the only way that means anything: a
-fresh `git clone` into an empty directory, `composer setup`, `php artisan serve`, then creating a
-game over HTTP and reading the join code back off the rendered page. `composer test` in that clone
-reported the same 307 tests and 8,415 assertions.
+[Running it locally](#running-it-locally) were also checked from a fresh `git clone` into an empty
+directory: `composer setup`, `php artisan serve`, then creating a game over HTTP and reading the
+join code back off the rendered page. `composer test` in that clone reported the same 307 tests
+and 8,415 assertions.
 
 ### The browser test needs chromium fetched first
 
@@ -134,31 +136,31 @@ every pull request:
   and the suite excluding the browser group
 - **`browser`** — the one browser test, gated behind `quality`
 
-The split is so a red tick tells you which kind of thing broke; the reasoning is in the workflow's
+The split is so a red tick tells you which kind of thing broke. The reasoning is in the workflow's
 comments and in [ADR-008](docs/decisions/adr-008-one-browser-test.md).
 
 **If you change the UI, run `composer test:browser` before you believe it works.** That test drives
 the real interface and pins three things, only one of which is obvious:
 
-- **visible text** — `'Start a game'`, `'Create a game'`, `'Join game'`, `'You are playing'`,
-  `'that is you.'`, `'Waiting for a second player'`, `'X won this game.'`
+- **visible text** — `'Start a game'`, `'Create a game'`, `'Join a game'`, `'Join game'`,
+  `'You are playing'`, `'that is you.'`, `'Waiting for a second player'`, `'X won this game.'`
 - **`aria-label` values** on the cells, in the exact form `'centre, empty'` and
   `'top left, X, in a winning line'`
-- **DOM structure** — it reads the mark paragraph as `main > p:has(span)`, so that paragraph has
-  to stay a direct child of the layout's `main`
+- **DOM structure** — it reads the mark paragraph as `main > p:has(span)`, so that paragraph has to
+  stay a direct child of the layout's `main`
 
-Tailwind classes are free to change; those three are not. The third is the one that catches
-people: wrapping the mark paragraph in a `<header>` made Pest report
+Tailwind classes are free to change; those three are not. The third is the one that catches people:
+wrapping the mark paragraph in a `<header>` made Pest report
 `Target page, context or browser has been closed`, which reads like a browser crash rather than a
 moved element. `resources/js/pages/Game.tsx` carries a comment at that paragraph saying so.
 
-Two more run only on `main`, and they are the deployment:
+Two more jobs run only on `main`, and they are the deployment:
 
 - **`publish`** — builds both images and pushes them to GHCR tagged with the commit SHA
 - **`deploy`** — deploys that tag to the instance and health-gates it
 
-See [Deployment](#deployment). On a branch or a pull request `github.ref` is not
-`refs/heads/main`, so both are skipped and nothing is published.
+See [Deployment](#deployment). On a branch or a pull request `github.ref` is not `refs/heads/main`,
+so both are skipped and nothing is published.
 
 ## The hosted instance
 
@@ -166,14 +168,14 @@ See [Deployment](#deployment). On a branch or a pull request `github.ref` is not
 [`compose.yaml`](compose.yaml) stack. `GET /health` answers
 `{"status":"ok","persistence":"reachable"}`.
 
-**The scheme is HTTPS.** Caddy holds a real Let's Encrypt certificate for that hostname, valid to
+**The scheme is HTTPS.** Caddy holds a Let's Encrypt certificate for that hostname, valid to
 4 November 2026, and plain HTTP answers `308` to the HTTPS address. The Player_Session cookie
 therefore carries `Secure` in this deployment, which is what Requirement 10.11 asks for where the
-application is served over HTTPS — so that criterion is met rather than waived. `HttpOnly` and
-`SameSite=Lax` apply as well; `Lax` is deliberate, because a join link is a cross-site top-level
-GET and `Strict` would drop the session on exactly that navigation. Plain HTTP was the recorded
-fallback had issuance failed, and it was not needed. Local development leaves `Secure` off, since
-a `Secure` cookie is never sent back over plain HTTP.
+application is served over HTTPS, so that criterion is met rather than waived. `HttpOnly` and
+`SameSite=Lax` apply as well. `Lax` is deliberate: a join link is a cross-site top-level GET, and
+`Strict` would drop the session on exactly that navigation. Plain HTTP was the recorded fallback
+had issuance failed, and it was not needed. Local development leaves `Secure` off, since a `Secure`
+cookie is never sent back over plain HTTP.
 
 Shell access is AWS Systems Manager Session Manager only: no key pair exists and port 22 is not
 open inbound. That is a deliberate decision rather than an omission —
@@ -194,8 +196,8 @@ push → quality → browser → publish → deploy → health gate
 Systems Manager document, `DeployTicTacToe`, which pulls that pair and recreates both containers.
 Nothing is built on the instance.
 
-**Where to see the outcome**: the Actions tab. The `deploy` job logs the instance's own output,
-the poll count and the final health status.
+The outcome shows in the Actions tab. The `deploy` job logs the instance's own output, the poll
+count and the final health status.
 
 ### When a deployment does not serve
 
@@ -208,7 +210,7 @@ If that gate fails, the workflow redeploys the previously recorded tag, health-g
 did not deploy, and a green tick would say it had.
 
 The failed tag is never recorded as the rollback target — only a successful deploy advances that
-pointer. This path has been exercised deliberately once, not just reasoned about: a commit that
+pointer. This path was exercised deliberately once rather than only reasoned about: a commit that
 broke the FastCGI document root was pushed, the gate failed, the previous pair went back, and the
 run went red.
 
@@ -225,7 +227,7 @@ that does two things and dies between them leaves the database half-changed *and
 next deploy re-runs it, hits "already exists", and every deploy after that fails identically until
 someone repairs it by hand.
 
-And the rollback does not help: **it restores images, never the schema.** Removing a column is
+The rollback does not help: **it restores images, never the schema.** Removing a column is
 expand-and-contract across four deployments, with the drop done by hand at the end.
 [`database/migrations/README.md`](database/migrations/README.md) has the sequence and the one trap
 the checker cannot catch.
@@ -233,8 +235,8 @@ the checker cannot catch.
 ### There is no backup of the database
 
 The SQLite file lives in a Docker volume on one instance's root EBS volume. Nothing copies it
-anywhere — no snapshot, no S3, no dump. Deployments do not touch it, and six have not lost a game,
-but **if that volume is lost every game and move is gone permanently.**
+anywhere — no snapshot, no S3, no dump. Deployments do not touch it, and seven have not lost a
+game, but **if that volume is lost every game and move is gone permanently.**
 
 That was a deliberate scoping decision for a demonstration project, recorded rather than
 overlooked. Volumes are also why `docker compose down -v` is the one command never to run on that
@@ -247,23 +249,23 @@ are in [`docs/deployment.md`](docs/deployment.md).
 
 **Access to a game cannot be recovered after loss of the Player_Session.** The credential for a
 game is a per-game, per-mark token that exists only inside the server-side session, and the only
-thing linking a browser to that session is its cookie. Clear the cookies, lose the browser
-profile, or open the game in a different browser, and there is no way back into that game — not
-for you and not for an operator, because nothing else in the system knows who you were.
+thing linking a browser to that session is its cookie. Clear the cookies, lose the browser profile,
+or open the game in a different browser, and there is no way back into that game — not for you and
+not for an operator, because nothing else in the system knows who you were.
 
 This follows directly from the deliberate absence of user accounts. Without accounts there is no
-identity to recover through, no password reset and no email on file; the session *is* the
-identity. What that buys is a game you can start and share in one click, with no sign-up and no
-personal data stored at all. [ADR-005](docs/decisions/adr-005-per-game-tokens.md) records the
-choice and its alternatives.
+identity to recover through, no password reset and no email on file; the session *is* the identity.
+What that buys is a game you can start and share in one click, with no sign-up and no personal data
+stored at all. [ADR-005](docs/decisions/adr-005-per-game-tokens.md) records the choice and its
+alternatives.
 
 The join code is not a second way in. It claims the second seat once and is spent; presenting it
 again cannot re-enter a game, because authorisation comes from the token and nothing else.
 
 ## Known limitations
 
-Both are real, both were found while building, and both are stated with what the player *does*
-see as well as what they do not.
+Both are real, both were found while building, and both are stated with what the player *does* see
+as well as what they do not.
 
 | Limitation | What the player sees instead |
 | --- | --- |
@@ -280,24 +282,25 @@ unknown, it is unrepresentable client-side, and the warning stays quiet.
 
 The consequence: **a creator who shares a link, sees someone join, and never comes back leaves the
 joiner waiting with no warning.** The joiner is not left with a blank screen — Requirement 9.3's
-"waiting for your opponent" indication shows throughout, so they can see the application is
-waiting on the other player. What they do not get is the escalation after 60 seconds that would
-tell them the wait is no longer normal.
+"waiting for your opponent" indication shows throughout, so they can see the application is waiting
+on the other player. What they do not get is the escalation after 60 seconds that would tell them
+the wait is no longer normal.
 
 Requirement 9.4 was narrowed during task 6.5 to say so, rather than left quietly unmet. The
 alternative — adding a "became active at" timestamp to the representation — was available and was
-judged not worth a new prop, a server change and a second clock for a warning that a joiner
-staring at an empty board they cannot play does not especially need. The amendment is recorded in
+judged not worth a new prop, a server change and a second clock for a warning that a joiner staring
+at an empty board they cannot play does not especially need. The amendment is recorded in
 [`docs/ai-direction.md`](docs/ai-direction.md#requirements-narrowed-rather-than-met) under
-"Requirements narrowed rather than met", where it sits with the scoping decisions rather than the
-corrections, because nothing about the original wording was wrong.
+"Requirements narrowed rather than met", with the scoping decisions rather than the corrections,
+because nothing about the original wording was wrong.
 
 ### A rate-limited request shows the player nothing
 
 Joining is limited to 20 requests a minute and moving to 60 (Requirements 10.6 and 10.7); game
-creation carries the join threshold too, which no criterion asks for. Trip any one of them and the
-request is refused with `429` — and **the client renders nothing at all.** The player sees a
-control that appears to do nothing until the window passes, then works again.
+creation carries the join threshold and state polling is capped at 120, neither of which any
+criterion asks for. Trip any one of them and the request is refused with `429` — and **the client
+renders nothing at all.** The player sees a control that appears to do nothing until the window
+passes, then works again.
 
 There are two reasons, and together they mean there is nothing to render. The `429` comes from
 Laravel's `ThrottleRequests` middleware before any controller runs, so `rate_limited` has no value
@@ -314,8 +317,8 @@ Inertia's error handling surfaced it.
 
 ## Deleting expired games on a schedule
 
-Unauthenticated game creation would otherwise grow stored data without bound. A game waiting for
-an opponent becomes eligible for expiry after 24 hours; any game becomes eligible 7 days after its
+Unauthenticated game creation would otherwise grow stored data without bound. A game waiting for an
+opponent becomes eligible for expiry after 24 hours; any game becomes eligible 7 days after its
 most recent move or state change. Nothing deletes on a timer — deletion happens only when the
 command runs, so those times are lower bounds on retention rather than times of deletion
 ([ADR-007](docs/decisions/adr-007-retention-command.md)).
@@ -397,9 +400,10 @@ design claimed Laravel's forgery protection forces a session into existence, the
 configuration flag would close the resulting gap, then added a test asserting the state of that
 non-existent flag. Reading the vendor source of `PreventRequestForgery` settled it: a
 `Sec-Fetch-Site: same-origin` request is accepted on the first line of `hasValidOrigin()`,
-unconditionally, and the middleware short-circuits in tests before any of it runs. Requirement 10.9 was rewritten to
-describe origin verification with token verification as the fallback — what the framework actually
-does. A subclass forcing the token path on every request was considered and rejected.
+unconditionally, and the middleware short-circuits in tests before any of it runs. Requirement 10.9
+was rewritten to describe origin verification with token verification as the fallback — what the
+framework actually does. A subclass forcing the token path on every request was considered and
+rejected.
 
 **A CHECK constraint that would have broken rematch on its first insert.** The generated schema
 required `x_token_hash IS NOT NULL` on any rematch row, four paragraphs below a flow that inserts a
@@ -410,11 +414,11 @@ reads like an obvious invariant.
 **Seventeen assertions that asserted nothing.** Tests written as
 `expect($body)->not->toContain($secret, 'the response leaks the raw token')` looked like a check
 with an explanatory message. Pest's `toContain()` is variadic and takes no message, so the sentence
-was a second needle and the assertion passed unconditionally — including with a real token leak
-left in place, which is how it was demonstrated. Worse than the tests was the explanation offered
-for them: a confident, unmeasured account of the library that was the exact inverse of what its
-source does, and which nearly closed the matter as a cosmetic wart. All seventeen were rewritten
-and each falsified individually by an agent that had not written them.
+was a second needle and the assertion passed unconditionally — including with a real token leak left
+in place, which is how it was demonstrated. Worse than the tests was the explanation offered for
+them: a confident, unmeasured account of the library that was the exact inverse of what its source
+does, and which nearly closed the matter as a cosmetic wart. All seventeen were rewritten and each
+falsified individually by an agent that had not written them.
 
 **A retention sweep that two individually correct constraints made unimplementable.** One criterion
 deleted a game as it became expired; the next required a command that deletes expired games. The
@@ -422,11 +426,11 @@ command's working set was permanently empty, and a test of it would have passed 
 implementation that did nothing. Restructured so eligibility is a state a game is treated as being
 in and deletion happens only in the command.
 
-Everything else, including the defects found by building rather than by reading — a mid-game 500
-from the rate limiter's cache store, a UUIDv7 entropy figure that was right in general and wrong
-where it was quoted, a design paragraph that sent a correctly guessed game id to the wrong row of
-the visibility table — is in [`docs/ai-direction.md`](docs/ai-direction.md), written as the work
-proceeded rather than reconstructed at the end.
+Everything else is in [`docs/ai-direction.md`](docs/ai-direction.md), written as the work proceeded
+rather than reconstructed at the end. That includes the defects found by building rather than by
+reading: a mid-game 500 from the rate limiter's cache store, a UUIDv7 entropy figure that was right
+in general and wrong where it was quoted, and a design paragraph that sent a correctly guessed game
+id to the wrong row of the visibility table.
 
 ## The rest of the documentation
 
