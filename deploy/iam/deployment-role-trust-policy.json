@@ -1,0 +1,19 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "GitHubActionsProductionEnvironmentOnly",
+            "Effect": "Allow",
+            "Principal": {
+                "Federated": "arn:aws:iam::811362454196:oidc-provider/token.actions.githubusercontent.com"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+                "StringEquals": {
+                    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                    "token.actions.githubusercontent.com:sub": "repo:mirkovicUK/TIC-TAC-TOE:environment:production"
+                }
+            }
+        }
+    ]
+}

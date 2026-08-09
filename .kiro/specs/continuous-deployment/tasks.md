@@ -8,15 +8,15 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
 
 ## Tasks
 
-- [ ] 1. The IAM policy documents, as tracked files
-  - [ ] 1.1 Write `deploy/iam/deployment-role-trust-policy.json`
+- [x] 1. The IAM policy documents, as tracked files
+  - [x] 1.1 Write `deploy/iam/deployment-role-trust-policy.json`
     - Federated principal is the GitHub OIDC provider ARN in account `811362454196`
     - `StringEquals` on `token.actions.githubusercontent.com:aud` = `sts.amazonaws.com`
     - `StringEquals` on `token.actions.githubusercontent.com:sub` = `repo:mirkovicUK/TIC-TAC-TOE:environment:production`, with no wildcard character anywhere in the value
     - **Environment scoping, not a branch reference, and the branch restriction moves as a result.** A job targeting an environment presents `environment:` in its subject and carries no `ref:` segment, so the two forms are mutually exclusive. The branch boundary is re-established by the environment's deployment-branch rule in task 2.4, and without that rule any branch could deploy through the environment
     - Comment in the surrounding documentation, not the JSON, that `StringLike` with `repo:owner/name:*` would let a pull request from a fork assume the role — this is the whole reason the condition is written this way. Note also that AWS classifies GitHub Actions as a shared OIDC provider with `sub` as its tenancy claim, and refuses a trust policy that omits it with `MalformedPolicyDocument`
     - _Requirements: 3.3, 3.4, 3.7_
-  - [ ] 1.2 Write `deploy/iam/deployment-role-permissions-policy.json`
+  - [x] 1.2 Write `deploy/iam/deployment-role-permissions-policy.json`
     - `ssm:SendCommand` on **both** the `AWS-RunShellScript` document ARN and `arn:aws:ec2:eu-west-2:811362454196:instance/i-0c6bab4bc4644e760`
     - `ssm:GetCommandInvocation` on `*`, which is the one deliberately broad grant and is recorded as such in the design
     - No action against any other instance and no action against any other service

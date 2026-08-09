@@ -1,0 +1,23 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "RunTheDeployScriptOnTheOneInstance",
+            "Effect": "Allow",
+            "Action": "ssm:SendCommand",
+            "Resource": [
+                "arn:aws:ssm:eu-west-2:*:document/AWS-RunShellScript",
+                "arn:aws:ec2:eu-west-2:811362454196:instance/i-0c6bab4bc4644e760"
+            ]
+        },
+        {
+            "Sid": "ReadTheOutcomeOfThatCommand",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetCommandInvocation",
+                "ssm:ListCommandInvocations"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
