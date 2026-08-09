@@ -156,6 +156,12 @@ aws ssm describe-document --name DeployTicTacToe \
 
 Expected: `Status` of `Active` and `Owner` showing your account id, `811362454196`.
 
+**The document needs `jq` and `flock` on the instance.** Both are present on this Ubuntu 24.04
+box and `docs/aws-infra.md` names `jq` as a dependency, but it is worth knowing that the script
+asserts `jq` in its first lines and exits **69** if it is gone. It uses `jq` rather than
+`docker inspect --format` because SSM reads a doubled curly brace as its own parameter
+substitution, so a Go template would break the document.
+
 **The ongoing cost, so it is not a surprise later.** The deployment role is granted no
 `ssm:UpdateDocument`, deliberately — a pipeline that can rewrite its own permitted script is
 constrained by nothing. So **every future change to the deploy script needs a manual update**:
@@ -247,6 +253,13 @@ docker pull ghcr.io/mirkovicuk/tic-tac-toe-app:$(git rev-parse HEAD)
 
 If that pull works without `docker login`, the instance will manage it too.
 
+**Public is not a convenience here, it sidesteps a second problem.** If the packages stayed
+private, the instance would need a registry credential — and the deploy runs `git` as `ssm-user`
+but `docker pull` as root, so a `docker login` performed as `ssm-user` writes its token to
+`~ssm-user/.docker/config.json` where root's pull never looks. It would fail with a 401 that
+looks like a registry fault. This is the one external dependency the instance profile cannot
+grant, so it is worth being explicit that the answer chosen was "make them public".
+
 ---
 
 ## After the seven steps: pushing is the whole workflow
@@ -280,17 +293,36 @@ cat /srv/tic-tac-toe/deploy/release.env
 ## Rolling back by hand
 
 The pipeline reverts automatically when a health gate fails. If you need to revert for another
-reason — a defect that is serving fine but wrong — do it on the instance:
+reason — a defect that is serving fine but wrong — send the same document the pipeline sends,
+from your laptop:
 
 ```bash
-cd /srv/tic-tac-toe
-cat deploy/release.env                      # note both values
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
 
-# put the previous tag in place, keeping the record of what it replaced
-sed -i "s/^RELEASE_TAG=.*/RELEASE_TAG=<previous-sha>/" deploy/release.env
-docker compose --env-file deploy/release.env up -d
-curl -s https://18-175-88-107.sslip.io/health
+CMD=$(aws ssm send-command \
+  --document-name DeployTicTacToe \
+  --instance-ids "$IID" \
+  --timeout-seconds 600 \
+  --parameters "ReleaseTag=$(git rev-parse HEAD),Mode=fallback" \
+  --query 'Command.CommandId' --output text)
+
+aws ssm get-command-invocation --command-id "$CMD" --instance-id "$IID" \
+  --query '{Status:Status,Out:StandardOutputContent,Err:StandardErrorContent}'
 ```
+
+**You do not name the tag to restore.** `Mode=fallback` ignores `ReleaseTag` and reads
+`PREVIOUS_RELEASE_TAG` from `release.env` on the instance, because that file is the only thing
+that authoritatively knows what was running before. `ReleaseTag` is still required — SSM 2.2 has
+no conditional parameters — so pass any valid SHA; the current `HEAD` is the honest choice.
+
+That mode also leaves `PREVIOUS_RELEASE_TAG` alone, so a second fallback restores the same tag
+rather than walking backwards through history. If nothing was ever recorded, the document exits
+**71** and leaves the current stack running.
+
+Editing `release.env` by hand and running Compose yourself also works, but it skips the lock, the
+pull check, the `--wait` gate and the revision assertion — every safeguard the document exists
+for. Prefer the command above; keep the manual path for when SSM itself is the thing that is
+broken, in which case `docs/deploy-schedule-swap.md` is the runbook.
 
 Do **not** run `docker compose down -v`. The `-v` removes volumes, and one of them holds the
 TLS certificate whose replacement depends on a Let's Encrypt rate limit shared with every other
@@ -319,6 +351,20 @@ a new migration.
 | Health gate fails, previous tag restored, run red | Working as designed | Read `docker compose logs app` on the instance |
 | Every deploy now fails on a migration that "already exists" | A migration applied part way. Laravel opens no transaction for SQLite | Fix by hand on the instance, then keep migrations to one change each |
 | Site up but unstyled, run red | The two images are from different commits | Republish; do not revert |
+
+The deploy document exits with a distinct code per failure, so the workflow log tells you which
+guard fired without reading the script:
+
+| Code | Meaning |
+| --- | --- |
+| 64 | The resolved tag is not a 40-character hex SHA |
+| 65 | `release.env` is missing — step 6 |
+| 66 | Under 2 GiB free after reclaiming images |
+| 67 | A container's `org.opencontainers.image.revision` label does not match the deployed tag |
+| 68 | A service is not running after `up --wait` |
+| 69 | `jq` is not installed |
+| 70 | Another deployment holds the lock |
+| 71 | `Mode=fallback` with no `PREVIOUS_RELEASE_TAG` recorded |
 
 For anything else, the two commands worth having before asking:
 

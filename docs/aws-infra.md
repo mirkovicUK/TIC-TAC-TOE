@@ -233,7 +233,7 @@ cat > /tmp/install-docker.sh <<'EOF'
 #!/bin/bash
 set -euo pipefail
 apt-get update
-apt-get install -y ca-certificates curl git
+apt-get install -y ca-certificates curl git jq
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 chmod a+r /etc/apt/keyrings/docker.asc
@@ -257,6 +257,8 @@ echo "$CMD_ID"
 ```
 
 Run those two blocks exactly as written: the quoted heredoc delimiter keeps `$(dpkg --print-architecture)` literal so it expands on the instance, and the `python3` line is there to get the script into JSON with correct escaping rather than fighting shell quoting inside `--parameters`. `noble` is 24.04's codename and changes with the release.
+
+**`jq` is a declared dependency, not incidental.** It was already present on this box, so the install line is belt-and-braces — but the `DeployTicTacToe` SSM document (`deploy/ssm/DeployTicTacToe.json`) reads container labels with it and exits 69 without it. It cannot use `docker inspect --format` instead, because SSM interprets a doubled curly brace as its own parameter substitution and a Go template would break the document. `flock`, also used by that document, is in `util-linux` and always present.
 
 **Nothing in this step may reference `ssm-user`, and that is the whole reason it is split from step 13.** The SSM Agent creates that account lazily, when the first Session Manager session opens — not at boot. A `usermod -aG docker ssm-user` here fails with `user 'ssm-user' does not exist`, exit status 6, and `set -euo pipefail` then abandons the rest of the script, so the deploy directory and the version checks silently never happen. `mkdir` is safe because it names no user; the `chown` that goes with it waits for step 13.
 
