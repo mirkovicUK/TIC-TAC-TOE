@@ -23,6 +23,7 @@ a persistent connection for the reasons in [ADR-001](docs/decisions/adr-001-poll
 - [Running it locally](#running-it-locally)
 - [Commands](#commands)
 - [The hosted instance](#the-hosted-instance)
+- [Deployment](#deployment)
 - [No accounts, and what that costs](#no-accounts-and-what-that-costs)
 - [Known limitations](#known-limitations)
 - [Deleting expired games on a schedule](#deleting-expired-games-on-a-schedule)
@@ -73,12 +74,21 @@ The session is the identity, so a second tab is the *same* player. To see both s
 
 ### The container path
 
-`compose.yaml` is the production stack: php-fpm and Caddy in two containers, brought up with
-`docker compose up -d --build`. It is not a local development target as committed. It mounts
-`deploy/Caddyfile.production`, which names the hosted hostname and would attempt certificate
-issuance, and it declares an external `caddy-data` volume that a fresh machine does not have.
-Running the stack locally means supplying your own Caddyfile naming a local address. For
-development, the two commands above are the supported route.
+`compose.yaml` is the production stack: php-fpm and Caddy in two containers. **It no longer builds
+anything.** Both services name published images by commit SHA:
+
+```yaml
+image: ghcr.io/mirkovicuk/tic-tac-toe-app:${RELEASE_TAG:?RELEASE_TAG must be set}
+```
+
+so `docker compose up -d --build` has nothing to act on, and `up` without `RELEASE_TAG` refuses to
+start rather than guessing. That is deliberate — see [ADR-012](docs/decisions/adr-012-continuous-deployment.md).
+
+It is not a local development target either way: it mounts `deploy/Caddyfile.production`, which
+names the hosted hostname and would attempt certificate issuance, and declares an external
+`caddy-data` volume a fresh machine does not have. To run it locally you would need a published
+tag, your own Caddyfile naming a local address, and that volume created by hand. For development,
+the two commands above are the supported route.
 
 ## Commands
 
@@ -87,15 +97,19 @@ development, the two commands above are the supported route.
 | `composer setup` | First-run install: dependencies, `.env`, `APP_KEY`, migrations, asset build |
 | `php artisan serve` | Serves the application at <http://127.0.0.1:8000> |
 | `composer dev` | Server, queue listener, log tail and Vite watcher together |
-| `composer test` | The test suite excluding the `browser` group — **298 tests, 8,394 assertions**, about 12 s |
+| `composer test` | The test suite excluding the `browser` group — **307 tests, 8,415 assertions**, about 29 s |
+| `composer check:migrations` | Rejects a migration that cannot be safely deployed. See [`database/migrations/README.md`](database/migrations/README.md) |
 | `composer test:browser` | The one end-to-end browser test — **1 test, 19 assertions**, about 8 s. Needs chromium; see below |
 | `composer lint` | Formatting check, `pint --test`. Reports without writing |
 | `composer lint:fix` | Applies the formatting |
 | `composer analyse` | Static analysis: PHPStan level 8 over `app`, `database`, `tests`, then level max over the domain layer |
 | `npx tsc --noEmit` | Type-checks the client. Vite strips types without checking them, so this is the only check of the props contract |
 
-`composer test`, `composer test:browser`, `composer lint`, `composer analyse` and `npx tsc --noEmit`
-were all run against this commit and all pass.
+All of those were run against this commit and all pass. The two commands at the top of
+[Running it locally](#running-it-locally) were also checked the only way that means anything: a
+fresh `git clone` into an empty directory, `composer setup`, `php artisan serve`, then creating a
+game over HTTP and reading the join code back off the rendered page. `composer test` in that clone
+reported the same 307 tests and 8,415 assertions.
 
 ### The browser test needs chromium fetched first
 
@@ -113,11 +127,23 @@ beyond `composer setup`.
 
 ### What CI runs
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and every pull request,
-in two jobs. `quality` runs `composer lint`, `composer analyse`, `npx tsc --noEmit` and the suite
-excluding the browser group; `browser` runs the browser test and is gated behind `quality`. The
-split is so a red tick tells you which kind of thing broke — the reasoning is in the workflow's own
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) has four jobs. Two run on every push and
+every pull request:
+
+- **`quality`** — `composer lint`, `composer analyse`, `composer check:migrations`, `npx tsc --noEmit`
+  and the suite excluding the browser group
+- **`browser`** — the one browser test, gated behind `quality`
+
+The split is so a red tick tells you which kind of thing broke; the reasoning is in the workflow's
 comments and in [ADR-008](docs/decisions/adr-008-one-browser-test.md).
+
+Two more run only on `main`, and they are the deployment:
+
+- **`publish`** — builds both images and pushes them to GHCR tagged with the commit SHA
+- **`deploy`** — deploys that tag to the instance and health-gates it
+
+See [Deployment](#deployment). On a branch or a pull request `github.ref` is not
+`refs/heads/main`, so both are skipped and nothing is published.
 
 ## The hosted instance
 
@@ -138,9 +164,69 @@ Shell access is AWS Systems Manager Session Manager only: no key pair exists and
 open inbound. That is a deliberate decision rather than an omission —
 [ADR-009](docs/decisions/adr-009-ec2-compose-caddy.md) carries the reasoning.
 
-Deploying, redeploying and what survives a redeploy are in
-[`docs/deploy-schedule-swap.md`](docs/deploy-schedule-swap.md); how the instance was provisioned is
-in [`docs/aws-infra.md`](docs/aws-infra.md).
+How the instance was provisioned is in [`docs/aws-infra.md`](docs/aws-infra.md).
+
+## Deployment
+
+**A push to `main` deploys.** There is no manual step and no button.
+
+```
+push → quality → browser → publish → deploy → health gate
+```
+
+`publish` builds both images on the runner and pushes them to GHCR tagged with the commit SHA.
+`deploy` assumes an AWS role by GitHub OIDC — no key pair, no stored AWS credential — and sends one
+Systems Manager document, `DeployTicTacToe`, which pulls that pair and recreates both containers.
+Nothing is built on the instance.
+
+**Where to see the outcome**: the Actions tab. The `deploy` job logs the instance's own output,
+the poll count and the final health status.
+
+### When a deployment does not serve
+
+After the containers come up, the runner polls `https://18-175-88-107.sslip.io/health` over public
+HTTPS and needs **two** healthy responses at least 5 seconds apart within 120 seconds. Two rather
+than one because the outgoing container can still answer during recreation.
+
+If that gate fails, the workflow redeploys the previously recorded tag, health-gates that, and
+**marks the run red either way**. A red run with the site up is the pipeline working: your commit
+did not deploy, and a green tick would say it had.
+
+The failed tag is never recorded as the rollback target — only a successful deploy advances that
+pointer. This path has been exercised deliberately once, not just reasoned about: a commit that
+broke the FastCGI document root was pushed, the gate failed, the previous pair went back, and the
+run went red.
+
+Note the coupling: after a fallback the current and previous tags are equal, so there is no second
+rollback target until the next successful deployment.
+
+### Schema changes move forward only
+
+**Migrations must be additive, one table at a time.** `composer check:migrations` enforces it in
+`quality`, so a migration that drops or renames a column fails CI before anything is published.
+
+The reason is not tidiness. On SQLite, Laravel opens **no transaction** around a migration, so one
+that does two things and dies between them leaves the database half-changed *and* unrecorded — the
+next deploy re-runs it, hits "already exists", and every deploy after that fails identically until
+someone repairs it by hand.
+
+And the rollback does not help: **it restores images, never the schema.** Removing a column is
+expand-and-contract across four deployments, with the drop done by hand at the end.
+[`database/migrations/README.md`](database/migrations/README.md) has the sequence and the one trap
+the checker cannot catch.
+
+### There is no backup of the database
+
+The SQLite file lives in a Docker volume on one instance's root EBS volume. Nothing copies it
+anywhere — no snapshot, no S3, no dump. Deployments do not touch it, and six have not lost a game,
+but **if that volume is lost every game and move is gone permanently.**
+
+That was a deliberate scoping decision for a demonstration project, recorded rather than
+overlooked. Volumes are also why `docker compose down -v` is the one command never to run on that
+box: `-v` deletes them, taking both the database and the TLS certificate.
+
+Deploying a specific tag by hand, and rolling back when the pipeline itself is broken, are in
+[`docs/cd.md`](docs/cd.md).
 
 ## No accounts, and what that costs
 
@@ -239,21 +325,38 @@ scheduler process inside the application. On the hosted instance the entry lives
 crontab and runs daily at 03:17:
 
 ```cron
-17 3 * * * cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep
+17 3 * * * cd /srv/tic-tac-toe && docker compose --env-file deploy/release.env exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep
 ```
 
 Install it without opening an editor, which is awkward over Session Manager:
 
 ```bash
-( crontab -l 2>/dev/null; echo '17 3 * * * cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep' ) | crontab -
+( crontab -l 2>/dev/null | grep -v 'games:sweep'
+  echo '17 3 * * * cd /srv/tic-tac-toe && docker compose --env-file deploy/release.env exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep'
+) | crontab -
 crontab -l
 ```
 
-Two parts of that line are load-bearing. `-T` disables the pseudo-TTY: without it cron fails with
-`the input device is not a TTY`, because cron has no terminal. And `logger -t games-sweep` sends
-the output to the journal instead of mailing it to a local user nobody reads — read it back with
-`journalctl -t games-sweep`. Outside a container the same schedule is the bare command:
+Three parts of that line are load-bearing.
+
+`--env-file deploy/release.env` supplies `RELEASE_TAG`. Compose interpolates `compose.yaml` before
+*every* subcommand including `exec`, so without it the entry fails on the unset variable — and the
+only place that shows is `journalctl`. Games silently stop expiring.
+
+`-T` disables the pseudo-TTY: without it cron fails with `the input device is not a TTY`, because
+cron has no terminal.
+
+`logger -t games-sweep` sends the output to the journal instead of mailing a local user nobody
+reads. Read it back with `journalctl -t games-sweep`.
+
+Outside a container the same schedule is the bare command:
 `17 3 * * * cd /path/to/app && php artisan games:sweep`.
+
+Note the shape of the install command. **Do not pipe `crontab -l` through a filter into
+`crontab -`** — if the filter fails it writes nothing, `crontab -` reads zero bytes, and that
+installs an *empty* crontab. The form above cannot do that, because the `echo` runs whether or not
+the read succeeded. Ubuntu's `crontab -l` also hides the header lines it writes itself, so a wiped
+crontab lists as empty rather than as absent.
 
 ## AI tooling
 
@@ -314,10 +417,13 @@ proceeded rather than reconstructed at the end.
 
 | Document | What is in it |
 | --- | --- |
-| [`docs/decisions/`](docs/decisions/README.md) | One decision record per significant technical choice, each with its alternatives and reasons. Eleven of them |
+| [`docs/decisions/`](docs/decisions/README.md) | One decision record per significant technical choice, each with its alternatives and reasons. Twelve of them |
 | [`docs/ai-direction.md`](docs/ai-direction.md) | How the tooling was directed, and every place the generated output was wrong |
-| [`docs/deploy-schedule-swap.md`](docs/deploy-schedule-swap.md) | Deploying the stack, verifying it, scheduling the sweep, and redeploying |
+| [`docs/cd.md`](docs/cd.md) | The pipeline: the one-off manual steps, deploying a tag by hand, rolling back, and what each exit code means |
+| [`docs/deploy-schedule-swap.md`](docs/deploy-schedule-swap.md) | Deploying without the pipeline, for when the pipeline is the broken thing |
 | [`docs/aws-infra.md`](docs/aws-infra.md) | How the instance, security group, role and hostname were provisioned |
+| [`database/migrations/README.md`](database/migrations/README.md) | The additive-schema rules and the expand-and-contract sequence |
+| [`.kiro/specs/continuous-deployment/`](.kiro/specs/continuous-deployment/requirements.md) | The pipeline's own spec: requirements, design and plan |
 | [`.kiro/specs/remote-tic-tac-toe/requirements.md`](.kiro/specs/remote-tic-tac-toe/requirements.md) | The acceptance criteria, in EARS form |
 | [`.kiro/specs/remote-tic-tac-toe/design.md`](.kiro/specs/remote-tic-tac-toe/design.md) | The design, including the correctness properties the suite tests |
 | [`.kiro/specs/remote-tic-tac-toe/tasks.md`](.kiro/specs/remote-tic-tac-toe/tasks.md) | The implementation plan, with what each task actually observed |

@@ -2,6 +2,11 @@
 
 Bears on Requirements 10.11, 12.4 and 12.9.
 
+> **Partly superseded by [ADR-012](adr-012-continuous-deployment.md).** Two claims below no longer
+> hold: the image is no longer built on the instance, and deploys are no longer manual. Both images
+> are built in CI and pulled from GHCR. Everything about the instance, the hostname, the certificate
+> and the volume asymmetry is unchanged and still current.
+
 ## Decision
 
 A single EC2 instance with an Elastic IP, Docker Compose, Caddy for TLS, and the image built
@@ -76,6 +81,12 @@ Source: [Let's Encrypt: short-lived and IP address certificates are generally
 available](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability.html).
 
 ## No continuous deployment, deliberately
+
+> **Superseded by [ADR-012](adr-012-continuous-deployment.md).** A pipeline was built later: CI
+> publishes both images to GHCR and deploys them over SSM Run Command. This section is left as
+> written because the paragraph below turned out to describe what was actually built, including the
+> shape it refuses — no SSH key was ever stored, and ADR-012 honours that. What no longer holds is
+> the first sentence and the claim that the image is built on the box.
 
 Deploys are manual, over a Systems Manager Session Manager shell.
 

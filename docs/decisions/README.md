@@ -22,6 +22,7 @@ the choice of state-synchronisation transport, with its alternatives and its rea
 | [009](adr-009-ec2-compose-caddy.md) | EC2 with Docker Compose and Caddy | One box, one Compose file both locally and in production, and a shared certificate rate limit with four mitigations |
 | [010](adr-010-rematch-tokens-per-request.md) | Rematch tokens are minted per request, not at creation | The server cannot write a token into the absent player's browser |
 | [011](adr-011-php-fpm-behind-caddy.md) | php-fpm behind Caddy in two containers | Operability, not performance — and the record says the choice was inherited rather than decided |
+| [012](adr-012-continuous-deployment.md) | Continuous deployment through GHCR and SSM Run Command | Supersedes ADR-009's no-CD section. One fixed document instead of a root shell, and ADR-009's rejection of a stored SSH key still holds |
 
 ## How to read them
 
@@ -29,13 +30,19 @@ Each file has the same four or five headings: the decision, the alternatives con
 reason, and where there is something to say, what happened in practice and what would change
 the decision.
 
-The "in practice" sections are the ones worth reading later. Four decisions were exercised or
+The "in practice" sections are the ones worth reading later. Five decisions were exercised or
 corrected after the design was written, and those notes carry the facts rather than the
 intentions: **ADR-004**, where WAL and a busy timeout did not prevent a mid-game 500;
 **ADR-007**, where two individually correct constraints made the specified sweep impossible;
 **ADR-009**, where the certificate mitigation depended on a volume declaration that would not
-have worked; and **ADR-005**, where the credential class had to be split to avoid writing a
-token for a slot the request had lost.
+have worked; **ADR-005**, where the credential class had to be split to avoid writing a token
+for a slot the request had lost; and **ADR-012**, where four defects were caught by review
+before the first deployment and one only by running it.
+
+**ADR-012 supersedes part of ADR-009** — its "No continuous deployment, deliberately" section,
+and only that section. ADR-009 is left as written rather than edited, because what it rejected
+(an SSH private key in repository secrets) is still rejected, and the record of that reasoning
+is worth more than a tidy document.
 
 Correction history for the project as a whole lives in [`../ai-direction.md`](../ai-direction.md),
 not here. These files record decisions.

@@ -307,11 +307,27 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - _Requirements: 1.4_
 
 - [ ] 9. Documentation
-  - [ ] 9.1 Update the README
+  - [x] 9.1 Update the README
     - The additive-schema rule, the expand-and-contract sequence, and one schema change per migration
     - That schema changes move forward only and an image rollback does not reverse a migration
     - How a deploy is triggered, where its outcome is observed, and that a failed gate redeploys the previous tag
     - That no backup of the database volume exists and what its loss costs
+    - New `## Deployment` section carrying all four, plus that the failed tag never becomes the
+      rollback target and that after a fallback there is no second one until the next good deploy
+    - **Seven stale claims corrected, found by reading rather than assumed:** the container section
+      said `docker compose up -d --build`, which no longer has a `build:` key to act on; the test
+      counts were 298/8,394 against an actual 307/8,415; the CI section said two jobs where there are
+      now four; the crontab entry lacked `--env-file deploy/release.env` and would have failed
+      nightly; the decision-record count said eleven; `composer check:migrations` was missing from
+      the commands table; and there was no link to `docs/cd.md` or `database/migrations/README.md`
+    - **The setup instructions were verified rather than trusted**, because the challenge brief asks
+      specifically for "enough documentation to run the code and any tests". A fresh `git clone` into
+      an empty directory, then `composer setup` (exit 0 — created `.env`, a base64 `APP_KEY`, the
+      SQLite file with all six migrations `Ran`, and `public/build/manifest.json`), `php artisan serve`,
+      then over HTTP: home page 200, `/health` returning `persistence: reachable`, a game created by
+      POST and its join code read back off the rendered Inertia props. `composer test` in that clone
+      reported the same 307 tests and 8,415 assertions now quoted in the README
+    - Every relative link and in-page anchor in the README checked programmatically; all resolve
     - _Requirements: 9.1, 9.2, 9.3, 9.4_
   - [x] 9.2 Add `database/migrations/README.md`
     - The additive and one-change rules where a person writing a migration will actually meet them
@@ -319,17 +335,34 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
       loss, the non-nullable-column trap the checker cannot see, and why the three scaffold files
       are exempt. The checker's failure message points here
     - _Requirements: 9.2_
-  - [ ] 9.3 Write `docs/decisions/adr-012-continuous-deployment.md` and index it
+  - [x] 9.3 Write `docs/decisions/adr-012-continuous-deployment.md` and index it
     - Decision, alternatives, reason, in the form the other eleven records use
     - State that it supersedes ADR-009's "No continuous deployment, deliberately" section, that ADR-009's rejection of an SSH key in repository secrets **still holds and is honoured**, and that what no longer holds is manual deploys and building on the box
     - Carry across the design's four ADR-style records and what each deliberately does not claim
+    - Six "does not claim" entries: not zero-downtime; the fallback restores images not schema; one
+      table per migration bounds the blast radius but cannot make a migration atomic; after a
+      fallback there is no second rollback target; `GetCommandInvocation` on `*` cannot be narrowed;
+      and the fallback still needs GitHub reachable for the config even though the images are local
+    - **ADR-009 was annotated rather than edited.** A banner at the top marks the two claims that no
+      longer hold, and a second in the superseded section notes that the CD shape it sketched is
+      almost exactly what was later built. Rewriting it would have destroyed the record of why a
+      stored SSH key was refused, which is the part still in force
+    - Index updated: ADR-012 added, "four decisions exercised or corrected" → five, and a note that
+      the supersession is partial
     - _Requirements: 9.5, 9.6_
   - [ ] 9.4 Rewrite `docs/deploy-schedule-swap.md` as the by-hand path
     - Deploying a named Release_Tag and restoring the previous one by hand, for when the pipeline itself is broken
     - Remove the build-on-the-box loop and its rebuild table; keep the swap, the sweep crontab and the prune guidance
     - _Requirements: 9.8_
-  - [ ] 9.5 Correct the stale claims in the `remote-tic-tac-toe` spec
+  - [x] 9.5 Correct the stale claims in the `remote-tic-tac-toe` spec
     - The Deployment section of its design and that document's ADR-009 summary both state there is no registry and no CD pipeline
+    - Three places corrected in `design.md`, each annotated rather than rewritten: the assets
+      paragraph claiming the image is built on the instance with no registry and no pipeline; the
+      sentence enumerating every `docker compose` command in the deployment as `up -d --build` and
+      later rebuilds; and the ADR-009 summary's "built on the box"
+    - Annotated because a spec is a record of what was decided when. Silently editing it to match
+      the present would erase that the no-registry decision was made deliberately and then reversed
+      — which is the more useful fact
     - _Requirements: 9.9_
 
 - [x] 10. The fallback drill

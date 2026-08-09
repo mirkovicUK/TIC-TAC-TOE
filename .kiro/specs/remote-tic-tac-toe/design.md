@@ -1154,7 +1154,9 @@ Volumes: `sqlite-data` (the database file and the `sessions` table with it) and 
 
 **The asymmetry with `sqlite-data` is deliberate, not an oversight.** `sqlite-data` stays project-scoped: it is only ever mounted by the real stack, so prefixing is harmless, and if it were lost the database is rebuilt by `php artisan migrate` — the only cost is that in-flight games disappear, which for a two-player game with a seven-day retention window is recoverable. `caddy-data` is external because it crosses a project boundary *and* because its contents are not reproducible on demand: re-obtaining the certificate depends on a rate limit shared with strangers, which is exactly the thing that cannot be recovered inside the submission window. Neither volume should be made consistent with the other in either direction.
 
-Assets are built at image build time (`npm ci && npm run build`), so no Node runtime ships to production. The image is built on the instance by `docker compose up -d --build`; there is no registry and no CD pipeline, which is a scoping decision recorded in ADR-009.
+Assets are built at image build time (`npm ci && npm run build`), so no Node runtime ships to production.
+
+> **Superseded.** This paragraph originally said the image is built on the instance by `docker compose up -d --build`, and that there is no registry and no CD pipeline. Both images are now built in CI and pulled from GHCR by commit SHA; `compose.yaml` has no `build:` key. The scoping decision recorded here was real and was later reversed — see the `continuous-deployment` spec and [ADR-012](../../../docs/decisions/adr-012-continuous-deployment.md). Assets are still built at image build time, which is the part of this paragraph that still holds.
 
 Because `web` proxies to `app`, `TrustProxies` must trust the `web` container so `X-Forwarded-For` is honoured; without it the IP-keyed half of Rate_Limit_Subject collapses to Caddy's address, as set out under Rate limits.
 
@@ -1168,7 +1170,7 @@ The security group exposes **only 80 and 443 inbound. Port 22 is not opened.** S
 
 It is worth the ten minutes it costs because it removes the most heavily scanned port on the internet from the attack surface, and because it is a deliberate application-security decision rather than the default the console hands you.
 
-Every `docker compose` command in the deployment — the initial `up -d --build`, later rebuilds, and the `docker compose exec` in the `games:sweep` crontab entry below — runs through that session. Port 9000 stays unpublished, so php-fpm remains reachable only from the `web` container, which is the condition the `*` trusted proxy range depends on.
+Every `docker compose` command in the deployment — originally the initial `up -d --build` and later rebuilds, now the `up -d --wait` the SSM document runs, plus the `docker compose exec` in the `games:sweep` crontab entry below — runs on that instance. Port 9000 stays unpublished, so php-fpm remains reachable only from the `web` container, which is the condition the `*` trusted proxy range depends on.
 
 Retention runs from the host crontab, which the README documents (Req 12.12):
 
@@ -1249,6 +1251,8 @@ Each of these gets a file under `docs/decisions/` stating the decision, the alte
 **Reason.** Requirement 14.5 asks for one test driving two sessions to a terminal state, and one is what the deliverable gets. Browser automation is the slowest and least reliable part of CI; the marginal test buys coverage the feature suite already provides, at a cost paid on every push.
 
 ### ADR-009: EC2 with Docker Compose and Caddy
+
+> **Partly superseded by [ADR-012](../../../docs/decisions/adr-012-continuous-deployment.md).** "Built on the box" and "deploys are manual" no longer hold. Everything else here — the instance, the hostname, the certificate and its mitigations — is current. The CD shape sketched under "No continuous deployment, deliberately" below is, almost exactly, what was later built: GitHub OIDC assuming an AWS role, driving the deploy through SSM Run Command, with no stored credential and no SSH key.
 
 **Decision.** A single EC2 instance with an Elastic IP, Docker Compose, Caddy for TLS, built on the box.
 
