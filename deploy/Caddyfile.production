@@ -36,11 +36,9 @@
 	# for /srv/public/index.php, which does not exist over there, and every PHP request
 	# fails while the static files keep working. Found by smoke-testing the two images
 	# together in task 13.1.
-	# DRILL (task 10.1) — the `root /var/www/html/public` override is REMOVED on purpose.
-	# Caddy now sends SCRIPT_FILENAME=/srv/public/index.php, which does not exist in the
-	# `app` container, so php-fpm answers "Primary script unknown" and every PHP request
-	# fails while the static files keep working. Revert the next commit to restore it.
-	php_fastcgi app:9000
+	php_fastcgi app:9000 {
+		root /var/www/html/public
+	}
 
 	file_server
 
