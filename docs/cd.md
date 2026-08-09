@@ -120,7 +120,37 @@ aws iam get-role --role-name tic-tac-toe-deploy \
 ```
 
 You are looking for `StringEquals` with the full value
-`repo:mirkovicUK/TIC-TAC-TOE:environment:production` and **no `*` anywhere in it**. A
+
+```
+repo:mirkovicUK@105384880/TIC-TAC-TOE@1325118189:environment:production
+```
+
+and **no `*` anywhere in it**.
+
+**Those numbers are not a typo and they are not optional.** Every guide, AWS's included, gives
+the form `repo:<owner>/<repo>:environment:<name>`. GitHub now embeds immutable account and
+repository ids in the default subject claim for new repositories, so a policy written from the
+documentation is accepted by AWS and then denies every assumption. The failure looks like a
+missing permission, not a claim mismatch, and the workflow log only repeats "not authorized"
+twelve times.
+
+If it ever denies again, get the subject GitHub actually sent rather than guessing:
+
+```bash
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity \
+  --max-results 1 \
+  --query 'Events[0].CloudTrailEvent' --output text | jq -r '.userIdentity.userName'
+```
+
+That prints the exact string the condition must equal, including the ids. Then:
+
+```bash
+aws iam update-assume-role-policy --role-name tic-tac-toe-deploy \
+  --policy-document file://deploy/iam/deployment-role-trust-policy.json
+```
+
+A
 `StringLike` with `repo:mirkovicUK/TIC-TAC-TOE:*` would let a pull request from a fork assume
 this role and deploy. AWS rejects a `sub` condition that is *only* a wildcard, but it will
 happily accept one that is merely too broad — so this check is on you, not on AWS.
@@ -458,7 +488,7 @@ a new migration.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `Error: Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` does not match, step 1 skipped, or the job is missing `environment: production` | Compare the `sub` value against `repo:mirkovicUK/TIC-TAC-TOE:environment:production` exactly, and confirm the deploy job declares the environment |
+| `Error: Not authorized to perform sts:AssumeRoleWithWebIdentity`, twelve retries | Trust policy `sub` does not match, step 1 skipped, or the job is missing `environment: production` | Read the subject GitHub actually presented out of CloudTrail (below) and make the condition equal it. Do not compare against the documented form — this repository's tokens carry immutable numeric ids |
 | `MalformedPolicyDocument` creating the role | Trust policy omits the `sub` condition AWS requires for a shared provider | Add the `sub` condition to the policy file |
 | A deploy ran from a branch other than `main` | The `production` environment has no deployment-branch restriction — step 2 | Restrict it to `main` only |
 | `AccessDeniedException` on `ssm:SendCommand` | Permissions policy missing the instance ARN or the document ARN — it needs both | Re-apply step 3's `put-role-policy` |

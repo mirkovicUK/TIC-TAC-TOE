@@ -12,7 +12,17 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
   - [x] 1.1 Write `deploy/iam/deployment-role-trust-policy.json`
     - Federated principal is the GitHub OIDC provider ARN in account `811362454196`
     - `StringEquals` on `token.actions.githubusercontent.com:aud` = `sts.amazonaws.com`
-    - `StringEquals` on `token.actions.githubusercontent.com:sub` = `repo:mirkovicUK/TIC-TAC-TOE:environment:production`, with no wildcard character anywhere in the value
+    - `StringEquals` on `token.actions.githubusercontent.com:sub` = `repo:mirkovicUK@105384880/TIC-TAC-TOE@1325118189:environment:production`, with no wildcard character anywhere in the value
+    - **The numeric ids are load-bearing and contradict every guide including AWS's own.** The
+      documented subject is `repo:<owner>/<repo>:environment:<name>`; GitHub now embeds immutable
+      account and repository ids in the default claim for new repositories, so the documented form
+      is accepted by AWS and then denies every assumption. Found only after the first deploy failed
+      twelve retries with `Not authorized to perform sts:AssumeRoleWithWebIdentity` — which reads
+      as a missing permission rather than a claim mismatch
+    - The subject is not guessable from the docs, so **read it out of CloudTrail**: a denied
+      `AssumeRoleWithWebIdentity` logs the presented subject in `userIdentity.userName`. One call
+      settled what the workflow log could not say at all. Ids verified against the GitHub API
+      (`owner.id`, `id`) rather than transcribed from the log
     - **Environment scoping, not a branch reference, and the branch restriction moves as a result.** A job targeting an environment presents `environment:` in its subject and carries no `ref:` segment, so the two forms are mutually exclusive. The branch boundary is re-established by the environment's deployment-branch rule in task 2.4, and without that rule any branch could deploy through the environment
     - Comment in the surrounding documentation, not the JSON, that `StringLike` with `repo:owner/name:*` would let a pull request from a fork assume the role — this is the whole reason the condition is written this way. Note also that AWS classifies GitHub Actions as a shared OIDC provider with `sub` as its tenancy claim, and refuses a trust policy that omits it with `MalformedPolicyDocument`
     - _Requirements: 3.3, 3.4, 3.7_

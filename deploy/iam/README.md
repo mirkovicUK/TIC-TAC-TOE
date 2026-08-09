@@ -26,14 +26,44 @@ trust policy that omits `token.actions.githubusercontent.com:sub` (failing with
 then recommends scoping to a GitHub environment with protection rules in preference to a bare
 branch condition.
 
+**The subject carries immutable numeric IDs, and every guide including AWS's own says it does
+not.** The documented form is `repo:<owner>/<repo>:environment:<name>`. What this repository's
+tokens actually present is
+
+```
+repo:mirkovicUK@105384880/TIC-TAC-TOE@1325118189:environment:production
+```
+
+`105384880` is the account id and `1325118189` the repository id, both confirmed against the
+GitHub API. This is GitHub's
+[immutable subject claims](https://github.blog/changelog/2026-04-23-immutable-subject-claims-for-github-actions-oidc-tokens/)
+change: new repositories get identifiers that are assigned once and never reused embedded in the
+default `sub`, so renaming or transferring the repository no longer changes what a trust policy
+matches. (Content rephrased for compliance with licensing restrictions.)
+
+It is a better boundary than the name form, which is presumably the point — a name can be
+released and re-registered by somebody else, an id cannot. But it is a silent break: a policy
+written from the documentation is accepted by AWS and then denies every assumption with
+`Not authorized to perform sts:AssumeRoleWithWebIdentity`, which reads as a missing permission
+rather than a claim mismatch.
+
+**Diagnose it from CloudTrail, not from the workflow log.** The runner cannot show you the
+token, but a denied `AssumeRoleWithWebIdentity` is logged with the presented subject in
+`userIdentity.userName`:
+
+```bash
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity \
+  --max-results 1 \
+  --query 'Events[0].CloudTrailEvent' --output text | jq -r '.userIdentity.userName'
+```
+
+That prints the exact string the condition has to equal. It settled this in one call after the
+retry loop in the workflow log said only "not authorized" twelve times.
+
 **The branch restriction is not in this file, and that is deliberate.** The two subject forms
-are mutually exclusive: a job that targets an environment presents
-
-```
-repo:mirkovicUK/TIC-TAC-TOE:environment:production
-```
-
-and carries no `ref:` segment at all. So scoping here to the environment *moves* the branch
+are mutually exclusive: a job that targets an environment carries no `ref:` segment at all. So
+scoping here to the environment *moves* the branch
 restriction out of AWS and into the `production` environment's **deployment branches** rule in
 GitHub, which is set to `main` and nothing else. That rule is the whole branch boundary — remove
 it and any branch targeting the environment could assume this role. GitHub applies it before
@@ -94,3 +124,11 @@ grep 'sub"' deploy/iam/deployment-role-trust-policy.json    # must be StringEqua
 The first confirms the JSON parses. The second is the one that matters: **no asterisk may appear
 anywhere in the trust policy.** The third confirms the subject is the environment form the
 `production` environment will actually present.
+
+With AWS access, the check worth having is that the ids in the subject are still this
+repository's — they are stable, so a mismatch means the file was copied from somewhere else:
+
+```bash
+curl -sS https://api.github.com/repos/mirkovicUK/TIC-TAC-TOE | jq -r '"\(.owner.id) \(.id)"'
+grep -o '@[0-9]*' deploy/iam/deployment-role-trust-policy.json
+```
