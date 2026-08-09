@@ -96,15 +96,26 @@ Run Command executes as root. The script drops to `ssm-user` for anything touchi
 
 Steps, in order:
 
-1. `sudo -u ssm-user git -C /srv/tic-tac-toe fetch --depth 1 origin <SHA>` then `checkout` that SHA. The clone is still needed even though the images come from the Registry: `deploy/Caddyfile.production` is bind-mounted into `web`, and `compose.yaml` itself has to match the images being deployed.
-2. Check free space on `/`. Below 3 GiB, prune images outside the current and previous tags and re-check; still short, fail before anything is brought down (Req 4.6).
-3. `docker pull` both images by their full reference. Explicit pulls rather than letting `up` do it, so a partial pull is caught before any container is recreated (Req 2.2, 7.4).
-4. `docker image inspect` both. Either missing, stop — the running stack is untouched (Req 7.4).
-5. Rewrite `release.env`: `PREVIOUS_RELEASE_TAG` takes the outgoing `RELEASE_TAG`, **only if the tag being deployed differs from it** (Req 6.1).
-6. `docker compose --env-file deploy/release.env up -d`.
-7. Print the `org.opencontainers.image.revision` label of both running containers, and the resolved digests, to stdout — which Run Command captures and the workflow copies into its log (Req 4.8).
+1. Take an exclusive `flock` on `deploy/.deploy.lock`, exiting non-zero if held. One deployment at a time **enforced on the instance**: GitHub's concurrency group serialises workflow runs, but a person running `send-command` by hand is outside it, and two runs would interleave on one working directory and one env file (Req 4.9).
+2. Resolve the tag to deploy. In `deploy` mode that is `ReleaseTag`; in `fallback` mode the document **ignores `ReleaseTag` and reads `PREVIOUS_RELEASE_TAG` from the instance**, because the instance is the only thing that authoritatively knows it (Req 6.2).
+3. `sudo -u ssm-user git fetch --depth 1` then `checkout` that SHA. The clone is still needed even though the images come from the Registry: `deploy/Caddyfile.production` is bind-mounted into `web`, and `compose.yaml` has to match the images being deployed.
+4. `docker pull` both images. Explicit pulls rather than letting `up` do it, so a partial pull is caught before any container is recreated (Req 2.2, 7.4).
+5. Reclaim disk **by name**, removing every image under the two repositories except the four belonging to the deploying and the retained tag, then assert 2 GiB free (Req 4.6).
+6. Write the new `release.env` to a **temporary file**, and promote it with `mv` only after Compose succeeds (Req 2.5, 6.1).
+7. `docker compose --env-file <tmp> up -d --wait`.
+8. **Assert** that the `org.opencontainers.image.revision` label of both running containers equals the deployed tag, exiting non-zero on any mismatch (Req 7.5).
+9. Print the resolved images and the promoted `release.env` — captured by Run Command and copied into the workflow log (Req 4.8).
 
 Bounded by `--timeout-seconds 600` on the invocation (Req 4.7). A ~1 GB pull on a `t3.micro` should take a couple of minutes; ten is generous without being unbounded.
+
+**Four of those steps are the way they are because a review found the obvious version wrong.** They are recorded here because each failure would have been silent:
+
+- **`docker image prune -f` reclaims nothing here.** It removes *dangling* images only, and every image carries a `:<sha>` tag, so the disk guard was decorative — it would free nothing, then fail the re-check with a message implying it had tried. `prune -a` is not the fix either: it removes whatever no *running* container uses, which is precisely the retained pair the fallback depends on. Hence deletion by name against an explicit keep-set.
+- **Writing `release.env` before Compose succeeded broke Property 2 of this design.** A failed `up` left the file naming a release that never ran, and the next good deployment would then record that never-ran tag as the fallback target. The temp-file-then-`mv` ordering is what makes the property true; `mv` within one filesystem is atomic, so there is no half-written window.
+- **`up -d` exits 0 for a container that starts and dies two seconds later.** `--wait` blocks until every service *with a healthcheck* is healthy, so a healthcheck was added to `web` — verified against `caddy:2-alpine`, whose busybox `wget` can reach the admin API on `127.0.0.1:2019`. Without it, `--wait` would have degraded to "running" for half the stack.
+- **Reading the revision label without comparing it proved nothing.** Compose may decline to recreate a container, in which case a stale one reports its old SHA into the log and the deployment passes. The comparison is now an assertion.
+
+Two smaller consequences of the same review: containers are resolved with `docker compose ps -q <service>` rather than by the literal name `tic-tac-toe-app-1`, so the script does not depend on a naming convention even though `compose.yaml` pins the project name; and `jq` is asserted present at the top, because the document has a hard runtime dependency that nothing else declares.
 
 ### Health gate and fallback
 

@@ -8,7 +8,7 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
 
 ## Tasks
 
-- [x] 1. The IAM policy documents, as tracked files
+- [x] 1. The tracked deployment artifacts
   - [x] 1.1 Write `deploy/iam/deployment-role-trust-policy.json`
     - Federated principal is the GitHub OIDC provider ARN in account `811362454196`
     - `StringEquals` on `token.actions.githubusercontent.com:aud` = `sts.amazonaws.com`
@@ -26,9 +26,19 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
   - [x] 1.3 Write `deploy/ssm/DeployTicTacToe.json`
     - Command document, schema 2.2, one `aws:runShellScript` step whose `runCommand` block is fixed by the document
     - Parameters: `ReleaseTag` with `allowedPattern` `^[0-9a-f]{40}$`, and `Mode` with `allowedValues` `deploy` / `fallback`. An unconstrained parameter interpolated into a shell command is an injection path and would restore the arbitrary execution this document exists to remove
-    - **No doubled curly brace anywhere in the script except a reference to those two parameters, including inside a comment.** SSM uses that delimiter for its own substitution, so a Go template in `docker inspect --format` would be read as a parameter reference and fail the document. The script reads the revision label with `jq`, which is present on the instance
+    - **No doubled curly brace anywhere in the script except a reference to those two parameters, including inside a comment.** SSM uses that delimiter for its own substitution, so a Go template in `docker inspect --format` would be read as a parameter reference and fail the document. The script reads the revision label with `jq` and resolves containers with `docker compose ps -q` for that reason
     - Verify by extracting the `runCommand` array, running `bash -n` over it, and grepping for doubled braces that are not one of the two parameters
-    - _Requirements: 3.5a, 3.5b, 4.7, 4.10, 6.1, 7.4_
+    - Four things a review caught, each of which would have failed silently, and all four are now in the script: `docker image prune -f` frees nothing when every image is tagged and `prune -a` would delete the fallback pair, so reclamation is **by name against a keep-set**; writing `release.env` before Compose succeeded would have recorded a never-ran tag as the next fallback target, so it is a temp file promoted with `mv`; `up -d` exits 0 for a container that dies two seconds later, so it is `up -d --wait`; and reading the revision label without comparing it proves nothing, so the comparison is an assertion that exits 67
+    - `flock -n` on `deploy/.deploy.lock` at the top, because GitHub's concurrency group does not cover a person running `send-command` by hand
+    - `jq` is asserted present in the first lines. It is a hard runtime dependency of this document and is declared in `docs/aws-infra.md`
+    - _Requirements: 3.5a, 3.5b, 4.7, 4.9, 4.10, 6.1, 6.2, 7.4, 7.5_
+
+  - [x] 1.4 Add a healthcheck to the `web` service in `compose.yaml`
+    - `wget --spider` against Caddy's admin API on `127.0.0.1:2019/config/`; busybox `wget` is present in `caddy:2-alpine` and `curl` is not
+    - **This is what makes `up -d --wait` mean anything for `web`.** `--wait` only waits on services that declare a healthcheck and degrades to "running" for those that do not, so without it half the stack was ungated
+    - Not the public site: probing that from inside the container would need the real hostname and a certificate valid for it, so it would fail for reasons unrelated to health. Whether the site serves is the workflow's health gate in task 6.3
+    - Landed with 1.3 rather than in group 4, because the document written there depends on it and the change is safe ahead of the Registry switch
+    - _Requirements: 4.10, 5.5_
 
 - [ ] 2. Provision the AWS identity, by hand
   - [ ] 2.1 Create the GitHub OIDC provider
@@ -103,12 +113,11 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - `permissions: { contents: read, id-token: write }`; `aws-actions/configure-aws-credentials` pinned by SHA with `role-duration-seconds: 3600`
     - `concurrency: { group: deploy-production, cancel-in-progress: false }` — `false` is load-bearing, because cancelling mid-deploy could leave the stack down or `release.env` half-written
     - _Requirements: 3.1, 3.3b, 3.6, 4.9_
-  - [ ] 6.2 Write the deploy script and send it by Run Command
-    - `ssm:SendCommand --document-name DeployTicTacToe --timeout-seconds 600` with the `ReleaseTag` and `Mode` parameters; the workflow passes no commands, because the document holds them
-    - Order: fetch and checkout the SHA **as `ssm-user`**; check free space and prune if below 3 GiB; `docker pull` both explicitly; `docker image inspect` both and stop if either is missing; rewrite `release.env`; `compose --env-file deploy/release.env up -d`
-    - **Every repository operation runs as `ssm-user`.** Run Command executes as root, and `git` as root in `/srv/tic-tac-toe` fails with `detected dubious ownership`, which reads as a repository fault rather than the permissions one it is
-    - `PREVIOUS_RELEASE_TAG` is written **only** when the tag being deployed differs from the current one
-    - Copy the invocation's stdout and stderr into the workflow log whatever its status
+  - [ ] 6.2 Send the deployment by Run Command and wait on it
+    - **The script is not written here.** It is already fixed inside `DeployTicTacToe` from task 1.3; the workflow's whole job is to invoke it and report. This is the point of the custom document — the workflow passes two parameters and no commands
+    - `aws ssm send-command --document-name DeployTicTacToe --instance-ids i-0c6bab4bc4644e760 --timeout-seconds 600 --parameters ReleaseTag=<sha>,Mode=deploy`, then poll `get-command-invocation` until it leaves `InProgress`
+    - Copy the invocation's `StandardOutputContent` and `StandardErrorContent` into the workflow log **whatever its status**, and fail the step on any status other than `Success`
+    - The document's exit codes are the diagnosis, so keep them visible rather than collapsing them: 64 resolved tag not a SHA, 65 `release.env` missing, 66 out of disk, 67 revision label mismatch, 68 service not running, 69 `jq` missing, 70 another deployment holds the lock, 71 no previous tag recorded
     - _Requirements: 2.2, 4.1, 4.2, 4.6, 4.7, 4.8, 4.10, 6.1, 7.4_
   - [ ] 6.3 Add the health gate
     - Poll `https://18-175-88-107.sslip.io/health` from the runner, certificate validation left on, at no more than 10-second intervals within a 120-second budget
@@ -116,15 +125,19 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Treat a failure status, an unreachable-persistence body, and no response alike as breaking the consecutive run
     - Log the poll count and the final status; on failure also log the health status Compose reports for `app`
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
-  - [ ] 6.4 Add the pair check, ordered before the prune
-    - Read `org.opencontainers.image.revision` from both running containers, compare the two against each other and against the deployed tag, and fail the run on any disagreement
-    - **The comparison runs before the image prune**, so a mismatch leaves every image in place for diagnosis. This is the resolution the design records for requirement 4.6 firing on a healthy response while 7.5 can fail the run afterwards
-    - A mismatch does **not** trigger the fallback: it is a registry-state problem, and the fix is to republish rather than to revert
+  - [ ] 6.4 Route the pair-check failure without triggering the fallback
+    - **The comparison itself now lives in the document**, which asserts both containers' `org.opencontainers.image.revision` against the deployed tag and exits 67 on a mismatch. It belongs there because that is the only place that can read a container's labels
+    - What this task adds is the routing: exit 67 fails the run and the fallback is **not** attempted. A mismatch means the registry holds an image whose label disagrees with its tag, so reverting deploys nothing better; the fix is to republish
+    - **The ordering concern the design raised is resolved by the keep-set rather than by ordering.** Reclamation deletes by name and keeps both the deploying and the retained pair, so a mismatch cannot destroy the image it is about even though the reclaim runs before the assertion
+    - Note in the workflow that the reclaim runs *after* the pull, and it has to: the keep-set is resolved by reference, so an image not yet pulled would not be in it and would be deleted immediately after arriving
     - _Requirements: 4.6, 7.5_
   - [ ] 6.5 Add the fallback
-    - Confirm both images of `PREVIOUS_RELEASE_TAG` are present **before** the failing stack is disturbed; if absent or unrecorded, fail with the failed deployment left running
-    - Deploy the previous pair without rewriting `PREVIOUS_RELEASE_TAG`, health-gate it, and fail the run either way
+    - A second `send-command` with `Mode=fallback`. **The workflow does not name a tag** — it passes the same `ReleaseTag` value, which that mode ignores, because the parameter is required and SSM 2.2 has no conditional parameters
+    - **The instance decides what to restore**, reading `PREVIOUS_RELEASE_TAG` from `release.env`. That is the only place the previous tag is authoritatively known, and it removes the workflow's need to scrape it out of a prior command's output
+    - Exit 71 means nothing was recorded to fall back to; the failed deployment stays running and the run fails. The failing stack is not disturbed before the document has resolved a tag it can actually deploy
+    - Health-gate the restored release with the same poll as 6.3, and fail the run either way — a site that is up on the previous version is still a failed deployment
     - At most one fallback per run; if its gate also fails, leave it and attempt nothing further
+    - `Mode=fallback` leaves `PREVIOUS_RELEASE_TAG` untouched, so the pointer still names what it did before, which is what makes a second fallback attempt meaningless rather than destructive
     - Log the failed tag, the tag deployed in its place, and the outcome
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8_
 
@@ -196,7 +209,8 @@ flowchart TD
     T11["1.1 trust policy"] --> T22["2.2 create role"]
     T12["1.2 permissions policy"] --> T22
     T21["2.1 OIDC provider"] --> T22
-    T13["1.3 DeployTicTacToe.json"] --> T25["2.5 register document"]
+    T14["1.4 web healthcheck<br/>makes --wait meaningful"] --> T13["1.3 DeployTicTacToe.json"]
+    T13 --> T25["2.5 register document"]
     T22 --> T23["2.3 role ARN as variable"]
     T11 --> T24["2.4 production environment<br/>branches: main only"]
 
@@ -239,9 +253,9 @@ flowchart TD
 ```json
 {
   "waves": [
-    { "wave": 1, "tasks": ["1.1", "1.2", "2.1", "3.1", "7.1"] },
-    { "wave": 2, "tasks": ["2.2", "2.5", "5.1", "7.2"] },
-    { "wave": 3, "tasks": ["2.3", "2.4", "5.2", "5.3", "3.2", "7.3"] },
+    { "wave": 1, "tasks": ["1.1", "1.2", "1.4", "2.1", "3.1", "7.1"] },
+    { "wave": 2, "tasks": ["1.3", "2.2", "5.1", "7.2"] },
+    { "wave": 3, "tasks": ["2.3", "2.4", "2.5", "5.2", "5.3", "3.2", "7.3"] },
     { "wave": 4, "tasks": ["4.1"] },
     { "wave": 5, "tasks": ["4.2", "6.1", "9.2"] },
     { "wave": 6, "tasks": ["6.2"] },
@@ -260,7 +274,8 @@ Three edges are ordering hazards rather than mere dependencies, and each is the 
 
 - **3.1 before 4.1.** Landing the `image:` change before `release.env` exists strands the instance — Compose refuses to act on an unset variable, which is correct and still an outage.
 - **5.1 before 3.2 before 6.1.** The packages must exist before they can be made public, and must be public before the instance can pull without a credential.
-- **6.4 before the prune inside 6.2.** The pair check must run before images are removed, or a failing run destroys the evidence.
+- **1.4 before 1.3.** The document's `up -d --wait` only gates services that declare a healthcheck. Written without the `web` healthcheck, it would have looked like a gate over the whole stack while covering half of it.
+- **Pull before reclaim, inside the document.** The keep-set is resolved by image reference, so an image not yet pulled would not be in it and would be deleted the moment it arrived. The cost is that a pull can hit a full disk before the guard runs, which on ~13 GiB free and ~1 GiB images is an accepted trade.
 
 Group 7 is independent of the pipeline and can be done at any point. Group 9 mostly waits on 8.1, because the documentation should describe a pipeline that has been observed working rather than one that is intended to.
 
