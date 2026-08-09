@@ -41,20 +41,20 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - _Requirements: 4.10, 5.5_
 
 - [ ] 2. Provision the AWS identity, by hand
-  - [ ] 2.1 Create the GitHub OIDC provider
+  - [x] 2.1 Create the GitHub OIDC provider
     - `aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com`
     - No thumbprint argument; AWS manages GitHub's
     - Only a Vercel provider exists in the account today, so this is a first for GitHub
     - _Requirements: 3.1_
-  - [ ] 2.2 Create the Deployment_Role from the two policy files
+  - [x] 2.2 Create the Deployment_Role from the two policy files
     - `create-role` with `--assume-role-policy-document file://deploy/iam/deployment-role-trust-policy.json`, then attach the permissions policy
     - Record the role ARN; the workflow needs it, and it is not a secret
     - **Verify the trust policy refuses the wrong caller** rather than only that it accepts the right one: confirm the `sub` condition is present and contains no wildcard, since AWS itself rejects a policy whose `sub` condition is solely a wildcard but will accept one that is merely too broad
     - _Requirements: 3.1, 3.3_
-  - [ ] 2.3 Add the role ARN as a repository variable, not a secret
+  - [x] 2.3 Add the role ARN as a repository variable, not a secret
     - It identifies a role that only this repository's Deployment_Environment may assume, so it is not sensitive; a variable rather than a secret keeps it readable in the workflow file's context
     - _Requirements: 3.2_
-  - [ ] 2.4 Create the `production` environment and restrict its deployment branches
+  - [x] 2.4 Create the `production` environment and restrict its deployment branches
     - GitHub: Settings → Environments → New environment, named `production`
     - Under Deployment branches, select **Selected branches** and add `main` only
     - No required reviewers and no wait timer — the friction stays identical to a branch condition; a reviewer gate is a checkbox to add later without touching AWS
@@ -92,18 +92,18 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - It currently states the image is built on the instance and that there is no registry and no CD pipeline
     - _Requirements: 9.9_
 
-- [ ] 5. The `publish` job
-  - [ ] 5.1 Add `publish` to `.github/workflows/ci.yml`
+- [x] 5. The `publish` job
+  - [x] 5.1 Add `publish` to `.github/workflows/ci.yml`
     - `needs: browser`, `if: github.ref == 'refs/heads/main'`, `permissions: { contents: read, packages: write }`
     - `docker/build-push-action` pinned by SHA, once per target, `platforms: linux/amd64` only
     - Tag each image with the full 40-character commit SHA; publish no `latest`
     - `cache-from`/`cache-to: type=gha` so a cold runner does not repeat Composer and npm on every push
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.6_
-  - [ ] 5.2 Set the revision label on both images
+  - [x] 5.2 Set the revision label on both images
     - `org.opencontainers.image.revision` carrying the commit SHA
     - This is the value the pair check in 6.4 reads back; it must come from the build, not from the deployment environment
     - _Requirements: 1.8_
-  - [ ] 5.3 Correct the `permissions` comment in `ci.yml`
+  - [x] 5.3 Correct the `permissions` comment in `ci.yml`
     - It states that nothing in the workflow writes to the repository or publishes anything, which `publish` makes false
     - _Requirements: 9.9_
 

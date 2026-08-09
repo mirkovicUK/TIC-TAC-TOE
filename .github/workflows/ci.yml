@@ -7,7 +7,11 @@ on:
   push:
   pull_request:
 
-# Read-only token: nothing here writes to the repository or publishes anything.
+# The workflow default, and what `quality` and `browser` get: read the repository and
+# nothing else. `publish` raises `packages: write` for GHCR and `deploy` raises
+# `id-token: write` to mint the OIDC token AWS trades for a role. Both are declared on
+# the job rather than here, so the two test jobs cannot publish an image or obtain an
+# AWS credential.
 permissions:
   contents: read
 
@@ -257,3 +261,102 @@ jobs:
 
       - name: Run the browser test
         run: vendor/bin/pest --group=browser
+
+  # Builds and pushes the Image_Pair to GHCR, tagged by the full commit SHA.
+  #
+  # `needs: browser` puts it behind both test jobs, so the registry never holds a tag the
+  # suite has not passed. `github.ref` is `refs/pull/N/merge` on a pull request and
+  # `refs/heads/<name>` on any other branch, so the one condition covers Requirement 1.4
+  # without a second check: nothing publishes from a fork, a branch or a PR.
+  publish:
+    name: publish
+    runs-on: ubuntu-24.04
+    needs: browser
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Required, not decoration: the default docker driver supports neither
+      # `cache-to: type=gha` nor building a named `target`, and this file needs both.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # `GITHUB_TOKEN` is the run's own ephemeral token, scoped by the `packages: write`
+      # above. No registry credential is stored in this repository or on the instance —
+      # the instance pulls anonymously, which is why both packages must be public.
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # One step per target, `app` first because the `web` stage copies `public/` out of
+      # it — so the shared cache scope below is what stops that stage being built twice.
+      #
+      # Lowercase repository path, hardcoded. The repository is `mirkovicUK/TIC-TAC-TOE`
+      # and GHCR refuses an uppercase reference, so `github.repository_owner` cannot be
+      # interpolated here without lowercasing it first.
+      #
+      # The SHA is the only tag. No `latest`: a moving tag makes "what is deployed"
+      # unanswerable, and `compose.yaml` resolves `${RELEASE_TAG:?…}` precisely so that an
+      # unset variable fails instead of silently landing on whatever `latest` points at.
+      #
+      # `linux/amd64` alone. The instance is a t3.micro, x86_64; a second platform would
+      # roughly double the build for an image nothing else runs.
+      #
+      # `org.opencontainers.image.revision` is set here and must be: the deploy document
+      # reads it back off the running container and exits 67 if it disagrees with the tag
+      # it was asked to deploy. That check is only worth anything because the label comes
+      # from the build rather than from the deployment environment.
+      #
+      # `provenance: false` keeps the push a plain single-platform manifest. Attestations
+      # would make each tag an OCI index of image plus attestation, which nothing here
+      # verifies, and the extra indirection is one more thing between a tag and the labels
+      # the deploy asserts against.
+      - name: Build and push the app image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: app
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ghcr.io/mirkovicuk/tic-tac-toe-app:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=tic-tac-toe
+          cache-to: type=gha,mode=max,scope=tic-tac-toe
+
+      # Same scope as the step above, and `mode=max` there is what makes it useful:
+      # mode=min would export only the final `app` layers, so this build would repeat
+      # Composer and the Vite build to reach the stage it copies from.
+      - name: Build and push the web image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: web
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ghcr.io/mirkovicuk/tic-tac-toe-web:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=tic-tac-toe
+          cache-to: type=gha,mode=max,scope=tic-tac-toe
+
+      # Both references, so step 7 of docs/cd.md has the exact tag to test a public pull
+      # against, and so the deploy job's `ReleaseTag` is visible in the run that produced
+      # the images rather than only in the one that consumes them.
+      - name: Report what was published
+        run: |
+          echo "app: ghcr.io/mirkovicuk/tic-tac-toe-app:${{ github.sha }}"
+          echo "web: ghcr.io/mirkovicuk/tic-tac-toe-web:${{ github.sha }}"
