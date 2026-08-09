@@ -289,10 +289,8 @@ the wait is no longer normal.
 Requirement 9.4 was narrowed during task 6.5 to say so, rather than left quietly unmet. The
 alternative — adding a "became active at" timestamp to the representation — was available and was
 judged not worth a new prop, a server change and a second clock for a warning that a joiner staring
-at an empty board they cannot play does not especially need. The amendment is recorded in
-[`docs/ai-direction.md`](docs/ai-direction.md#requirements-narrowed-rather-than-met) under
-"Requirements narrowed rather than met", with the scoping decisions rather than the corrections,
-because nothing about the original wording was wrong.
+at an empty board they cannot play does not especially need. Requirement 12.13 carries the
+limitation, which is why it is stated here rather than left to be discovered.
 
 ### A rate-limited request shows the player nothing
 
@@ -426,17 +424,17 @@ command's working set was permanently empty, and a test of it would have passed 
 implementation that did nothing. Restructured so eligibility is a state a game is treated as being
 in and deletion happens only in the command.
 
-Everything else is in [`docs/ai-direction.md`](docs/ai-direction.md), written as the work proceeded
-rather than reconstructed at the end. That includes the defects found by building rather than by
-reading: a mid-game 500 from the rate limiter's cache store, a UUIDv7 entropy figure that was right
-in general and wrong where it was quoted, and a design paragraph that sent a correctly guessed game
-id to the wrong row of the visibility table.
+[`docs/ai-direction.md`](docs/ai-direction.md) has the rest: how the work was executed task by
+task, and a table of every spec-stage defect with what was actually true and how it was caught.
+The one defect found by playing the game rather than by reading or testing — a mid-game 500 from
+the rate limiter's cache store — is in
+[ADR-004](docs/decisions/adr-004-sqlite-on-a-named-volume.md).
 
 ## The rest of the documentation
 
 | Document | What is in it |
 | --- | --- |
-| [`docs/decisions/`](docs/decisions/README.md) | One decision record per significant technical choice, each with its alternatives and reasons. Twelve of them |
+| [`docs/decisions/`](docs/decisions/README.md) | One decision record per significant technical choice, each with its alternatives and reasons. Eight of them |
 | [`docs/ai-direction.md`](docs/ai-direction.md) | How the tooling was directed, and every place the generated output was wrong |
 | [`docs/deployment.md`](docs/deployment.md) | The one deployment document: setup steps, an ordinary push, deploying a tag by hand, rolling back, break glass, what survives, exit codes |
 | [`docs/aws-infra.md`](docs/aws-infra.md) | How the instance, security group, role and hostname were provisioned |

@@ -56,13 +56,26 @@ final class AppServiceProvider extends ServiceProvider
      * `join` and `create-game` are separate buckets even though they share a
      * threshold and a key: spending twenty joins still leaves twenty creates.
      *
-     * The counters go to the default cache store, `database` — rows in the `cache`
-     * table of the same SQLite file that holds the Games and the sessions, keyed
-     * by the middleware's digest rather than by anything legible. They are durable
-     * across a restart, and they are scoped to that one file: every worker in the
-     * single php-fpm container shares them, but a second application container or
-     * host would keep its own counts and multiply every threshold. Scaling out
-     * means moving the limiter store to something shared first.
+     * COUNTER STORAGE: `file` store, `storage/framework/cache/data` in the `app`
+     * container. Keys are the middleware's digest.
+     *
+     * `CACHE_STORE=file` is set explicitly in `.env.example` and `compose.yaml`. It
+     * is NOT the framework default — `config/cache.php` defaults to `database`.
+     *
+     * Why not `database`: counters shared the `cache` table with the Games in one
+     * SQLite file. Two clients polling every 2s issue overlapping increments; one
+     * reads a stale snapshot; SQLite returns SQLITE_BUSY immediately. `busy_timeout`
+     * does not apply (the transaction must roll back) and Laravel does not retry.
+     * Surfaced as a 500 on a polling request, to the player who was not acting.
+     * Measured 13 failures in 30 concurrent requests. Reached production. ADR-004
+     * and `.env.example` carry the measurement.
+     *
+     * Two consequences of `file`, both accepted:
+     * - Counters reset on deployment. Nothing mounts `storage/`, so recreating the
+     *   container zeroes every bucket. Recorded in `docs/deployment.md`.
+     * - Counters are per-container. All workers in the single php-fpm container
+     *   share them; a second app container or host keeps its own counts and
+     *   multiplies every threshold. Scaling out needs a shared store first.
      *
      * `create-game` is required by no criterion. It guards a public endpoint that
      * writes a database row for an unauthenticated caller with no prior Game and

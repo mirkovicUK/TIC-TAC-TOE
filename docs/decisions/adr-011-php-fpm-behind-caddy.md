@@ -15,7 +15,7 @@ terminates TLS, serves the static assets and forwards PHP requests to `app` over
 
 | Alternative | Why not |
 | --- | --- |
-| FrankenPHP — Caddy with PHP embedded, one container serving HTTPS and executing PHP in a single process, with no FastCGI hop | Would be the obvious choice on a greenfield start; ruled out here by timing rather than merit — see below |
+| FrankenPHP — Caddy with PHP embedded, one container serving HTTPS and executing PHP in a single process, with no FastCGI hop | Would be the obvious choice on a greenfield start. Ruled out here by timing rather than merit: adopting it would mean validating a deployment shape nobody on this project has run, against an already-issued certificate whose storage layout would be assumed rather than known |
 | nginx in place of Caddy | Caddy gives automatic HTTPS in two lines, which is ADR-009's reason too |
 | Both processes in one container under a supervisor | Reintroduces process management Compose already does, and turns two independent restart policies into one |
 
@@ -45,40 +45,3 @@ What the choice turns on is operability.
   rate-limits per registered domain and that `sslip.io` is one domain shared with strangers, so
   the certificate is the component that cannot be cheaply replaced. Attached to `web`, it is
   untouched by every rebuild and restart of `app`.
-
-## What is deliberately not claimed
-
-That the unpublished port 9000, and the resulting "only `web` can reach php-fpm" boundary, is a
-benefit of the split. It is not: that boundary exists because of the split and is needed
-because of it. A single process serving HTTPS directly has no FastCGI port to expose and no
-`X-Forwarded-For` to decide whether to trust. The `*` trusted-proxy range the design sets under
-Rate limits is a hazard this topology creates and then manages, not an advantage it confers.
-
-## This was inherited rather than decided, and the record says so
-
-`php:8.5-fpm` came from the technology table, and the second container followed mechanically
-from php-fpm not speaking HTTP. The reasoning above was assembled afterwards, when the question
-was put directly, and it holds — but it is a justification found to be sound rather than the
-reasoning that produced the choice. The distinction is the difference between a decision record
-and a rationalisation, and `docs/ai-direction.md` carries other entries where a correct decision
-rested on a false stated reason.
-
-## What would change it
-
-A real domain in place of `sslip.io` removes the shared rate limit and with it most of the
-certificate argument. On a greenfield start, or with PHP experience on the operating side,
-FrankenPHP would be the obvious choice and this record would read the other way.
-
-What rules it out here is timing rather than merit: adopting it now would mean validating a
-deployment shape nobody on this project has run, against an already-issued certificate whose
-storage layout would be assumed rather than known.
-
-## In practice
-
-The Dockerfile builds four stages — `vendor`, `assets`, `app`, `web` — of which the first two
-are discarded, so neither Composer nor any Node runtime reaches production. `app` is 637 MB and
-`web` 63.4 MB.
-
-The unpublished port is checked on the instance rather than asserted in a test, because nothing
-in the suite can observe it: `sudo ss -ltnp | grep 9000` must find nothing, and
-`docker compose ps` must show `9000/tcp` with no `0.0.0.0:` prefix.

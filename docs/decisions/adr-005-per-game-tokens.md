@@ -15,32 +15,30 @@ on the Game row and held raw in the server-side session.
 | Signed stateless claims in a cookie | A key to manage and a revocation story, for a credential that outlives nothing |
 | Trusting the Join_Code as the credential | The failure Requirement 3 exists to prevent |
 
-## Reason
+## How a request is authorised
 
-Treating the Join_Code as the credential is the specific hole this scheme closes: a third
-party holding the code could otherwise play another person's moves.
+Every step, in order. A move is only reached if all of them pass.
 
-The binding is the slot, not the token's contents. `PlayerTokens::mint()` produces
-`bin2hex(random_bytes(32))` — 256 bits with no structure and no counter — and nothing in the
-token names the Game or the Mark. Which column the hash is written to is what binds it
-(Req 3.1).
+```
+1. cookie → decrypt → session id → SELECT payload FROM sessions
 
-The accepted cost is that a lost session cannot be recovered. The README states that plainly,
-and states that it follows from the deliberate absence of accounts (Req 12.10).
+2. game id from URL → key into payload → raw secret
+                                       (or null → refuse 403)
 
-## In practice
+3. SELECT * FROM games WHERE id = <game id from URL>
+                                       (no row → 404 or 410)
 
-The credential class had to be split during implementation. A single `issue()` that minted
-and wrote the session in one step could not serve the joining path: `JoinGame` must carry the
-hash *inside* the guarded UPDATE whose affected-row count decides the outcome, so the hash
-exists before the outcome is known. `issue()` would therefore have written a credential into
-the browser for a slot the request went on to lose.
+4. sha256(secret) vs x_token_hash, then o_token_hash
+       no match  → refuse 403
+       match     → you are X or O, whichever column matched
 
-`mint()` now returns a `MintedToken` with no side effects and `remember()` is the session
-write alone, so no orphan credential exists because nothing wrote one — not because something
-cleaned one up. `issue()` survives as the composition of both, for `CreateGame`, which inserts
-a fresh row with no competing writer and therefore no losing path.
+5. only now: the move
+```
 
-`mint()` returns a two-property object rather than a raw string plus a hashing helper because
-both values are `string` to PHP and to PHPStan, and a transposition would write the secret
-into the database at exactly the point Requirement 8.7 exists to prevent.
+Two things follow from step 4. The token carries no identity of its own — nothing in it names
+the Game or the Mark — so **which column the hash matches is what makes you X or O**. And the
+Join_Code appears nowhere in this path, which is the hole the scheme closes: a third party
+holding the code cannot play another person's moves.
+
+The accepted cost is that a lost session cannot be recovered. There is no step 1 without the
+cookie, and no account to recover through. The README states that (Req 12.10).
