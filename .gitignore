@@ -17,6 +17,12 @@
 /deploy/Caddyfile.local
 /deploy/.provisioned.env
 /deploy/app.env
+# Which Release_Tag that instance is running, and the tag it would fall back to. State,
+# not configuration: the deploy document rewrites it on every deployment, and it is the
+# only place the previous tag is authoritatively known.
+/deploy/release.env
+/deploy/release.env.*
+/deploy/.deploy.lock
 .phpactor.json
 .phpunit.result.cache
 # Written by `BrowserExpectationFailedException::from()` on any failed browser

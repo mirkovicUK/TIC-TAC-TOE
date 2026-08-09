@@ -2,14 +2,20 @@
 # `Dockerfile`: `app` runs the PHP through php-fpm, `web` runs Caddy in front of it
 # terminating TLS and serving the static assets from its own copy of `public/`.
 #
-# Deployed by `docker compose up -d --build` on the instance, from /srv/tic-tac-toe.
-# The image is built on the box; there is no registry and no CD pipeline, which ADR-009
-# records as a scoping decision rather than an omission.
+# Both images are BUILT IN CI AND PULLED FROM GHCR, tagged by the commit SHA they were
+# built from. Nothing is built on the instance any more (ADR-012, superseding ADR-009's
+# no-pipeline scoping decision). `docker compose up -d --build` no longer means anything
+# here: there is no `build:` key to act on.
 #
-# Two things must exist before the first `up`, and neither is created by this file:
+# The invocation is always `--env-file deploy/release.env`, which supplies `RELEASE_TAG`.
+# The `DeployTicTacToe` SSM document does that; by hand it has to be passed explicitly,
+# because Compose reads `.env` from the working directory and not this file's sibling.
+#
+# Three things must exist before an `up`, and none is created by this file:
 #
 #   docker volume create caddy-data       # done in task 2.2; holds the certificate
 #   cp deploy/app.env.example deploy/app.env && edit it   # holds APP_KEY
+#   deploy/release.env with RELEASE_TAG=<40-char sha>     # which image pair to run
 #
 # Brought down with `down`, never `down -v`. `down -v` deletes the volumes, and one of
 # them holds a certificate whose replacement depends on a rate limit shared with
@@ -25,9 +31,21 @@ name: tic-tac-toe
 
 services:
   app:
-    build:
-      context: .
-      target: app
+    # `:?` and not `${RELEASE_TAG}`, and never `${RELEASE_TAG:-latest}`. Unset, the bare
+    # form resolves to an empty tag and Compose asks the registry for `:` — a confusing
+    # error at best. A `latest` default is worse: it would succeed, and silently run
+    # whatever was published last rather than what was asked for. `:?` makes Compose
+    # refuse to act at all, which is the only one of the three that cannot deploy the
+    # wrong thing. The cost is that a missing `deploy/release.env` stops the stack, so
+    # that file is seeded before this line ever runs.
+    #
+    # ONE variable feeds both services. Two would allow `app` and `web` from different
+    # commits — the failure the deploy document's revision assertion exists to catch, and
+    # the one that shows up as a working site with the wrong CSS.
+    #
+    # The path is lowercase and hardcoded. GHCR rejects an uppercase reference and the
+    # repository is `mirkovicUK/TIC-TAC-TOE`, so this cannot be derived from it.
+    image: ghcr.io/mirkovicuk/tic-tac-toe-app:${RELEASE_TAG:?RELEASE_TAG must be set; pass --env-file deploy/release.env}
     restart: unless-stopped
 
     # NO `ports:` KEY, DELIBERATELY, AND THIS IS LOAD-BEARING. php-fpm listens on 9000 and
@@ -162,9 +180,8 @@ services:
         max-file: "3"
 
   web:
-    build:
-      context: .
-      target: web
+    # Same `RELEASE_TAG`, deliberately. See the note on `app`.
+    image: ghcr.io/mirkovicuk/tic-tac-toe-web:${RELEASE_TAG:?RELEASE_TAG must be set; pass --env-file deploy/release.env}
     restart: unless-stopped
 
     # 80 as well as 443, and not only for the redirect: ACME's HTTP-01 challenge is
