@@ -332,8 +332,8 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - The Deployment section of its design and that document's ADR-009 summary both state there is no registry and no CD pipeline
     - _Requirements: 9.9_
 
-- [ ] 10. The fallback drill
-  - [ ] 10.1 Deliberately deploy a release that fails its health check
+- [x] 10. The fallback drill
+  - [x] 10.1 Deliberately deploy a release that fails its health check
     - Push a commit whose `app` container cannot serve — a migration that throws is the closest thing to a real failure
     - Confirm: the gate fails after its budget; both previous images were verified present before anything was disturbed; the previous pair is deployed and passes its own gate; the run goes **red** despite the site being up; and `release.env` still names the same `PREVIOUS_RELEASE_TAG` it did before
     - Then revert the commit and confirm the next deployment is ordinary
@@ -342,6 +342,43 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
       `28c427ae…`, whose Image_Pair exists both on the instance and in GHCR (anonymous pull returns
       200 for each). Until then the pointer named `f89b4b6…`, which predates the registry, so a
       fallback would have failed at the pull rather than exercising the path
+    - **Run, and it worked.** Drill commit `5bdb4e1b`, run 31311252168. The failure used was
+      removing the `root /var/www/html/public` override from `php_fastcgi`, so Caddy sent
+      `SCRIPT_FILENAME=/srv/public/index.php` — a path in the `web` container, not in `app` — and
+      php-fpm answered "Primary script unknown" for every PHP request while static files kept
+      serving. That is the exact mistake the Caddyfile's own comment records from task 13.1
+    - **A throwing migration, which this task originally suggested, cannot be used.** Migrations run
+      in the test suite, so `quality` would fail and `deploy` would never start. The failure has to
+      be one that is invisible to CI and visible only over the public URL
+    - **The choice of failure is what made the drill test the right path.** `app`'s healthcheck uses
+      `cgi-fcgi` straight to php-fpm with its own `SCRIPT_FILENAME`, and `web`'s hits Caddy's admin
+      API, so both stayed `healthy`, `up -d --wait` succeeded and both revision labels matched — the
+      document exited 0. Only the runner's poll of the public URL failed, which is the path that had
+      never run. A broken entrypoint would have failed the document instead, and by design that
+      does **not** trigger a fallback
+    - Observed, in order: quality 67s, browser 55s, publish 49s all green; `deploy` 181s with
+      `Deploy the Release_Tag` success, `Health gate` fail, `Report the state on the instance`,
+      `Fall back to the Previous_Release_Tag` success, `Health gate for the fallback` success,
+      `Verdict` **fail** — run red with the site up, which is Requirement 6.4
+    - End state verified on the instance: both containers back on
+      `ghcr.io/mirkovicuk/tic-tac-toe-{app,web}:b4f96e3d…`, both `healthy`, started 11:43:05Z, both
+      revision labels equal to that tag; the `root` override restored in the working tree because
+      the fallback's `git checkout` of the previous tag brought the good Caddyfile with it;
+      `release.env` reading `RELEASE_TAG=b4f96e3…` and `PREVIOUS_RELEASE_TAG=b4f96e3…`; 14 games and
+      80 moves untouched
+    - Two things learned that were not predicted:
+      **(a)** after a fallback `RELEASE_TAG` equals `PREVIOUS_RELEASE_TAG`, so the pointer is spent —
+      a second fallback would redeploy what is already running. That is the intended "at most one
+      per run" behaviour rather than a defect, and the invariant Requirement 6.1 protects still
+      holds, because the *failed* tag never becomes the fallback target.
+      **(b)** the failed pair was **not** reclaimed. The reclaim runs before `up`, so at that moment
+      the drill containers were still running on those images and `docker rmi` refused. The `|| true`
+      on that command is what stopped a fallback dying on it, and the next ordinary deployment
+      removes them once nothing holds them. Worth knowing before reading disk figures after an
+      incident
+    - Outage measured: PHP requests failed from the drill containers coming up until the fallback
+      containers did, bounded by the 120-second gate budget plus the diagnose and fallback
+      invocations. Static assets served throughout
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
 ---
