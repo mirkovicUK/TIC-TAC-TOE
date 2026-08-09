@@ -10,8 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Claims the O slot of the Game a submitted Join_Code names: one guarded UPDATE
- * whose affected-row count is the whole of the concurrency control (Req 2.1–2.7,
- * ADR-006).
+ * whose affected-row count is the whole of the concurrency control (Req 2.1–2.7).
  *
  * ```sql
  * UPDATE games

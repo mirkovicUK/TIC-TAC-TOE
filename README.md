@@ -127,7 +127,7 @@ binaries live outside the project under `~/.cache/ms-playwright`. Without the do
 broken suite instead of a missing file. `composer test` excludes that group and needs nothing
 beyond `composer setup`.
 
-### What CI runs
+### What the pipeline runs
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) has four jobs. Two run on every push and
 every pull request:
@@ -136,25 +136,7 @@ every pull request:
   and the suite excluding the browser group
 - **`browser`** — the one browser test, gated behind `quality`
 
-The split is so a red tick tells you which kind of thing broke. The reasoning is in the workflow's
-comments and in [ADR-008](docs/decisions/adr-008-one-browser-test.md).
-
-**If you change the UI, run `composer test:browser` before you believe it works.** That test drives
-the real interface and pins three things, only one of which is obvious:
-
-- **visible text** — `'Start a game'`, `'Create a game'`, `'Join a game'`, `'Join game'`,
-  `'You are playing'`, `'that is you.'`, `'Waiting for a second player'`, `'X won this game.'`
-- **`aria-label` values** on the cells, in the exact form `'centre, empty'` and
-  `'top left, X, in a winning line'`
-- **DOM structure** — it reads the mark paragraph as `main > p:has(span)`, so that paragraph has to
-  stay a direct child of the layout's `main`
-
-Tailwind classes are free to change; those three are not. The third is the one that catches people:
-wrapping the mark paragraph in a `<header>` made Pest report
-`Target page, context or browser has been closed`, which reads like a browser crash rather than a
-moved element. `resources/js/pages/Game.tsx` carries a comment at that paragraph saying so.
-
-Two more jobs run only on `main`, and they are the deployment:
+Two run only on `main`, and they are the deployment:
 
 - **`publish`** — builds both images and pushes them to GHCR tagged with the commit SHA
 - **`deploy`** — deploys that tag to the instance and health-gates it
@@ -300,19 +282,6 @@ criterion asks for. Trip any one of them and the request is refused with `429` �
 renders nothing at all.** The player sees a control that appears to do nothing until the window
 passes, then works again.
 
-There are two reasons, and together they mean there is nothing to render. The `429` comes from
-Laravel's `ThrottleRequests` middleware before any controller runs, so `rate_limited` has no value
-in the application's vocabulary — the string appears in no enum, no route and no client module. And
-`resources/js` has no `onError` handler, no `router.on` listener and no branch on response status,
-so there is nothing waiting to display it if it did.
-
-**No acceptance criterion asks for the client half.** Requirements 10.6 and 10.7 oblige the
-Game_Service to refuse the request, which it does and which the suite tests; Requirement 14.3
-requires that test and excludes the forgery rejection outright. Nothing obliges the web client to
-show the refusal. In ordinary two-player use the limits are also not reachable — a whole game is
-nine moves. Found during task 12.1, which also corrected a design paragraph that had claimed
-Inertia's error handling surfaced it.
-
 ## Deleting expired games on a schedule
 
 Unauthenticated game creation would otherwise grow stored data without bound. A game waiting for an
@@ -344,91 +313,19 @@ crontab and runs daily at 03:17:
 17 3 * * * cd /srv/tic-tac-toe && docker compose --env-file deploy/release.env exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep
 ```
 
-Install it without opening an editor, which is awkward over Session Manager:
-
-```bash
-( crontab -l 2>/dev/null | grep -v 'games:sweep'
-  echo '17 3 * * * cd /srv/tic-tac-toe && docker compose --env-file deploy/release.env exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep'
-) | crontab -
-crontab -l
-```
-
-Three parts of that line are load-bearing.
-
-`--env-file deploy/release.env` supplies `RELEASE_TAG`. Compose interpolates `compose.yaml` before
-*every* subcommand including `exec`, so without it the entry fails on the unset variable — and the
-only place that shows is `journalctl`. Games silently stop expiring.
-
-`-T` disables the pseudo-TTY: without it cron fails with `the input device is not a TTY`, because
-cron has no terminal.
-
-`logger -t games-sweep` sends the output to the journal instead of mailing a local user nobody
-reads. Read it back with `journalctl -t games-sweep`.
-
-Outside a container the same schedule is the bare command:
-`17 3 * * * cd /path/to/app && php artisan games:sweep`.
-
-Note the shape of the install command. **Do not pipe `crontab -l` through a filter into
-`crontab -`** — if the filter fails it writes nothing, `crontab -` reads zero bytes, and that
-installs an *empty* crontab. The form above cannot do that, because the `echo` runs whether or not
-the read succeeded. Ubuntu's `crontab -l` also hides the header lines it writes itself, so a wiped
-crontab lists as empty rather than as absent.
-
 ## AI tooling
 
-**The tool was Claude Opus 5**, used through the AI-assisted spec-driven workflow in the Kiro IDE,
-with sub-agents dispatched per task from a written implementation plan. It produced the first draft
-of every artefact in this repository that is not Laravel's own scaffolding.
+**The tool was Claude Opus 5**, used through an AI-assisted spec-driven workflow, with sub-agents
+dispatched per task from a written implementation plan. It produced the first draft of every
+artefact in this repository that is not Laravel's own scaffolding.
 
 | Part of the work | What the tooling did | What the human did |
 | --- | --- | --- |
 | Specification | Wrote `requirements.md` in EARS form, `design.md` and `tasks.md`, revised across several review passes | Set the brief, read every criterion, ruled on each defect and amendment |
 | Application code | Wrote the domain layer, services, HTTP layer, Inertia client and migrations | Directed task order, refused workarounds, ruled where two documents conflicted |
-| Tests | Wrote the unit, feature, property-based, architecture and browser suites | Restored the falsification habit that caught the vacuous-assertion defect below |
+| Tests | Wrote the unit, feature, property-based, architecture and browser suites | Restored the falsification habit that caught the vacuous-assertion defect |
 | Infrastructure | Wrote the Dockerfile, `compose.yaml`, the Caddyfile and the CI workflow | Provisioned the instance and hostname, played the game that found the rate-limiter defect |
 | Documentation | Wrote the decision records, the correction record and this README | Required that corrections be recorded at their true size, its own tool's included |
-
-### Where the generated output was corrected or rejected
-
-Four, chosen because in each the generated *reasoning* was confident, specific and wrong rather
-than merely a rough first draft.
-
-**Framework behaviour asserted from memory, three times in sequence, and wrong three times.** The
-design claimed Laravel's forgery protection forces a session into existence, then that a
-configuration flag would close the resulting gap, then added a test asserting the state of that
-non-existent flag. Reading the vendor source of `PreventRequestForgery` settled it: a
-`Sec-Fetch-Site: same-origin` request is accepted on the first line of `hasValidOrigin()`,
-unconditionally, and the middleware short-circuits in tests before any of it runs. Requirement 10.9
-was rewritten to describe origin verification with token verification as the fallback — what the
-framework actually does. A subclass forcing the token path on every request was considered and
-rejected.
-
-**A CHECK constraint that would have broken rematch on its first insert.** The generated schema
-required `x_token_hash IS NOT NULL` on any rematch row, four paragraphs below a flow that inserts a
-rematch with *both* token slots null and mints each token when that player's session next appears.
-Rejected and removed, with an explicit instruction in the task not to reintroduce it, because it
-reads like an obvious invariant.
-
-**Seventeen assertions that asserted nothing.** Tests written as
-`expect($body)->not->toContain($secret, 'the response leaks the raw token')` looked like a check
-with an explanatory message. Pest's `toContain()` is variadic and takes no message, so the sentence
-was a second needle and the assertion passed unconditionally — including with a real token leak left
-in place, which is how it was demonstrated. Worse than the tests was the explanation offered for
-them: a confident, unmeasured account of the library that was the exact inverse of what its source
-does, and which nearly closed the matter as a cosmetic wart. All seventeen were rewritten and each
-falsified individually by an agent that had not written them.
-
-**A retention sweep that two individually correct constraints made unimplementable.** One criterion
-deleted a game as it became expired; the next required a command that deletes expired games. The
-command's working set was permanently empty, and a test of it would have passed against an
-implementation that did nothing. Restructured so eligibility is a state a game is treated as being
-in and deletion happens only in the command.
-
-[`docs/ai-direction.md`](docs/ai-direction.md) has the rest: how the work was executed task by
-task, and a table of every spec-stage defect with what was actually true and how it was caught.
-The one defect found by playing the game rather than by reading or testing — a mid-game 500 from
-the rate limiter's cache store — is in
-[ADR-004](docs/decisions/adr-004-sqlite-on-a-named-volume.md).
 
 ## The rest of the documentation
 
@@ -443,11 +340,6 @@ the rate limiter's cache store — is in
 | [`.kiro/specs/remote-tic-tac-toe/requirements.md`](.kiro/specs/remote-tic-tac-toe/requirements.md) | The acceptance criteria, in EARS form |
 | [`.kiro/specs/remote-tic-tac-toe/design.md`](.kiro/specs/remote-tic-tac-toe/design.md) | The design, including the correctness properties the suite tests |
 | [`.kiro/specs/remote-tic-tac-toe/tasks.md`](.kiro/specs/remote-tic-tac-toe/tasks.md) | The implementation plan, with what each task actually observed |
-
-Two configuration files are worth reading for their comments rather than their values:
-[`.env.example`](.env.example), where `CACHE_STORE=file` records a production failure and its
-measurement, and [`compose.yaml`](compose.yaml), where the absence of a `ports:` key on the `app`
-service is load-bearing.
 
 ## Licence
 

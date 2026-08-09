@@ -8,8 +8,8 @@ import type { GameProps } from '@/pages/Game';
  * refused as `invalid_state` (Req 7.10).
  *
  * It stays a POST to `/games/{preceding}/rematch` after `rematchGameId` is known. DO NOT
- * turn that second state into `<Link href={`/games/${game.rematchGameId}`}>`. Under
- * ADR-010 a Rematch is created with both token slots NULL and each Player_Token is
+ * turn that second state into `<Link href={`/games/${game.rematchGameId}`}>`. A
+ * Rematch is created with both token slots NULL and each Player_Token is
  * minted by the POST, so the player who did not click first holds no token: a GET of the
  * Rematch's URL is refused with `not_authorised`, sending one of the two players to a
  * "you are not a player in this game" page for a Game that is theirs. The endpoint is

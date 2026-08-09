@@ -12,7 +12,7 @@ use App\Games\JoinCode;
  * The Join_Code value object, separately from the row it lands on.
  *
  * A Feature test only because `tests/Pest.php` binds `Tests\TestCase` to `Feature` and
- * `tests/Unit` is reserved for the framework-free domain layer (Req 14.1, ADR-003).
+ * `tests/Unit` is reserved for the framework-free domain layer (Req 14.1).
  * Nothing here touches the database or the session.
  *
  * Requirement 1.3's cryptographically secure source is not observable from outside;

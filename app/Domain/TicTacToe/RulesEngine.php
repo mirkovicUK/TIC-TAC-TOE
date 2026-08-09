@@ -7,8 +7,8 @@ namespace App\Domain\TicTacToe;
 /**
  * The whole derivation, in one pass over one Move_List (Req 11.1).
  *
- * Pure: no persistence, no session, no transport, no framework (Req 11.9,
- * ADR-003). One entry point, so Requirement 11.5's "halt immediately and report
+ * Pure: no persistence, no session, no transport, no framework (Req 11.9).
+ * One entry point, so Requirement 11.5's "halt immediately and report
  * only a single uniform error state" has exactly one implementation.
  */
 final class RulesEngine

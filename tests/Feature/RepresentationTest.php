@@ -576,7 +576,7 @@ it('persists a winning mark equal to the derived winner, and none where the deri
  *
  * Three families of response describe a Game, and all three are exercised here. The
  * full page load; the partial reload the Web_Client polls with (`only: ['game']`,
- * ADR-002's paragraph on the polling path), which is a different code path through
+ * the polling path), which is a different code path through
  * Inertia and the one that carries the Version_Counter roughly once a second; and the
  * GET that follows a rejected action, which the design's outcome table says delivers the
  * outcome together with the current state.
@@ -712,19 +712,19 @@ it('reports the rematch game id to both players once a rematch exists, and not b
 
 /*
  * ─────────────────────────────────────────────────────────────────────────────
- * THE RESPONSE IS THE SAME WHATEVER VERSION THE REQUEST PRESENTS (Req 8.4, ADR-002).
+ * THE RESPONSE IS THE SAME WHATEVER VERSION THE REQUEST PRESENTS (Req 8.4).
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * The application defines no channel for a client to present a Version_Counter — there
- * is no route parameter, no query parameter and no header it reads, which is ADR-002's
- * decision. So the criterion is asserted the only way an absence can be: a request
+ * is no route parameter, no query parameter and no header it reads, which is a
+ * deliberate decision. So the criterion is asserted the only way an absence can be: a request
  * presents one through every channel a real client COULD use, and the representation
  * comes back identical to the one for a request that presents none.
  *
  * Three channels, seven presentations. A query parameter, since that is where a poll
  * would put it and it survives Inertia's partial reload untouched. `If-None-Match`,
  * since an ETag is what a Version_Counter would become if the design had taken
- * alternative (a) of ADR-002; `*` is included because it matches unconditionally.
+ * the conditional-request alternative; `*` is included because it matches unconditionally.
  * `If-Modified-Since` a year ahead, which is the other conditional-request channel and
  * the one that would answer 304 if anything honoured it. And a bespoke header, standing
  * for a client that invented its own.
@@ -762,7 +762,7 @@ it('returns an identical representation whatever version value the request prese
 
     expect($expected)->toHaveCount(14, 'the baseline response does not carry the whole representation, so comparing others against it would prove little')
         ->and($expected['board'] ?? null)->toBe(['o', null, null, null, 'x', null, null, null, 'x'], 'the baseline board is not the played board, so the comparisons below are not about a real representation')
-        ->and($baseline->headers->has('ETag'))->toBeFalse('the game page carries an ETag, which is the conditional-request path ADR-002 forbids (Req 8.4)');
+        ->and($baseline->headers->has('ETag'))->toBeFalse('the game page carries an ETag, which is the conditional-request path the design forbids (Req 8.4)');
 
     $reference = (string) json_encode($expected);
     $referenceBody = (string) $baseline->getContent();
@@ -788,7 +788,7 @@ it('returns an identical representation whatever version value the request prese
         expect($response->getStatusCode())->toBe(
             200,
             "a state request presenting {$presentation} was answered with ".$response->getStatusCode().' rather than the full representation (Req 8.4)',
-        )->and($response->headers->has('ETag'))->toBeFalse("the response to {$presentation} carries an ETag (Req 8.4, ADR-002)")
+        )->and($response->headers->has('ETag'))->toBeFalse("the response to {$presentation} carries an ETag (Req 8.4)")
             ->and((string) json_encode(derivationGamePropOf($response)))->toBe(
                 $reference,
                 "the representation differed when the request presented {$presentation} (Req 8.4)",
@@ -821,7 +821,7 @@ it('returns an identical representation whatever version value the request prese
 
     expect($otherRow['version'])->not->toBe($version, 'the two Games have the same Version_Counter, so comparing their asset versions proves nothing')
         ->and($assetVersion)->toBeString('the page object carries no asset version')
-        ->and($otherAssetVersion)->toBe($assetVersion, 'the Inertia asset version varies with the Game, so the Version_Counter has been wired into it and a stale one would be answered 409 (Req 8.4, ADR-002)')
+        ->and($otherAssetVersion)->toBe($assetVersion, 'the Inertia asset version varies with the Game, so the Version_Counter has been wired into it and a stale one would be answered 409 (Req 8.4)')
         ->and($assetVersion)->not->toBe((string) $version, 'the Inertia asset version is the Game Version_Counter');
 });
 

@@ -369,7 +369,7 @@ it('exposes the join code and join url only while waiting for an opponent', func
  *
  * The rematch row is inserted by hand rather than through `CreateRematch` so a break
  * in the rematch service does not fail a serialiser test; `RematchTest` covers the
- * producer. The shape follows ADR-010: `active`, `join_code` NULL, both token slots
+ * producer. The shape is the one per-request minting produces: `active`, `join_code` NULL, both token slots
  * NULL, `rematch_of_game_id` pointing back.
  *
  * `rematch_of_game_id` lives on the *rematch* row, so the direction is what matters:
@@ -477,7 +477,7 @@ it('excludes every player token value and digest from the serialised representat
 });
 
 /*
- * The signature cannot express a conditional request (Req 8.4, ADR-002). Asserted by
+ * The signature cannot express a conditional request (Req 8.4). Asserted by
  * reflection because the claim is an absence with no behaviour to observe: a third
  * parameter carrying a client Version_Counter is the shape a 304 path needs, and a
  * nullable return is the shape "unchanged" needs.
@@ -495,7 +495,7 @@ it('takes no client version and returns the whole representation on every call',
 
     expect($parameters)->toBe(
         [GameSnapshot::class, Mark::class],
-        'GameRepresentation::of accepts something other than a snapshot and a Mark; a client Version_Counter parameter is the shape a 304 path needs (ADR-002)',
+        'GameRepresentation::of accepts something other than a snapshot and a Mark; a client Version_Counter parameter is the shape a 304 path needs',
     )->and((string) $method->getReturnType())->toBe('array', 'the return type admits a "not modified" value (Req 8.4)');
 
     [$game] = representationGame([4, 0, 8]);

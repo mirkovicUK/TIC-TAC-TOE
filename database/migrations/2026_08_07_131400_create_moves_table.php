@@ -19,7 +19,7 @@ return new class extends Migration
     {
         // There is no `mark` column and no `mark` CHECK, and neither is an oversight to
         // be corrected later. A Move is a Cell_Index and a Sequence_Index; the Mark is
-        // the parity of the Sequence_Index — X on even, O on odd (Req 11.4, ADR-003) —
+        // the parity of the Sequence_Index — X on even, O on odd (Req 11.4) —
         // and the unique `(game_id, sequence_index)` index below already fixes the
         // parity of every row, so a stored mark could only agree with it or contradict
         // it.
@@ -45,7 +45,7 @@ return new class extends Migration
         Schema::table('moves', function (Blueprint $table) {
             // Req 5.1 as a persisted invariant, which is what makes the
             // `conflict` outcome a database answer rather than a hopeful SELECT
-            // beforehand (ADR-006). With the range CHECK above it also caps a
+            // beforehand. With the range CHECK above it also caps a
             // Game at nine Moves by pigeonhole (Req 5.6), and it is the index
             // `ORDER BY sequence_index` reads.
             $table->unique(['game_id', 'sequence_index'], 'moves_game_sequence_unique');

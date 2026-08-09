@@ -21,7 +21,7 @@ use Illuminate\Support\Str;
 // Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7
 //
 /*
- * `JoinGame`, the conditional UPDATE of ADR-006.
+ * `JoinGame`, the conditional UPDATE.
  *
  * A Feature test necessarily: the subject reads a row, writes a row and writes the
  * session. `RefreshDatabase` supplies the schema `DB_DATABASE=:memory:` leaves
@@ -380,7 +380,7 @@ it('leaves no player token in the session or the row for a losing join', functio
  *
  * The statement `JoinGame` issues is run a second time by hand against the claimed
  * row and its return value read: zero rows affected is the entire mechanism by which
- * the loser is told `game_full` (Req 2.7, ADR-006). The state and Version_Counter are
+ * the loser is told `game_full` (Req 2.7). The state and Version_Counter are
  * confirmed not to move, so the zero is a no-op rather than an idempotent rewrite.
  *
  * The behavioural half — two sessions, A gets `O` and B gets `game_full` — is

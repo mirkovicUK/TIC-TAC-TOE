@@ -18,7 +18,7 @@ return new class extends Migration
     public function up(): void
     {
         // No CHECK requires `x_token_hash IS NOT NULL`, or requires either token slot
-        // to be populated in any state, and none may be added. Under ADR-010 tokens
+        // to be populated in any state, and none may be added. Tokens
         // are minted per request, so a rematch is inserted with BOTH slots NULL, and
         // the mark swap of Requirement 7.3 lets the first requester populate
         // `o_token_hash` while `x_token_hash` is still NULL. Such a constraint would

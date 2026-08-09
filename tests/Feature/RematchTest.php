@@ -44,7 +44,7 @@ use function Pest\Laravel\post;
  *     `CreateRematch` returns a `ResolvedPlayer`; only the controller makes a location.
  *   - The per-request minting of Requirement 7.6 is a claim about a session. A
  *     service call takes whatever session is current; a request presents a
- *     credential (ADR-010).
+ *     credential.
  *
  * It suspends and resumes sessions rather than starting clean ones, unlike
  * `SubmitMoveTest`, because Requirement 7.6 is about the second Player's slot having
@@ -336,7 +336,7 @@ function rematchHeldHashFor(string $gameId): ?string
  *
  * The central assertion is made twice, before each Player's request: the slot that
  * request will fill is NULL before it. That is the difference between minting per
- * request (ADR-010, Req 7.6) and minting both tokens at creation, which would
+ * request (Req 7.6) and minting both tokens at creation, which would
  * populate both slots at the first request and pass every other assertion here.
  *
  * The preconditions are asserted rather than assumed, because each is a way this could
@@ -399,7 +399,7 @@ it('converges on one rematch with the marks swapped, minting each session its ow
         // now in their session, and the absent Player's slot is still NULL.
         ->and($rematchRow[rematchSlotOf($firstOnRematch)])->toBe(rematchHeldHashFor($rematchId), 'the slot for the swapped Mark does not hold the digest of the Player_Token in the requesting session (Req 7.3, 7.6)')
         ->and($rematchRow[rematchSlotOf($firstOnRematch)])->not->toBeNull('the requesting session was issued no Player_Token for the Rematch (Req 7.6)')
-        ->and($rematchRow[rematchSlotOf($secondOnRematch)])->toBeNull('the absent Player\'s Rematch token was minted before that Player asked for it, which is the behaviour ADR-010 exists to replace (Req 7.6)')
+        ->and($rematchRow[rematchSlotOf($secondOnRematch)])->toBeNull('the absent Player\'s Rematch token was minted before that Player asked for it, which is the behaviour per-request minting exists to replace (Req 7.6)')
         ->and(rematchResolvedMark($rematchId))->toBe($firstOnRematch, 'the requesting session\'s Rematch token does not resolve to the opposite of the Mark it held in the preceding Game (Req 7.3, 7.6)')
         // Req 7.5 and Req 7.14.
         ->and(rematchVersionOf($preceding->id))->toBe($versionBefore + 1, "creating the Rematch did not increment the preceding Game's Version_Counter by exactly one (Req 7.5)")
@@ -419,8 +419,8 @@ it('converges on one rematch with the marks swapped, minting each session its ow
         ->and(rematchVersionOf($preceding->id))->toBe($versionBefore + 1, "a repeated request incremented the preceding Game's Version_Counter a second time (Req 7.5, 7.9)")
         ->and(rematchRowOf($preceding->id))->toBe($before, 'a repeated request changed the preceding Game (Req 7.9, 7.14)')
         ->and(rematchMoveListOf($rematchId))->toBe([], 'a repeated request added a Move to the Rematch')
-        // Re-minting replaces the hash in the requester's own slot, which ADR-010
-        // names as a consequence worth having: it is how a Player who lost their
+        // Re-minting replaces the hash in the requester's own slot, which is a
+        // consequence worth having: it is how a Player who lost their
         // Rematch token but kept the preceding one recovers. It must not reach the
         // other slot.
         ->and(rematchResolvedMark($rematchId))->toBe($firstOnRematch, 'a repeated request left the session holding a Player_Token that no longer resolves to its Mark (Req 7.6, 7.9)')
@@ -438,7 +438,7 @@ it('converges on one rematch with the marks swapped, minting each session its ow
         ->and(rematchResolvedMark($rematchId))->toBeNull('the second session already holds a Player_Token for the Rematch, so its request below mints nothing (Req 7.6)')
         // The same assertion as before the first request, now for the other Player:
         // the Rematch has existed for two requests and this slot is still empty.
-        ->and(rematchRowOf($rematchId)[rematchSlotOf($secondOnRematch)])->toBeNull('the second Player\'s Rematch token existed before the second Player asked for it (Req 7.6, ADR-010)');
+        ->and(rematchRowOf($rematchId)[rematchSlotOf($secondOnRematch)])->toBeNull('the second Player\'s Rematch token existed before the second Player asked for it (Req 7.6)');
 
     // ---- The second request. ----
     $second = rematchPost($preceding->id);

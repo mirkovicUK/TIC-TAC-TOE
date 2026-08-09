@@ -39,7 +39,7 @@ use App\Models\Game;
  * The prop's absence for a refused request is structural (Req 3.10): every
  * `GameResolver` rejection is a fieldless `VisibilityOutcome` case, so a refused
  * request holds no Game to build a `GameSnapshot` from and cannot reach this class.
- * There is no conditional-request path either (Req 8.4, ADR-002) — every state
+ * There is no conditional-request path either (Req 8.4) — every state
  * request gets the whole representation, with the Version_Counter sent every time
  * (Req 8.3) as the client's change detector.
  *

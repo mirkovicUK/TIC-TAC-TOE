@@ -12,8 +12,7 @@ use Illuminate\Support\Str;
 
 /**
  * Creates the Rematch of a finished Game, or returns the one that already exists,
- * and mints the requesting session's Player_Token for it (Req 7.2–7.11, 7.14,
- * 7.15, ADR-010).
+ * and mints the requesting session's Player_Token for it (Req 7.2–7.11, 7.14, 7.15).
  *
  * The server cannot write a token into the absent Player's browser, so a Rematch is
  * inserted with BOTH token slots NULL and each Player's token is minted when that
@@ -262,7 +261,7 @@ final class CreateRematch
      * preceding Game's token for the opposite Mark, precisely the identity that owns
      * the slot (Req 7.7). It cannot hand a slot to the other Player, because `$mark`
      * is derived from the caller's own preceding Mark. Replacement is how a Player who
-     * lost their Rematch token but kept the preceding one recovers (ADR-010).
+     * lost their Rematch token but kept the preceding one recovers.
      */
     private function mintFor(Game $rematch, Mark $mark): void
     {

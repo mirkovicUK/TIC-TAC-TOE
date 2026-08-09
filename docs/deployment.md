@@ -1,14 +1,7 @@
 # Deploying this application
 
-The one deployment document. It covers the setup that cannot be automated, what happens on an
-ordinary push, deploying a chosen tag by hand, rolling back, and what to do when the pipeline
-itself is the broken thing.
-
-It replaced `docs/deploy-schedule-swap.md`, which documented building the image on the instance and
-was deleted rather than rewritten. That document already carried a `docker image prune -f` step that
-reclaimed nothing and a crontab line that would have silently stopped the sweep; keeping two
-deployment documents is how one of them comes to describe a loop the stack no longer supports. Git
-history has it if you want to see how the manual era worked.
+Setup that cannot be automated, an ordinary push, deploying a chosen tag by hand, rolling back,
+and what to do when the pipeline itself is broken.
 
 - [The setup steps only you can run](#the-setup-steps-only-you-can-run)
 - [An ordinary push](#an-ordinary-push)
@@ -22,16 +15,6 @@ history has it if you want to see how the manual era worked.
 
 ## The setup steps only you can run
 
-The pipeline cannot create its own permission to exist, and it cannot click a button in GitHub's
-settings. Everything else in `.kiro/specs/continuous-deployment/tasks.md` is a file somebody writes;
-the nine steps below are done by hand, and four of them have to happen at a particular moment or the
-deployment breaks.
-
-**All nine were done on this deployment.** They are kept because they are how the instance got into
-its current state, and because rebuilding it from scratch means running them again.
-
-Read the **When** column first. The order is not a suggestion.
-
 | # | Step | When | Where |
 | --- | --- | --- | --- |
 | 1 | Create the GitHub OIDC provider | Any time. Safe now | AWS, your laptop |
@@ -44,17 +27,14 @@ Read the **When** column first. The order is not a suggestion.
 | 8 | Re-register the document, now it has a `diagnose` mode | Before the first deploy | AWS, your laptop |
 | 9 | Add `--env-file` to the sweep crontab | **Before or immediately after the first deploy.** Miss it and the nightly sweep dies quietly | Session Manager |
 
-Facts these steps use, all verified: account `811362454196`, region `eu-west-2`, instance
-`i-0c6bab4bc4644e760`, repository `mirkovicUK/TIC-TAC-TOE`, deployment branch `main`.
+All nine are done on this deployment. Facts they use: account `811362454196`, region `eu-west-2`,
+instance `i-0c6bab4bc4644e760`, repository `mirkovicUK/TIC-TAC-TOE`, deployment branch `main`.
 
 ---
 
 ### Step 1 — Create the GitHub OIDC provider
 
-**When:** any time. Nothing depends on it yet and it changes nothing that is running.
-
-This registers GitHub as an identity provider your AWS account will accept tokens from. Your
-account currently has only a Vercel provider, so this is the first for GitHub.
+**When:** any time.
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
@@ -64,62 +44,35 @@ aws iam create-open-id-connect-provider \
   --client-id-list sts.amazonaws.com
 ```
 
-Expected: JSON containing an ARN ending
-`:oidc-provider/token.actions.githubusercontent.com`.
-
-No thumbprint argument is needed — AWS manages GitHub's. Confirm it took:
+Expect: JSON containing an ARN ending `:oidc-provider/token.actions.githubusercontent.com`. No
+thumbprint argument is needed.
 
 ```bash
 aws iam list-open-id-connect-providers
 ```
 
-You should see the new provider alongside the existing Vercel one.
-
-**Note what this does and does not scope.** Unlike Vercel's provider, whose URL carries your
-team — `oidc.vercel.com/aurora75-s-projects` — GitHub's issuer is shared across every GitHub
-account, with no tenancy segment. A per-tenant issuer URL does exist, but it is a GitHub
-Enterprise Cloud feature. So on this plan **the provider grants nothing on its own**: any GitHub
-workflow anywhere can present a valid token to your account, and every one of them is refused
-until some role's trust policy agrees to accept it.
-
-AWS treats that as a known risk rather than leaving it to you. It classifies GitHub Actions as a
-*shared* OIDC provider whose tenancy claim is `sub`, and it **refuses to create or update a role
-trust policy that omits `token.actions.githubusercontent.com:sub`**, failing with
-`MalformedPolicyDocument`. It also refuses a `sub` condition whose value is only a wildcard. The
-scoping is therefore mandatory, not advisory — steps 2 and 3 are where it happens.
+Expect: the new provider listed.
 
 ---
 
 ### Step 2 — Create the `production` environment, restricted to `main`
 
-**When:** any time. Nothing depends on it yet.
-
-This is where the branch restriction lives. The trust policy in step 3 scopes to
-`repo:mirkovicUK/TIC-TAC-TOE:environment:production`, which carries **no branch information** —
-a job targeting an environment presents `environment:` in its subject claim and no `ref:`
-segment, and the two forms are mutually exclusive.
-
-So this step is not a convenience. Without it, a run on *any* branch that targets the
-environment could assume the deployment role.
+**When:** any time.
 
 In GitHub: **Settings → Environments → New environment**, named `production`. Then:
 
 - **Deployment branches** → *Selected branches* → add `main`, and nothing else
 - Leave **required reviewers** and **wait timer** off
 
-Keeping the protection rules to the branch restriction alone means the friction is identical to
-a plain branch condition. What it buys is that GitHub evaluates the rule **before it issues a
-token**, so a disallowed branch never obtains a credential to present — which is strictly
-stronger than AWS refusing one after the fact. A required-reviewer gate later is a checkbox
-here, with no change to AWS.
+The trust policy in step 3 scopes to `environment:production`, which carries no branch
+information, so this rule is the entire branch boundary.
 
 ---
 
 ### Step 3 — Create the deployment role
 
-**When:** after tasks 1.1 and 1.2 have written `deploy/iam/deployment-role-trust-policy.json`
-and `deploy/iam/deployment-role-permissions-policy.json`. The role is created *from* those
-files, so they must exist first.
+**When:** after tasks 1.1 and 1.2 have written `deploy/iam/deployment-role-trust-policy.json` and
+`deploy/iam/deployment-role-permissions-policy.json`.
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
@@ -136,67 +89,29 @@ aws iam put-role-policy \
   --policy-document file://deploy/iam/deployment-role-permissions-policy.json
 ```
 
-Then check the trust policy is as tight as intended, because this is the one thing here with a
-security consequence:
+Check the trust policy:
 
 ```bash
 aws iam get-role --role-name tic-tac-toe-deploy \
   --query 'Role.AssumeRolePolicyDocument' | grep -i 'sub\|aud'
 ```
 
-You are looking for `StringEquals` with the full value
+Expect `StringEquals` with the full value, and no `*` anywhere in it:
 
 ```
 repo:mirkovicUK@105384880/TIC-TAC-TOE@1325118189:environment:production
 ```
 
-and **no `*` anywhere in it**.
+The numeric ids are required. The documented form `repo:<owner>/<repo>:environment:<name>` is
+accepted by AWS and then denies every assumption.
 
-**Those numbers are not a typo and they are not optional.** Every guide, AWS's included, gives
-the form `repo:<owner>/<repo>:environment:<name>`. GitHub now embeds immutable account and
-repository ids in the default subject claim for new repositories, so a policy written from the
-documentation is accepted by AWS and then denies every assumption. The failure looks like a
-missing permission, not a claim mismatch, and the workflow log only repeats "not authorized"
-twelve times.
-
-If it ever denies again, get the subject GitHub actually sent rather than guessing:
-
-```bash
-aws cloudtrail lookup-events \
-  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity \
-  --max-results 1 \
-  --query 'Events[0].CloudTrailEvent' --output text | jq -r '.userIdentity.userName'
-```
-
-That prints the exact string the condition must equal, including the ids. Then:
-
-```bash
-aws iam update-assume-role-policy --role-name tic-tac-toe-deploy \
-  --policy-document file://deploy/iam/deployment-role-trust-policy.json
-```
-
-A
-`StringLike` with `repo:mirkovicUK/TIC-TAC-TOE:*` would let a pull request from a fork assume
-this role and deploy. AWS rejects a `sub` condition that is *only* a wildcard, but it will
-happily accept one that is merely too broad — so this check is on you, not on AWS.
-
-If `create-role` fails with `MalformedPolicyDocument`, the trust policy is missing the `sub`
-condition entirely. That is AWS enforcing the tenancy claim for a shared provider, and the fix
-is in the policy file rather than in the command.
-
-Note the role ARN from the output. You need it for step 5.
+Note the role ARN from the output. It is needed for step 5.
 
 ---
 
 ### Step 4 — Register the deploy document
 
-**When:** after task 1.3 has written `deploy/ssm/DeployTicTacToe.json`. Before the deploy job
-lands in task 6.1, because the role can execute nothing else.
-
-This is what stops the pipeline having a root shell. The role is permitted to run exactly one
-document, and that document's commands are fixed by the document rather than supplied by the
-caller. It accepts a `ReleaseTag` matching `^[0-9a-f]{40}$` and a `Mode` of `deploy` or
-`fallback`, and nothing else.
+**When:** after task 1.3 has written `deploy/ssm/DeployTicTacToe.json`, before task 6.1 lands.
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
@@ -211,17 +126,13 @@ aws ssm describe-document --name DeployTicTacToe \
   --query 'Document.{Name:Name,Status:Status,Owner:Owner,Format:DocumentFormat}'
 ```
 
-Expected: `Status` of `Active` and `Owner` showing your account id, `811362454196`.
+Expect: `Status` of `Active`, `Owner` `811362454196`.
 
-**The document needs `jq` and `flock` on the instance.** Both are present on this Ubuntu 24.04
-box and `docs/aws-infra.md` names `jq` as a dependency, but it is worth knowing that the script
-asserts `jq` in its first lines and exits **69** if it is gone. It uses `jq` rather than
-`docker inspect --format` because SSM reads a doubled curly brace as its own parameter
-substitution, so a Go template would break the document.
+The document accepts a `ReleaseTag` matching `^[0-9a-f]{40}$` and a `Mode`, and nothing else. It
+needs `jq` and `flock` on the instance; without `jq` it exits **69**.
 
-**The ongoing cost, so it is not a surprise later.** The deployment role is granted no
-`ssm:UpdateDocument`, deliberately — a pipeline that can rewrite its own permitted script is
-constrained by nothing. So **every future change to the deploy script needs a manual update**:
+Every future change to the deploy script needs a manual update — the deployment role has no
+`ssm:UpdateDocument`, so editing the JSON and pushing changes nothing:
 
 ```bash
 aws ssm update-document \
@@ -231,43 +142,33 @@ aws ssm update-document \
   --content file://deploy/ssm/DeployTicTacToe.json
 ```
 
-Editing `deploy/ssm/DeployTicTacToe.json` and pushing changes nothing on its own. That is the
-price of the constraint.
-
 ---
 
 ### Step 5 — Add the role ARN as a repository variable
 
-**When:** straight after step 3. (Step 4 is independent and can be done either side of this.)
+**When:** straight after step 3.
 
-In GitHub: **Settings → Secrets and variables → Actions → Variables → New repository
-variable**.
+In GitHub: **Settings → Secrets and variables → Actions → Variables → New repository variable**.
 
 - Name: `AWS_DEPLOY_ROLE_ARN`
 - Value: `arn:aws:iam::811362454196:role/tic-tac-toe-deploy`
 
-A **variable**, not a secret. It names a role that only this repository's `production`
-environment can assume, so it is not sensitive, and a variable stays readable in the workflow file's context
-where a secret would be masked in logs for no benefit.
+A **variable**, not a secret.
 
 ---
 
 ### Step 6 — Seed `release.env` on the instance
 
-**When: before task 4.1 lands.** This is the step with teeth. Once `compose.yaml` uses
-`${RELEASE_TAG:?…}`, Compose refuses to start anything without that variable — correct
-behaviour, and an outage if the file is not already there.
-
-Open a shell on the instance:
+**When: before task 4.1 lands.** Once `compose.yaml` uses `${RELEASE_TAG:?…}`, Compose refuses to
+start anything without that variable.
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
 aws ssm start-session --target "$IID"
 ```
 
-Find the commit the running stack was built from, then write the file:
-
 ```bash
+# Session Manager shell, on the instance.
 cd /srv/tic-tac-toe
 git rev-parse HEAD          # the SHA currently checked out and running
 
@@ -276,12 +177,10 @@ chmod 600 deploy/release.env
 cat deploy/release.env
 ```
 
-Expected: two lines, the first carrying a 40-character SHA, the second empty.
+Expect: two lines, the first a 40-character SHA, the second empty.
 
-`PREVIOUS_RELEASE_TAG` is deliberately empty. There is no earlier published image to fall back
-to yet, and the pipeline handles that case explicitly — the first deployment that fails its
-health check will report that no fallback was possible and leave itself running, rather than
-stopping the stack.
+`PREVIOUS_RELEASE_TAG` is deliberately empty. The first deployment that fails its health check
+reports that no fallback was possible and leaves itself running.
 
 `deploy/release.env` is gitignored and lives only on the instance, like `deploy/app.env`.
 
@@ -289,19 +188,10 @@ stopping the stack.
 
 ### Step 7 — Make both GHCR packages public
 
-**When:** after the `publish` job has run once and before task 6.1 lands. The packages cannot
-be made public until they exist, and the deploy job cannot pull them until they are public.
+**When:** after the `publish` job has run once, before task 6.1 lands.
 
-**Verified already done, on the first publish.** A package first pushed from a *public*
-repository with `GITHUB_TOKEN` inherits that repository's visibility, so both arrived public
-with no action needed. Confirmed anonymously against the GHCR API — a pull token carrying no
-credentials fetched both manifests with 200.
-
-Check it anyway rather than trusting it. The instance holds no registry credential by design,
-and if a package is ever private the symptom is a pull failure that does not obviously say
-"permissions".
-
-Confirm from your laptop, with no credentials in play:
+Both arrived public on the first publish: a package first pushed from a public repository with
+`GITHUB_TOKEN` inherits that visibility. Confirm from your laptop, with no credentials in play:
 
 ```bash
 SHA=$(git rev-parse HEAD)
@@ -314,24 +204,18 @@ for img in app web; do
 done
 ```
 
-Both `200` means the instance will pull. A `404` is the answer for both "private" and "no such
-tag", so check the SHA is the full 40 characters before concluding it is a permissions problem.
+Expect `200` for both. A `404` means private *or* no such tag — check the SHA is the full 40
+characters first.
 
-If either is private: **Package settings → Danger Zone → Change visibility → Public**, for each.
+If either is private: **Package settings → Danger Zone → Change visibility → Public**.
 
-**Public is not a convenience here, it sidesteps a second problem.** If the packages stayed
-private, the instance would need a registry credential — and the deploy runs `git` as `ssm-user`
-but `docker pull` as root, so a `docker login` performed as `ssm-user` writes its token to
-`~ssm-user/.docker/config.json` where root's pull never looks. It would fail with a 401 that
-looks like a registry fault. This is the one external dependency the instance profile cannot
-grant, so it is worth being explicit that the answer chosen was "make them public".
+The instance holds no registry credential, so both packages must stay public.
 
 ---
 
 ### Step 8 — Re-register the document
 
-**When:** before the first deploy. The document gained a third `Mode`, `diagnose`, and the
-copy in Systems Manager is the one that runs — editing the JSON and pushing changes nothing.
+**When:** before the first deploy. The copy in Systems Manager is the one that runs.
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
@@ -346,9 +230,8 @@ aws ssm describe-document --name DeployTicTacToe \
   --query 'Document.{Status:Status,Default:DocumentVersion,Latest:LatestVersion}'
 ```
 
-**`update-document` does not change which version runs.** It creates a new version and leaves the
-*default* where it was, so the output above will read `Default: 1, Latest: 2` and `SendCommand`
-would still execute version 1. Promote it:
+Expect `Default: 1, Latest: 2`. `update-document` creates a version and leaves the default where
+it was, so `SendCommand` would still execute version 1. Promote it:
 
 ```bash
 aws ssm update-document-default-version \
@@ -358,22 +241,18 @@ aws ssm describe-document --name DeployTicTacToe \
   --query 'Document.{Status:Status,Default:DocumentVersion,Latest:LatestVersion}'
 ```
 
-Now expect `Status: Active` with `Default` and `Latest` both `2`. Confirm the new mode is really
-in the default version rather than trusting the number:
+Expect `Status: Active` with `Default` and `Latest` both `2`. Then confirm the new mode is in the
+default version:
 
 ```bash
 aws ssm get-document --name DeployTicTacToe \
   --query 'Content' --output text | jq -r '.parameters.Mode.allowedValues'
 ```
 
-Expect three values, including `diagnose`. The `--document-version '$LATEST'` argument on
-`update-document` names the version being *edited*, not the one being made default — an easy
-misread, and the failure mode is a deploy that works while the diagnosis silently does not.
+Expect three values, including `diagnose`.
 
 `diagnose` is read-only: it prints `release.env`, `docker compose ps -a`, the last 50 lines of
-`app`, the last 20 of `web` and `df -h`, then exits 0. It exists because the deploy job needs to
-report the health Compose sees when a gate fails, and the deployment role can run this one
-document and nothing else — there is no route from the runner to a shell on the instance.
+`app`, the last 20 of `web` and `df -h`, then exits 0.
 
 ---
 
@@ -381,26 +260,11 @@ document and nothing else — there is no route from the runner to a shell on th
 
 **When:** before or immediately after the first deploy. Nothing warns you about this one.
 
-`compose.yaml` now resolves `${RELEASE_TAG:?…}`, and Compose interpolates that file before it
-does *anything* — including `exec`. So the existing crontab entry
+Compose interpolates `compose.yaml` before *anything*, including `exec`, so the existing entry now
+fails every night with an interpolation error, visible only in `journalctl -t games-sweep`.
 
-```
-17 3 * * * cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep
-```
-
-now fails every night with an interpolation error, and the only place it shows is
-`journalctl -t games-sweep`. Games stop expiring; nothing else looks wrong.
-
-**Two ways to get this wrong, and both happened here.**
-
-First, do not pipe `crontab -l` through a filter into `crontab -`. If the filter fails it writes
-nothing to the pipe, `crontab -` reads zero bytes, and that installs an *empty* crontab. A long
-`sed` expression pasted into a wrapped terminal will do it.
-
-Second, and worse because it looks like success: **`crontab` exists on both machines.** Run the
-command at your laptop's prompt and it installs the entry there, `crontab -l` shows it back, and
-the instance's crontab stays empty. Nothing in the output distinguishes the two. Check `hostname`
-before you start.
+Check which machine you are on first — `crontab` exists on both, and the output does not
+distinguish them:
 
 ```bash
 # Local machine.
@@ -414,7 +278,7 @@ hostname
 crontab -l 2>/dev/null | grep -c 'games:sweep'    # 0 means there is nothing to replace
 ```
 
-Then write the entry, **still on the instance**:
+Write the entry, still on the instance:
 
 ```bash
 # Session Manager shell, on the instance.
@@ -425,21 +289,18 @@ Then write the entry, **still on the instance**:
 crontab -l
 ```
 
-That form is safe in the way the pipeline is not: `crontab -l` failing contributes nothing to the
-subshell's output while the `echo` still runs, so the worst case is a crontab holding only the
-entry you meant to add.
+Do not pipe `crontab -l` through a filter into `crontab -`: if the filter fails it writes nothing
+and installs an *empty* crontab. The form above cannot, because the `echo` runs regardless.
 
-**`crontab -l` printing nothing does not mean the file is absent.** Ubuntu's `crontab -l` hides
-the three `DO NOT EDIT THIS FILE` header lines it writes itself, so a wiped crontab is a 175-byte
-file that lists as empty. If you want certainty, read the file:
+`crontab -l` printing nothing does not mean the file is absent — Ubuntu hides the three header
+lines it writes itself. To be certain:
 
 ```bash
 # Session Manager shell, on the instance.
 sudo cat /var/spool/cron/crontabs/ssm-user
 ```
 
-Then prove it under the environment cron actually gives it — no TTY, almost no `PATH` — because
-that is what caught the last problem with this entry:
+Then prove it under the environment cron gives it — no TTY, almost no `PATH`:
 
 ```bash
 cd /srv/tic-tac-toe
@@ -461,26 +322,23 @@ composer lint && composer analyse && npx tsc --noEmit && npm run build
 git commit && git push origin main
 ```
 
-Then watch the Actions tab. `quality` → `browser` → `publish` → `deploy`, and the deploy job
-health-gates the result. If the new release does not answer within two minutes, the pipeline
-puts the previous tag back and marks the run **red**. A red run with the site up is the
-pipeline working.
+Then watch the Actions tab: `quality` → `browser` → `publish` → `deploy`. If the new release does
+not answer within two minutes, the pipeline puts the previous tag back and marks the run **red**.
 
-What to check on a normal green run:
+Check a green run:
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
 curl -s "https://$HOST/health"
 ```
 
-And on the instance, what is actually running:
+What is running on the instance:
 
 ```bash
 cat /srv/tic-tac-toe/deploy/release.env
 ```
 
-`Mode=diagnose` is the read-only way to see the whole picture — `release.env`, git HEAD,
-`docker compose ps -a`, disk, and the tail of both containers' logs — without opening a shell:
+`Mode=diagnose` shows the whole picture without opening a shell:
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
@@ -497,8 +355,8 @@ aws ssm get-command-invocation --command-id "$CMD" --instance-id "$IID" \
 
 ## Deploying a chosen tag by hand
 
-Any tag that was ever published can be redeployed. GHCR keeps every pair; the instance keeps only
-the current and previous ones, so an older tag is simply pulled again.
+Any tag ever published can be redeployed. GHCR keeps every pair; the instance keeps the current
+and previous ones, so an older tag is pulled again.
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
@@ -521,9 +379,8 @@ this way is not checked and not reverted. Check it yourself:
 curl -s "https://$HOST/health"
 ```
 
-`Mode=deploy` advances `PREVIOUS_RELEASE_TAG` to whatever was running, so the rollback target stays
-correct. Confirm the tag exists in the registry first if you are unsure — a pull failure aborts
-before anything is recreated, leaving the running stack alone:
+`Mode=deploy` advances `PREVIOUS_RELEASE_TAG` to whatever was running. Confirm the tag exists in
+the registry first if unsure — a pull failure aborts before anything is recreated:
 
 ```bash
 T=$(curl -sS "https://ghcr.io/token?service=ghcr.io&scope=repository:mirkovicuk/tic-tac-toe-app:pull" | jq -r .token)
@@ -536,9 +393,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $T" \
 
 ## Rolling back by hand
 
-The pipeline reverts automatically when a health gate fails. If you need to revert for another
-reason — a defect that is serving fine but wrong — send the same document the pipeline sends,
-from your laptop:
+The pipeline reverts automatically when a health gate fails. To revert for another reason, send
+the same document the pipeline sends:
 
 ```bash
 cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
@@ -555,34 +411,27 @@ aws ssm get-command-invocation --command-id "$CMD" --instance-id "$IID" \
 ```
 
 **You do not name the tag to restore.** `Mode=fallback` ignores `ReleaseTag` and reads
-`PREVIOUS_RELEASE_TAG` from `release.env` on the instance, because that file is the only thing
-that authoritatively knows what was running before. `ReleaseTag` is still required — SSM 2.2 has
-no conditional parameters — so pass any valid SHA; the current `HEAD` is the honest choice.
+`PREVIOUS_RELEASE_TAG` from `release.env` on the instance. `ReleaseTag` is still required — SSM 2.2
+has no conditional parameters — so pass any valid SHA.
 
-That mode also leaves `PREVIOUS_RELEASE_TAG` alone, so a second fallback restores the same tag
-rather than walking backwards through history. If nothing was ever recorded, the document exits
-**71** and leaves the current stack running.
+That mode leaves `PREVIOUS_RELEASE_TAG` alone, so a second fallback restores the same tag. If
+nothing was ever recorded, the document exits **71** and leaves the current stack running.
 
-Do **not** run `docker compose down -v`. The `-v` removes volumes, and one of them holds the
-TLS certificate whose replacement depends on a Let's Encrypt rate limit shared with every other
-user of `sslip.io`.
+Do **not** run `docker compose down -v`. One of those volumes holds the TLS certificate.
 
-Do **not** run `php artisan migrate:rollback`. Rolling an image back does not roll the database
-back, and the `down()` method on the games migration is `Schema::dropIfExists('games')` — it
-would delete every game and move. Schema changes move forward only; a bad migration is fixed by
+Do **not** run `php artisan migrate:rollback`. The `down()` on the games migration is
+`Schema::dropIfExists('games')` — it would delete every game and move. A bad migration is fixed by
 a new migration.
 
 ---
 
 ## Break glass: when the document itself is broken
 
-Use this **only** when `DeployTicTacToe` cannot run — a bad `update-document`, or a corrupted
-`release.env`. It skips the lock, the pull check, the `--wait` gate and the revision assertion,
-which is to say every safeguard the document exists for.
+Use **only** when `DeployTicTacToe` cannot run — a bad `update-document`, or a corrupted
+`release.env`. It skips the lock, the pull check, the `--wait` gate and the revision assertion.
 
-Note what this is *not* a fallback for. It needs a Session Manager shell, which is Systems Manager,
-which is the same dependency `send-command` uses. If SSM is unavailable you get neither. The case
-this covers is the document being wrong, not AWS being down.
+This is not a fallback for AWS being down: it needs a Session Manager shell, which is the same
+dependency `send-command` uses.
 
 ```bash
 # Local machine.
@@ -605,9 +454,7 @@ docker compose --env-file deploy/release.env ps
 curl -s https://18-175-88-107.sslip.io/health
 ```
 
-`--env-file` on **every** `docker compose` command. Compose interpolates `compose.yaml` before it
-does anything at all, including `ps` and `exec`, and `${RELEASE_TAG:?…}` makes it refuse rather
-than guess.
+`--env-file` on **every** `docker compose` command, including `ps` and `exec`.
 
 To restore the document itself, from your laptop:
 
@@ -617,46 +464,32 @@ aws ssm update-document --name DeployTicTacToe --document-version '$LATEST' \
 aws ssm update-document-default-version --name DeployTicTacToe --document-version <n>
 ```
 
-Both commands are needed. `update-document` creates a version and leaves the default where it was.
+Both commands are needed.
 
 ---
 
 ## What survives a deployment
 
-**Survives.** Everything in the two volumes: the SQLite database with its games, moves and
-`sessions` table, and Caddy's certificate. Players stay in their games across a deployment. Seven
-deployments have not lost a game.
-
-**Does not survive, by design.** The rate-limit counters, which live in the container's own
-filesystem. Everyone starts from a clean limit after a deployment, which costs nothing.
-
-**Never change `APP_KEY`.** It is in `deploy/app.env` on the instance, which is gitignored and
-therefore cannot be touched by a deployment. Regenerating it invalidates every session cookie at
-once — and with no user accounts to recover through, every player in a game in progress is locked
-out permanently, with no way back for them or for you.
-
-**There is no backup.** The SQLite file is in a Docker volume on one instance's root EBS volume.
-Nothing copies it anywhere. Deployments do not touch it, but if that volume is lost every game and
-move is gone. That was a deliberate scoping decision, recorded in the requirements rather than
-overlooked.
+| | |
+| --- | --- |
+| **Survives** | Both volumes: the SQLite database with its games, moves and `sessions` table, and Caddy's certificate. Players stay in their games |
+| **Does not survive, by design** | The rate-limit counters, which live in the container's own filesystem. Everyone starts from a clean limit |
+| **Never change** | `APP_KEY`, in `deploy/app.env` on the instance. Regenerating it invalidates every session cookie, and with no accounts to recover through every player in a game in progress is locked out permanently |
+| **Not backed up** | The SQLite file is in a Docker volume on one instance's root EBS volume. Nothing copies it anywhere. If that volume is lost, every game and move is gone |
 
 ### Downtime
 
-`docker compose up -d` destroys both containers and creates new ones, so requests in flight are
-dropped and there is a gap of a second or two. `web` answers 502 while `app` restarts, migrates and
-rebuilds its caches. The client polls every 2 seconds, so a player sees a brief stall rather than a
-broken page.
+`docker compose up -d` destroys both containers and creates new ones. Requests in flight are
+dropped and there is a gap of a second or two; `web` answers 502 while `app` restarts, migrates
+and rebuilds its caches. The client polls every 2 seconds, so a player sees a brief stall.
 
 A pull that fails, or a container that will not become healthy, leaves the previous version
-serving — the document aborts before recreating anything in the first case, and the workflow's
-gate reverts in the second.
+serving.
 
 ### Verifying the lifecycle records
 
 Requirement 10.3's records go to `app`'s stdout as JSON. The vocabulary is `move.accepted`,
-`move.rejected` and `rematch.created` — **not** `game.move_accepted`; grepping for the wrong prefix
-once made a working application look defective. The check worth making reconciles the count against
-the database rather than just finding the lines:
+`move.rejected` and `rematch.created` — **not** `game.move_accepted`.
 
 ```bash
 # Session Manager shell, on the instance, in /srv/tic-tac-toe.
@@ -673,21 +506,36 @@ The two should agree, allowing for log rotation — `json-file` is capped at 10 
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `Error: Not authorized to perform sts:AssumeRoleWithWebIdentity`, twelve retries | Trust policy `sub` does not match, step 1 skipped, or the job is missing `environment: production` | Read the subject GitHub actually presented out of CloudTrail (below) and make the condition equal it. Do not compare against the documented form — this repository's tokens carry immutable numeric ids |
+| `Error: Not authorized to perform sts:AssumeRoleWithWebIdentity`, twelve retries | Trust policy `sub` does not match, step 1 skipped, or the job is missing `environment: production` | Read the subject GitHub presented out of CloudTrail (below) and make the condition equal it. This repository's tokens carry immutable numeric ids |
 | `MalformedPolicyDocument` creating the role | Trust policy omits the `sub` condition AWS requires for a shared provider | Add the `sub` condition to the policy file |
 | A deploy ran from a branch other than `main` | The `production` environment has no deployment-branch restriction — step 2 | Restrict it to `main` only |
 | `AccessDeniedException` on `ssm:SendCommand` | Permissions policy missing the instance ARN or the document ARN — it needs both | Re-apply step 3's `put-role-policy` |
-| `InvalidDocument` on `SendCommand` | The document is not registered — step 4 | Run `aws ssm create-document` |
-| A change to the deploy script has no effect | The document was not updated; editing the JSON and pushing does nothing | `aws ssm update-document`, step 4 |
+| `InvalidDocument` on `SendCommand` | The document is not registered — step 4 | `aws ssm create-document` |
+| A change to the deploy script has no effect | The document was not updated | `aws ssm update-document`, step 4 |
 | Deploy fails pulling the image | Packages still private — step 7 | Set both to Public |
 | `RELEASE_TAG must be set` | `release.env` missing or empty — step 6 | Recreate it on the instance |
-| `detected dubious ownership` | A `git` command ran as root in `/srv/tic-tac-toe` | The deploy script must use `sudo -u ssm-user`; do the same by hand |
+| `detected dubious ownership` | A `git` command ran as root in `/srv/tic-tac-toe` | Use `sudo -u ssm-user` |
 | Health gate fails, previous tag restored, run red | Working as designed | Read `docker compose logs app` on the instance |
-| Every deploy now fails on a migration that "already exists" | A migration applied part way. Laravel opens no transaction for SQLite | Fix by hand on the instance, then keep migrations to one change each |
+| Every deploy fails on a migration that "already exists" | A migration applied part way. Laravel opens no transaction for SQLite | Fix by hand on the instance, then keep migrations to one change each |
 | Site up but unstyled, run red | The two images are from different commits | Republish; do not revert |
 
-The deploy document exits with a distinct code per failure, so the workflow log tells you which
-guard fired without reading the script:
+Read the subject GitHub actually sent:
+
+```bash
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity \
+  --max-results 1 \
+  --query 'Events[0].CloudTrailEvent' --output text | jq -r '.userIdentity.userName'
+```
+
+Then:
+
+```bash
+aws iam update-assume-role-policy --role-name tic-tac-toe-deploy \
+  --policy-document file://deploy/iam/deployment-role-trust-policy.json
+```
+
+The deploy document exits with a distinct code per failure:
 
 | Code | Meaning |
 | --- | --- |
@@ -700,7 +548,7 @@ guard fired without reading the script:
 | 70 | Another deployment holds the lock |
 | 71 | `Mode=fallback` with no `PREVIOUS_RELEASE_TAG` recorded |
 
-For anything else, the two commands worth having before asking:
+For anything else:
 
 ```bash
 docker compose ps
@@ -712,45 +560,41 @@ docker compose logs --tail=60
 ## Reclaiming disk
 
 The instance keeps only the deploying and retained image pairs; the document deletes the rest by
-name on every deployment. So under ordinary use there is nothing to reclaim, and **`docker image
-prune -f` is the wrong command** — it removes only *dangling* images, and every image here carries
-a tag, so it frees nothing while looking like housekeeping. `prune -a` is worse: it removes whatever
-no running container uses, which is exactly the retained pair the rollback depends on.
+name on every deployment. Under ordinary use there is nothing to reclaim.
 
-Two things do accumulate outside that logic:
+**`docker image prune -f` is the wrong command** — it removes only *dangling* images, and every
+image here carries a tag. `prune -a` is worse: it removes whatever no running container uses,
+which is the retained pair the rollback depends on.
 
 ```bash
 # Session Manager shell, on the instance.
 docker system df
 ```
 
-**BuildKit cache.** Left over from when images were built on the instance. Nothing builds there now,
-so it can never be hit — it was 1.85 GB, larger than every image on the machine, and was cleared
-once with `docker builder prune -f`. Safe, because nothing on that box builds.
+Two things accumulate outside that logic:
 
-**`tic-tac-toe-app:latest` and `tic-tac-toe-web:latest`.** The last locally built pair. They sit
-outside the two GHCR repositories, so the reclaim never sees them, and they are about 184 MB of real
-shared storage. `docker rmi tic-tac-toe-app:latest tic-tac-toe-web:latest` when it matters.
+- **BuildKit cache.** Left over from when images were built on the instance. Nothing builds there
+  now. Was 1.85 GB; cleared once with `docker builder prune -f`.
+- **`tic-tac-toe-app:latest` and `tic-tac-toe-web:latest`.** The last locally built pair, outside
+  the two GHCR repositories so the reclaim never sees them, about 184 MB shared.
+  `docker rmi tic-tac-toe-app:latest tic-tac-toe-web:latest`.
 
-Leave `caddy:2-alpine` — `compose.placeholder.yaml` still refers to it for the certificate path in
-`docs/aws-infra.md`.
+Leave `caddy:2-alpine` — `compose.placeholder.yaml` refers to it.
 
-One thing to know before reading disk figures after an incident: **a failed deployment's images are
-not reclaimed at the time.** The reclaim runs before `up`, so the failing containers still hold
-them and `docker rmi` refuses. The next ordinary deployment removes them.
+A failed deployment's images are **not** reclaimed at the time: the reclaim runs before `up`, so
+the failing containers still hold them and `docker rmi` refuses. The next ordinary deployment
+removes them.
 
-Sizes in `docker image ls` are misleading here. It reports each image's full size, counting shared
-layers every time — seven images listing at ~3.1 GB occupy 1.18 GB, because two pairs from adjacent
-commits differ only in the final `COPY` layer. `docker system df` gives the real figure.
+Use `docker system df`, not `docker image ls`, for real figures: `image ls` counts shared layers
+once per image, so seven images listing at ~3.1 GB occupy 1.18 GB.
 
 ---
 
 ## Cost note
 
 The instance and its Elastic IP bill continuously whether or not you deploy. GHCR storage and
-transfer are free for public packages, so the registry adds nothing.
+transfer are free for public packages.
 
-**Teardown** is in [`docs/aws-infra.md`](aws-infra.md) — it owns provisioning, so it owns the
-reverse. Bring the stack down first with `cd /srv/tic-tac-toe && docker compose --env-file
-deploy/release.env down` (never `-v`), then follow that document. Releasing the Elastic IP is the
-step that stops the meter.
+**Teardown** is in [`docs/aws-infra.md`](aws-infra.md). Bring the stack down first with
+`cd /srv/tic-tac-toe && docker compose --env-file deploy/release.env down` (never `-v`), then
+follow that document. Releasing the Elastic IP is the step that stops the meter.

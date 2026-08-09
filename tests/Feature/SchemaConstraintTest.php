@@ -175,7 +175,7 @@ it('persists a gapped move list and one that does not start at zero, which the r
 
 /*
  * `games_join_code_unique` is usable only because SQLite treats NULLs in a unique index
- * as distinct, which is what lets every rematch carry `join_code = NULL` (ADR-010; the
+ * as distinct, which is what lets every rematch carry `join_code = NULL` (the
  * CHECK `join_code IS NOT NULL OR rematch_of_game_id IS NOT NULL` keeps such a row
  * reachable). Under an engine that treated NULLs as equal, the second rematch created
  * in production would collide, so the dependency is pinned here.

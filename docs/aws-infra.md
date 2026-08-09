@@ -1,16 +1,16 @@
 # Provisioning the instance
 
-This is how the hosted instance was built, and the procedure to rebuild it. Every step was AWS CLI
-run by hand; nothing here is automated (ADR-009).
+How the hosted instance was built, and the procedure to rebuild it. Every step is AWS CLI run by
+hand; nothing here is automated (ADR-009).
 
-What it provisions: one EC2 instance in `eu-west-2` with an Elastic IP, a security group open only on
-80 and 443, an instance profile carrying nothing but `AmazonSSMManagedInstanceCore`, Docker with the
-Compose plugin, and one Let's Encrypt certificate for `<eip-dashed>.sslip.io` in an external Docker
-volume.
+What it provisions: one EC2 instance in `eu-west-2` with an Elastic IP, a security group open only
+on 80 and 443, an instance profile carrying nothing but `AmazonSSMManagedInstanceCore`, Docker with
+the Compose plugin, and one Let's Encrypt certificate for `<eip-dashed>.sslip.io` in an external
+Docker volume.
 
-Part 2 ran before the application existed, deliberately. `sslip.io` is one registered domain shared
-by all its users, so an issuance can be refused because of strangers' usage — and a refusal is
-recoverable a week out but not on submission day.
+Part 2 runs before the application exists. `sslip.io` is one registered domain shared by all its
+users, so an issuance can be refused because of strangers' usage, and a refusal is recoverable a
+week out but not on submission day.
 
 Each fenced block opens with a comment saying which machine it runs on.
 
@@ -22,12 +22,13 @@ Each fenced block opens with a comment saying which machine it runs on.
 - [Fallbacks](#fallbacks)
 - [Teardown](#teardown)
 - [Checklist](#checklist)
+- [Opening a shell later](#opening-a-shell-later)
 
 ## Prerequisites
 
 - `aws --version` reports 2.x, and `aws sts get-caller-identity` returns an account.
 - Every command assumes `eu-west-2`. Set it once per session: `export AWS_DEFAULT_REGION=eu-west-2`.
-- `session-manager-plugin` is a separate install from the CLI and `aws ssm start-session` fails without it:
+- `session-manager-plugin` is a separate install from the CLI; `aws ssm start-session` fails without it:
 
 ```bash
 # Local machine.
@@ -36,25 +37,26 @@ sudo dpkg -i /tmp/session-manager-plugin.deb
 session-manager-plugin --version
 ```
 
-- `deploy/Caddyfile` and `deploy/compose.placeholder.yaml` must be on `main` before Part 2, because Part 2 clones the public repo onto the instance to get them. The commit that accompanies this runbook satisfies that.
+- `deploy/Caddyfile` and `deploy/compose.placeholder.yaml` must be on `main` before Part 2, which clones the public repo onto the instance to get them.
 
 ## Decisions
 
 | Decision | Reason |
 | --- | --- |
-| Region `eu-west-2` | UK company, UK reviewer; change it consistently everywhere if you change it at all. |
-| `t3.micro`, x86_64 | The image is built on the box and the dev machine is amd64, so matching removes a class of architecture-specific build failure. |
-| Ubuntu 24.04 LTS amd64, resolved from the SSM public parameter | AMI ids are region-specific and change with every Canonical rebuild, so never hardcode one. |
-| Root volume 20 GB gp3 | Images plus build layers, with headroom for a rebuild that does not prune first. |
-| IMDSv2 required | Closes the SSRF path to the instance role's credentials, and this instance carries a role. |
-| No key pair, no inbound 22 | Shell is Session Manager only, so there is no private key to leak and the most-scanned port is absent. |
-| `/srv/tic-tac-toe` | The design's `games:sweep` crontab entry already assumes this path. |
-| Hostname `<eip-dashed>.sslip.io` | No registration, no DNS record; resolves to the address embedded in the name. |
+| Region `eu-west-2` | UK company, UK reviewer. Change it consistently everywhere or not at all |
+| `t3.micro`, x86_64 | The published images are `linux/amd64` |
+| Ubuntu 24.04 LTS amd64, resolved from the SSM public parameter | AMI ids are region-specific and change with every Canonical rebuild |
+| Root volume 20 GB gp3 | Images plus layers, with headroom |
+| IMDSv2 required | Closes the SSRF path to the instance role's credentials |
+| No key pair, no inbound 22 | Shell is Session Manager only: no private key to leak, most-scanned port absent |
+| `/srv/tic-tac-toe` | The `games:sweep` crontab entry assumes this path |
+| Hostname `<eip-dashed>.sslip.io` | No registration, no DNS record; resolves to the address in the name |
 
-Swap: 1 GiB of RAM is enough to run the stack but `npm run build` at task 13 can be OOM-killed (symptom: Vite dies with `Killed`). If that happens, add swap and rebuild.
+Swap: 1 GiB of RAM runs the stack, but an image build on the box can be OOM-killed (symptom: Vite
+dies with `Killed`). Nothing builds there now; if you ever need it:
 
 ```bash
-# Session Manager shell, on the instance. Only if the image build is OOM-killed.
+# Session Manager shell, on the instance. Only if a build is OOM-killed.
 sudo fallocate -l 1G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
@@ -65,13 +67,14 @@ free -h
 
 ## Cost
 
-- A `t3.micro`, a 20 GB gp3 volume and one Elastic IP in `eu-west-2`. Whether any of it is free is account-specific, so check your own Billing and Cost Management → Free tier page rather than a figure in a document.
+- A `t3.micro`, a 20 GB gp3 volume and one Elastic IP in `eu-west-2`. Whether any of it is free is account-specific — check your own Billing and Cost Management → Free tier page.
 - An Elastic IP is charged whenever it is not associated with a running instance, and since 2024 every public IPv4 address carries an hourly charge regardless.
-- So stopping the instance while keeping the address is the worst of the three options: no compute, still paying for volume and address. Either leave it running until reviewed, or [tear it down](#teardown).
+- Stopping the instance while keeping the address is the worst option: no compute, still paying for volume and address. Either leave it running, or [tear it down](#teardown).
 
 ## Part 1 — task 2.1: infrastructure
 
-Keep one terminal open for the whole of Part 1. The steps chain shell variables so nothing is transcribed twice, and step 8 writes them to a gitignored file so a new terminal can re-source them.
+Keep one terminal open for the whole of Part 1. The steps chain shell variables; step 8 writes them
+to a gitignored file so a new terminal can re-source them.
 
 ### 1. Session variables
 
@@ -84,7 +87,7 @@ aws sts get-caller-identity --query Account --output text
 
 ### 2. IAM role and instance profile
 
-The console creates the instance profile for you and the CLI does not, so this is four calls rather than two.
+Four calls, not two: the console creates the instance profile for you and the CLI does not.
 
 ```bash
 # Local machine.
@@ -100,7 +103,13 @@ aws iam create-instance-profile --instance-profile-name "$NAME-ssm"
 aws iam add-role-to-instance-profile --instance-profile-name "$NAME-ssm" --role-name "$NAME-ssm"
 ```
 
-Verify: `aws iam list-attached-role-policies --role-name "$NAME-ssm" --query 'AttachedPolicies[].PolicyName'` returns exactly `["AmazonSSMManagedInstanceCore"]` and nothing else. The role is the blast radius on a box deliberately exposed to the internet, so anything extra widens it for no need.
+Verify:
+
+```bash
+aws iam list-attached-role-policies --role-name "$NAME-ssm" --query 'AttachedPolicies[].PolicyName'
+```
+
+Expect exactly `["AmazonSSMManagedInstanceCore"]` and nothing else.
 
 ### 3. Security group
 
@@ -124,7 +133,9 @@ aws ec2 describe-security-groups --group-ids "$SG_ID" \
   --query 'SecurityGroups[0].IpPermissions[].FromPort'
 ```
 
-Expect `[80, 443]`. Anything containing 22 is wrong. 80 is needed as well as 443 for the ACME HTTP-01 challenge and the HTTP-to-HTTPS redirect. Leave egress at the default allow-all, because the SSM Agent dials *out* and that outbound channel is the only way in.
+Expect `[80, 443]`. Anything containing 22 is wrong. 80 is needed as well as 443 for the ACME
+HTTP-01 challenge and the HTTP-to-HTTPS redirect. Leave egress at the default allow-all — the SSM
+Agent dials out, and that outbound channel is the only way in.
 
 ### 4. AMI, from the SSM public parameter
 
@@ -135,8 +146,6 @@ export AMI_ID=$(aws ssm get-parameter \
   --query 'Parameter.Value' --output text)
 echo "$AMI_ID"
 ```
-
-Resolving it beats hardcoding because AMI ids are region-specific and change with every Canonical rebuild.
 
 ### 5. User data
 
@@ -151,7 +160,10 @@ snap start amazon-ssm-agent 2>/dev/null || true
 EOF
 ```
 
-User data can run before snapd has finished seeding, and while that is true both `snap list` and `snap install` fail with `too early for operation, device not yet seeded`, so the guard falls through to an install that also fails and the insurance is defeated in exactly the case it exists for. `snap wait system seed.loaded` blocks until snapd is ready. It matters because with no key pair and no inbound 22, an absent agent means the only remedy is terminate and relaunch.
+`snap wait system seed.loaded` is load-bearing: user data can run before snapd has finished
+seeding, and until it has, both `snap list` and `snap install` fail with `too early for operation,
+device not yet seeded`. With no key pair and no inbound 22, an absent agent means terminate and
+relaunch.
 
 ### 6. Launch
 
@@ -172,9 +184,9 @@ echo "$IID"
 aws ec2 wait instance-running --instance-ids "$IID"
 ```
 
-- There is no `--key-name` argument. That is the deliberate omission, not an oversight.
-- IAM is eventually consistent, so `run-instances` immediately after step 2 can fail with `Invalid IAM Instance Profile name`; wait about ten seconds and re-run the same command, because it is not a mistake in the arguments.
-- `/dev/sda1` is the root device on Canonical's Ubuntu AMIs; if the block device mapping is rejected, confirm with `aws ec2 describe-images --image-ids "$AMI_ID" --query 'Images[0].RootDeviceName' --output text`.
+- There is no `--key-name` argument. Deliberate.
+- IAM is eventually consistent: `run-instances` straight after step 2 can fail with `Invalid IAM Instance Profile name`. Wait about ten seconds and re-run the same command.
+- If the block device mapping is rejected, confirm the root device with `aws ec2 describe-images --image-ids "$AMI_ID" --query 'Images[0].RootDeviceName' --output text`.
 
 Verify:
 
@@ -183,7 +195,8 @@ aws ec2 describe-instances --instance-ids "$IID" --query \
   'Reservations[0].Instances[0].{state:State.Name,type:InstanceType,keyName:KeyName,profile:IamInstanceProfile.Arn,imds:MetadataOptions.HttpTokens}'
 ```
 
-Expect `state: running`, `type: t3.micro`, `keyName: null` (**NEGATIVE**), a profile ARN ending `/tic-tac-toe-ssm`, and `imds: required`.
+Expect `state: running`, `type: t3.micro`, `keyName: null` (**NEGATIVE**), a profile ARN ending
+`/tic-tac-toe-ssm`, and `imds: required`.
 
 ### 7. Elastic IP
 
@@ -199,7 +212,7 @@ export HOST=$(echo "$EIP" | tr '.' '-').sslip.io
 echo "$EIP  ->  $HOST"
 ```
 
-The dashed form is used because it is a single DNS label and cannot be misread as a subdomain of a numeric label.
+The dashed form is a single DNS label and cannot be misread as a subdomain of a numeric label.
 
 ### 8. Save the variables
 
@@ -216,7 +229,8 @@ export HOST=$HOST
 EOF
 ```
 
-Gitignored, because it identifies one provisioned instance. A new terminal picks the session back up with `source deploy/.provisioned.env`, and teardown reads the same file.
+Gitignored. A new terminal resumes with `source deploy/.provisioned.env`; teardown reads the same
+file.
 
 ### 9. Wait for the managed node
 
@@ -227,11 +241,12 @@ aws ssm describe-instance-information \
   --query 'InstanceInformationList[0].{ping:PingStatus,platform:PlatformName,agent:AgentVersion}'
 ```
 
-Expect `ping: Online`; allow two or three minutes. Still absent after five means one of three things:
+Expect `ping: Online`; allow two or three minutes. Still absent after five means one of three
+things:
 
-1. The profile is not attached: check `aws ec2 describe-instances --instance-ids "$IID" --query 'Reservations[0].Instances[0].IamInstanceProfile'`.
+1. The profile is not attached — check `aws ec2 describe-instances --instance-ids "$IID" --query 'Reservations[0].Instances[0].IamInstanceProfile'`.
 2. Egress is broken, so the agent cannot reach the SSM endpoints on outbound 443.
-3. The agent is absent. This one cannot be diagnosed without a shell, which is why step 5 exists, and the remedy is terminate and relaunch.
+3. The agent is absent. Not diagnosable without a shell; terminate and relaunch.
 
 ### 10. Confirm DNS
 
@@ -240,11 +255,9 @@ Expect `ping: Online`; allow two or three minutes. Still absent after five means
 dig +short "$HOST"
 ```
 
-Expect the Elastic IP. Run it locally rather than on the instance, because you are testing public DNS.
+Expect the Elastic IP. Run it locally, not on the instance — you are testing public DNS.
 
 ### 11. Install Docker, unattended, via Run Command
-
-Run Command beats an interactive install because it runs as root, is idempotent, and returns a status you can read.
 
 ```bash
 # Local machine.
@@ -275,11 +288,18 @@ export CMD_ID=$(aws ssm send-command \
 echo "$CMD_ID"
 ```
 
-Run those two blocks exactly as written: the quoted heredoc delimiter keeps `$(dpkg --print-architecture)` literal so it expands on the instance, and the `python3` line is there to get the script into JSON with correct escaping rather than fighting shell quoting inside `--parameters`. `noble` is 24.04's codename and changes with the release.
+Run both blocks exactly as written. The quoted heredoc delimiter keeps
+`$(dpkg --print-architecture)` literal so it expands on the instance, and the `python3` line gets
+the script into JSON with correct escaping. `noble` is 24.04's codename and changes with the
+release.
 
-**`jq` is a declared dependency, not incidental.** It was already present on this box, so the install line is belt-and-braces — but the `DeployTicTacToe` SSM document (`deploy/ssm/DeployTicTacToe.json`) reads container labels with it and exits 69 without it. It cannot use `docker inspect --format` instead, because SSM interprets a doubled curly brace as its own parameter substitution and a Go template would break the document. `flock`, also used by that document, is in `util-linux` and always present.
+`jq` is a declared dependency: `deploy/ssm/DeployTicTacToe.json` reads container labels with it and
+exits **69** without it. `flock`, also used by that document, is in `util-linux` and always present.
 
-**Nothing in this step may reference `ssm-user`, and that is the whole reason it is split from step 13.** The SSM Agent creates that account lazily, when the first Session Manager session opens — not at boot. A `usermod -aG docker ssm-user` here fails with `user 'ssm-user' does not exist`, exit status 6, and `set -euo pipefail` then abandons the rest of the script, so the deploy directory and the version checks silently never happen. `mkdir` is safe because it names no user; the `chown` that goes with it waits for step 13.
+**Nothing in this step may reference `ssm-user`** — the SSM Agent creates that account lazily, when
+the first Session Manager session opens. A `usermod -aG docker ssm-user` here fails with
+`user 'ssm-user' does not exist`, exit status 6, and `set -euo pipefail` abandons the rest of the
+script. The `chown` waits for step 13.
 
 ```bash
 # Local machine.
@@ -287,7 +307,8 @@ aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$IID" \
   --query '{status:Status,out:StandardOutputContent,err:StandardErrorContent}'
 ```
 
-Expect `status: Success` with both versions in `out`. It may report `InProgress` for a minute or so; re-run the same command.
+Expect `status: Success` with both versions in `out`. `InProgress` for a minute or so is normal;
+re-run the same command.
 
 ### 12. Open a session once, to bring `ssm-user` into existence
 
@@ -302,13 +323,11 @@ whoami
 exit
 ```
 
-Expect `whoami` to print `ssm-user`. This step is doing two jobs. It is the **gate**: with no key pair and no port 22 there is no other way in, every deploy command at spec task 13 runs through this path, and if it does not open, stop and fix it now rather than discovering it during the deployment — the remedy is terminate and relaunch, which is cheap here and expensive later. It is also what *creates* the account that step 13 modifies, so it cannot be skipped as a formality even if you are confident the shell works.
-
-`session-manager-plugin` is a separate install from the AWS CLI; see Prerequisites if this fails before connecting.
+Expect `ssm-user`. This step also *creates* the account step 13 modifies, so it cannot be skipped.
+With no key pair and no port 22 there is no other way in — if it does not open, fix it now. The
+remedy is terminate and relaunch.
 
 ### 13. Group membership and directory ownership
-
-Now that the account exists, the two things that need it.
 
 ```bash
 # Local machine.
@@ -338,15 +357,18 @@ aws ssm get-command-invocation --command-id "$CMD_ID2" --instance-id "$IID" \
   --query '{status:Status,out:StandardOutputContent,err:StandardErrorContent}'
 ```
 
-Expect `status: Success` and an `id` line listing `docker` among the groups. The `id -u` guard is there so running this out of order tells you what to do instead of failing with a bare `exit status 6`.
+Expect `status: Success` and an `id` line listing `docker` among the groups.
 
-`chown ssm-user:` with the trailing colon sets the group to that user's login group without assuming a group named `ssm-user` exists, and it is deliberately not `$(id -u):$(id -g)` — Run Command runs as root, so that would hand the directory to root and quietly defeat the step.
+`chown ssm-user:` with the trailing colon sets the group to that user's login group. Deliberately
+not `$(id -u):$(id -g)` — Run Command runs as root, so that would hand the directory to root.
 
-Tradeoff accepted: membership of `docker` is equivalent to root, since anything in that group can start a container mounting the host filesystem. That is tolerable here because the only route to this shell is an IAM-authorised Session Manager session, and anyone who can reach it already holds credentials that could attach a more permissive role.
+Tradeoff accepted: membership of `docker` is equivalent to root. Tolerable here because the only
+route to this shell is an IAM-authorised Session Manager session.
 
 ### 14. Verify in a *new* session
 
-The session from step 12 predates the group change and will not have it. Group membership is fixed at login, so this must be a freshly opened session or `docker ps` fails on the socket while looking as though step 13 did not work.
+The session from step 12 predates the group change. Group membership is fixed at login, so this
+must be a freshly opened session or `docker ps` fails on the socket.
 
 ```bash
 # Local machine.
@@ -362,13 +384,18 @@ df -h /
 sudo ss -ltnp | grep 9000 || echo "9000 not listening — correct"
 ```
 
-Expect an empty container table with headers rather than a permission error on `/var/run/docker.sock`; `docker` among the groups in `id`; `/srv/tic-tac-toe` owned by `ssm-user`; `/` showing about 19–20G, because 8G means the block device mapping did not apply and `npm run build` will fill the disk at task 13; and the 9000 line printing the "correct" message. The design's `*` trusted-proxy range is only safe while php-fpm is unreachable from the host, so port 9000 stays unpublished.
+Expect: an empty container table with headers, not a permission error on `/var/run/docker.sock`;
+`docker` among the groups in `id`; `/srv/tic-tac-toe` owned by `ssm-user`; `/` about 19–20G, because
+8G means the block device mapping did not apply; and the 9000 line printing the "correct" message.
+The `*` trusted-proxy range is only safe while php-fpm is unreachable from the host, so 9000 stays
+unpublished.
 
-A new terminal will not have the shell variables. `source deploy/.provisioned.env` first, or pass the instance id literally.
+A new terminal will not have the shell variables. `source deploy/.provisioned.env` first.
 
 ## Part 2 — task 2.2: the certificate
 
-No application is involved. Caddy answers the ACME challenge itself from a pulled `caddy:2-alpine` image, so all this needs is a hostname and port 80.
+No application is involved. Caddy answers the ACME challenge from a pulled `caddy:2-alpine` image,
+so this needs only a hostname and port 80.
 
 ### 1. External volume, by hand
 
@@ -378,7 +405,9 @@ docker volume create caddy-data
 docker volume ls | grep caddy-data
 ```
 
-Compose prefixes project-scoped volumes with the invoking directory's name, so `deploy/` and the repository root would produce two different volumes and the certificate would not carry across to task 13. `external: true` with a fixed name cannot be prefixed.
+Compose prefixes project-scoped volumes with the invoking directory's name, so `deploy/` and the
+repository root would produce two different volumes and the certificate would not carry across.
+`external: true` with a fixed name cannot be prefixed.
 
 ### 2. Clone
 
@@ -389,7 +418,7 @@ git clone https://github.com/mirkovicUK/TIC-TAC-TOE.git .
 cd deploy && ls
 ```
 
-The trailing `.` clones into the existing empty directory; git refuses only a non-empty target.
+The trailing `.` clones into the existing empty directory.
 
 ### 3. Set the hostname, on an untracked copy
 
@@ -401,7 +430,10 @@ sed -i '/^[^#]/ s/<elastic-ip-dashed>/203-0-113-5/' Caddyfile.local   # substitu
 grep -v '^#' Caddyfile.local
 ```
 
-The copy is untracked, so task 13's `git pull` is a clean fast-forward with nothing to stash, which is the whole reason for it. The `grep -q` guard is there because `sed` exits 0 whether or not it substituted anything. Run the `cp` before `docker compose up`: a bind mount whose host path does not exist makes Docker create a directory there, and Caddy then fails on a directory where it wants a file.
+The copy is untracked, so a later `git pull` is a clean fast-forward with nothing to stash. The
+`grep -q` guard exists because `sed` exits 0 whether or not it substituted anything. Run the `cp`
+before `docker compose up`: a bind mount whose host path does not exist makes Docker create a
+directory there, and Caddy then fails on a directory where it wants a file.
 
 ### 4. Up, and watch ACME
 
@@ -411,7 +443,10 @@ docker compose -f compose.placeholder.yaml up -d
 docker compose -f compose.placeholder.yaml logs -f
 ```
 
-Success is `obtaining new certificate`, `trying issuer acme-v02...`, `served key authentication`, then `certificate obtained successfully`. A 429 naming `too many certificates already issued for: sslip.io` sends you to [Fallbacks](#fallbacks); Caddy retries with backoff, so a moving log is not progress. `Ctrl-C` detaches without stopping the container.
+Expect `obtaining new certificate`, `trying issuer acme-v02...`, `served key authentication`, then
+`certificate obtained successfully`. A 429 naming `too many certificates already issued for:
+sslip.io` sends you to [Fallbacks](#fallbacks) — Caddy retries with backoff, so a moving log is not
+progress. `Ctrl-C` detaches without stopping the container.
 
 ### 5. Confirm HTTPS
 
@@ -420,7 +455,9 @@ Success is `obtaining new certificate`, `trying issuer acme-v02...`, `served key
 curl -sSI "https://$HOST"
 ```
 
-Expect `HTTP/2 200` and no TLS error. On failure, `curl -v "https://$HOST" 2>&1 | head -20` shows which stage of the handshake broke. Open it in a browser too, because a padlock with no interstitial is the actual requirement and the browser is what the reviewer uses.
+Expect `HTTP/2 200` and no TLS error. On failure, `curl -v "https://$HOST" 2>&1 | head -20` shows
+which stage of the handshake broke. Open it in a browser too — a padlock with no interstitial is
+the actual requirement.
 
 ### 6. Confirm the cert is in the volume
 
@@ -429,7 +466,9 @@ Expect `HTTP/2 200` and no TLS error. On failure, `curl -v "https://$HOST" 2>&1 
 docker run --rm -v caddy-data:/data alpine ls -R /data/caddy/certificates
 ```
 
-Expect a directory for the ACME endpoint, a directory for the hostname inside it, and `.crt`, `.key` and `.json` inside that. HTTPS working proves an issuance happened, not that it landed where task 13 will look.
+Expect a directory for the ACME endpoint, a directory for the hostname inside it, and `.crt`,
+`.key` and `.json` inside that. HTTPS working proves an issuance happened, not that it landed where
+the real stack will look.
 
 ### 7. Confirm no project prefix
 
@@ -438,7 +477,8 @@ Expect a directory for the ACME endpoint, a directory for the hostname inside it
 docker volume ls | grep caddy
 ```
 
-Expect exactly one line, named `caddy-data`. A `deploy_caddy-data` here means the declaration was not external and task 13 will issue a second time on submission day.
+Expect exactly one line, `caddy-data`. A `deploy_caddy-data` means the declaration was not external
+and the real stack will issue a second time.
 
 ### 8. Down, without `-v`
 
@@ -447,21 +487,25 @@ Expect exactly one line, named `caddy-data`. A `deploy_caddy-data` here means th
 docker compose -f compose.placeholder.yaml down
 ```
 
-Never `down -v`: the volume is the certificate and its private key, and although `-v` spares external volumes the habit transfers to task 13 where `sqlite-data` is not external.
+Never `down -v`: the volume is the certificate and its private key. `-v` spares external volumes,
+but the habit transfers to the real stack where `sqlite-data` is not external.
 
 ### 9. Record the outcome
 
-Write the hostname and the scheme down outside the instance. Three things consume it: task 13.2's production Caddyfile, the README's hosted URL (Req 12.4), and `SESSION_SECURE_COOKIE` (Req 10.11).
+Write the hostname and the scheme down outside the instance. Three things consume it: the
+production Caddyfile, the README's hosted URL (Req 12.4), and `SESSION_SECURE_COOKIE` (Req 10.11).
 
 ## Fallbacks
 
 1. **`nip.io`, on a 429.** Separate registered domain, separate bucket. Check `dig +short <eip-dashed>.nip.io` first rather than spending an attempt, then `sed -i '/^[^#]/ s/sslip\.io/nip.io/' Caddyfile.local` and `docker compose -f compose.placeholder.yaml up -d --force-recreate`. Target `Caddyfile.local`, not `Caddyfile`.
-2. **Plain HTTP with `SESSION_SECURE_COOKIE=false`.** Breaks no criterion, because Requirement 10.11 conditions `Secure` on being served over HTTPS. The README must state it as a decision.
-3. **Register a domain, about £10.** Its own rate-limit bucket, which removes the problem rather than routing around it.
+2. **Plain HTTP with `SESSION_SECURE_COOKIE=false`.** Breaks no criterion — Requirement 10.11 conditions `Secure` on being served over HTTPS. The README must state it as a decision.
+3. **Register a domain, about £10.** Its own rate-limit bucket.
 
 ## Teardown
 
 Order matters: the stack stops, the instance goes, then the address, then the group, then the role.
+
+Bring the stack down first with `cd /srv/tic-tac-toe && docker compose --env-file deploy/release.env down` in a session shell. Never `-v`.
 
 ```bash
 # Local machine.
@@ -476,7 +520,10 @@ aws iam detach-role-policy --role-name "$NAME-ssm" --policy-arn arn:aws:iam::aws
 aws iam delete-role --role-name "$NAME-ssm"
 ```
 
-Bring the stack down first with `cd /srv/tic-tac-toe && docker compose down` in a session shell. Terminating takes the root volume with it, and the Docker volumes live on that volume, so `caddy-data` and the SQLite database need no separate removal step. Releasing the address is the step that stops the meter, and the security group cannot be deleted until the instance is gone. Do not tear down before the submission has been reviewed, because releasing the address loses the hostname the certificate certifies.
+- Terminating takes the root volume with it, and the Docker volumes live on that volume, so `caddy-data` and the SQLite database need no separate removal.
+- Releasing the address is the step that stops the meter.
+- The security group cannot be deleted until the instance is gone.
+- Releasing the address loses the hostname the certificate certifies.
 
 ## Checklist
 

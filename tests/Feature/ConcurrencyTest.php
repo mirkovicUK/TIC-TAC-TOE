@@ -31,8 +31,8 @@ use Illuminate\Support\Str;
  *
  * Sequential is faithful for the join race because the whole of the concurrency
  * control is the affected-row count of one guarded
- * `UPDATE ... WHERE state = 'waiting_for_opponent' AND o_token_hash IS NULL`
- * (ADR-006), and `JoinGame` never re-reads the row between the Join_Code lookup
+ * `UPDATE ... WHERE state = 'waiting_for_opponent' AND o_token_hash IS NULL`,
+ * and `JoinGame` never re-reads the row between the Join_Code lookup
  * and that statement. The second caller's guard evaluates against the row the
  * first left behind however the calls are spaced. Were a `SELECT` of `state` added
  * in front of the UPDATE the two shapes would diverge; the query-log test in

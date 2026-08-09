@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase as PHPUnitTestCase;
 /*
  * The mechanical half of Property 6. Two independent claims:
  *
- *   CLAIM 1 (Req 11.1, 11.9, ADR-003). Nothing in `App\Domain\TicTacToe` references
+ *   CLAIM 1 (Req 11.1, 11.9). Nothing in `App\Domain\TicTacToe` references
  *   the framework, the persistence layer or the transport layer. Scanned twice
  *   because there are two ways in: a NAME, arriving through a `use` statement, a
  *   qualified reference mid-expression or a docblock type; and a global HELPER
