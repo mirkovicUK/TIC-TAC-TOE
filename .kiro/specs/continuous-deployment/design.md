@@ -39,6 +39,8 @@ Permissions are per-job in GitHub Actions, so keeping it in one file costs nothi
 | `publish` | `contents: read`, `packages: write` | pushes to GHCR (Req 1.6) |
 | `deploy` | `contents: read`, `id-token: write` | OIDC only; no write to the repository (Req 3.6) |
 
+`deploy` also declares `environment: production`, which is what puts `environment:production` in the token's subject claim and what makes GitHub apply that environment's deployment-branch rule before issuing a token at all (Req 3.3a, 3.3b).
+
 `publish` and `deploy` are skipped on a pull request and on any other branch, which satisfies Req 1.4 without a second condition: `browser` already gates on `quality`, so a red run never reaches either (Req 1.1, 1.3).
 
 Nothing is added to the instance's software. The only new AWS resources are an OIDC provider and one role, both created by hand per the Out of Scope list.
@@ -112,7 +114,13 @@ Two tracked files, so the pinning is checkable by reading the repository rather 
 - `deploy/iam/deployment-role-trust-policy.json`
 - `deploy/iam/deployment-role-permissions-policy.json`
 
-The trust policy conditions on `StringEquals` for both claims — `token.actions.githubusercontent.com:aud` equal to `sts.amazonaws.com`, and `:sub` equal to the single value `repo:mirkovicUK/TIC-TAC-TOE:ref:refs/heads/main`. `StringEquals` with no wildcard is the whole point: `StringLike` with `repo:owner/name:*` would let a pull request from a fork assume the role (Req 3.3, 3.4).
+The trust policy conditions on `StringEquals` for both claims — `token.actions.githubusercontent.com:aud` equal to `sts.amazonaws.com`, and `:sub` equal to the single value `repo:mirkovicUK/TIC-TAC-TOE:environment:production`. `StringEquals` with no wildcard is the whole point: `StringLike` with `repo:owner/name:*` would let a pull request from a fork assume the role (Req 3.3, 3.4).
+
+**Why the subject names an environment rather than a branch, and what moves as a result.** GitHub's issuer is shared — `token.actions.githubusercontent.com`, with no tenancy segment, unlike Vercel's `oidc.vercel.com/<team>`. A per-tenant issuer URL exists but is a GitHub Enterprise Cloud feature, so on this plan the entire tenancy boundary is the subject claim. AWS treats that as a known risk rather than leaving it to the operator: it classifies GitHub Actions as a shared OIDC provider with `sub` as the designated tenancy claim, and **refuses to create or update a role trust policy that omits `token.actions.githubusercontent.com:sub`**, failing with `MalformedPolicyDocument`. It also refuses a `sub` whose value is only a wildcard.
+
+Given that, AWS's own recommendation is environment scoping with protection rules rather than a bare branch condition. **The two forms are mutually exclusive**: a job that targets an environment presents `repo:owner/name:environment:production` and carries no `ref:` segment. So scoping to the environment *removes* the branch restriction from the trust policy, and it has to be re-established in the environment's deployment-branch rule (Req 3.3a). That is a swap of where the boundary lives, not an addition, and getting it wrong means any branch could deploy through the environment.
+
+What it buys over the branch form: GitHub evaluates the environment's rules **before issuing the token**, so a disallowed branch never obtains a credential to present; and a required-reviewer gate becomes a checkbox later rather than a redesign. Protection rules are kept to the branch restriction alone, with no reviewers, so the friction is identical to the branch form.
 
 The permissions policy grants two actions:
 

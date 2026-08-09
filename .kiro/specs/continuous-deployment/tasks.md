@@ -12,8 +12,9 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
   - [ ] 1.1 Write `deploy/iam/deployment-role-trust-policy.json`
     - Federated principal is the GitHub OIDC provider ARN in account `811362454196`
     - `StringEquals` on `token.actions.githubusercontent.com:aud` = `sts.amazonaws.com`
-    - `StringEquals` on `token.actions.githubusercontent.com:sub` = `repo:mirkovicUK/TIC-TAC-TOE:ref:refs/heads/main`, with no wildcard character anywhere in the value
-    - Comment in the surrounding documentation, not the JSON, that `StringLike` with `repo:owner/name:*` would let a pull request from a fork assume the role — this is the whole reason the condition is written this way
+    - `StringEquals` on `token.actions.githubusercontent.com:sub` = `repo:mirkovicUK/TIC-TAC-TOE:environment:production`, with no wildcard character anywhere in the value
+    - **Environment scoping, not a branch reference, and the branch restriction moves as a result.** A job targeting an environment presents `environment:` in its subject and carries no `ref:` segment, so the two forms are mutually exclusive. The branch boundary is re-established by the environment's deployment-branch rule in task 2.4, and without that rule any branch could deploy through the environment
+    - Comment in the surrounding documentation, not the JSON, that `StringLike` with `repo:owner/name:*` would let a pull request from a fork assume the role — this is the whole reason the condition is written this way. Note also that AWS classifies GitHub Actions as a shared OIDC provider with `sub` as its tenancy claim, and refuses a trust policy that omits it with `MalformedPolicyDocument`
     - _Requirements: 3.3, 3.4, 3.7_
   - [ ] 1.2 Write `deploy/iam/deployment-role-permissions-policy.json`
     - `ssm:SendCommand` on **both** the `AWS-RunShellScript` document ARN and `arn:aws:ec2:eu-west-2:811362454196:instance/i-0c6bab4bc4644e760`
@@ -33,8 +34,14 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - **Verify the trust policy refuses the wrong caller** rather than only that it accepts the right one: confirm the `sub` condition is present and contains no wildcard, since AWS itself rejects a policy whose `sub` condition is solely a wildcard but will accept one that is merely too broad
     - _Requirements: 3.1, 3.3_
   - [ ] 2.3 Add the role ARN as a repository variable, not a secret
-    - It identifies a role that only this repository and branch may assume, so it is not sensitive; a variable rather than a secret keeps it readable in the workflow file's context
+    - It identifies a role that only this repository's Deployment_Environment may assume, so it is not sensitive; a variable rather than a secret keeps it readable in the workflow file's context
     - _Requirements: 3.2_
+  - [ ] 2.4 Create the `production` environment and restrict its deployment branches
+    - GitHub: Settings → Environments → New environment, named `production`
+    - Under Deployment branches, select **Selected branches** and add `main` only
+    - No required reviewers and no wait timer — the friction stays identical to a branch condition; a reviewer gate is a checkbox to add later without touching AWS
+    - **This rule is the whole branch boundary.** Task 1.1 scopes the trust policy to `environment:production`, which carries no branch information, so without this restriction a run on any branch that targets the environment could assume the role. GitHub evaluates it before issuing a token, which is why it is stronger than the branch condition it replaces
+    - _Requirements: 3.3a_
 
 - [ ] 3. Prepare the instance
   - [ ] 3.1 Seed `deploy/release.env` with the currently deployed commit
@@ -78,9 +85,10 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
 
 - [ ] 6. The `deploy` job
   - [ ] 6.1 Assume the role by OIDC and add the concurrency group
+    - `environment: production` on the job — without it the token's subject carries `ref:` rather than `environment:` and the trust policy from task 1.1 refuses the assumption
     - `permissions: { contents: read, id-token: write }`; `aws-actions/configure-aws-credentials` pinned by SHA with `role-duration-seconds: 3600`
     - `concurrency: { group: deploy-production, cancel-in-progress: false }` — `false` is load-bearing, because cancelling mid-deploy could leave the stack down or `release.env` half-written
-    - _Requirements: 3.1, 3.6, 4.9_
+    - _Requirements: 3.1, 3.3b, 3.6, 4.9_
   - [ ] 6.2 Write the deploy script and send it by Run Command
     - `AWS-RunShellScript` with `--timeout-seconds 600`; no custom SSM document is registered
     - Order: fetch and checkout the SHA **as `ssm-user`**; check free space and prune if below 3 GiB; `docker pull` both explicitly; `docker image inspect` both and stop if either is missing; rewrite `release.env`; `compose --env-file deploy/release.env up -d`
@@ -175,6 +183,7 @@ flowchart TD
     T12["1.2 permissions policy"] --> T22
     T21["2.1 OIDC provider"] --> T22
     T22 --> T23["2.3 role ARN as variable"]
+    T11 --> T24["2.4 production environment<br/>branches: main only"]
 
     T51["5.1 publish job"] --> T52["5.2 revision label"]
     T51 --> T32["3.2 make packages public"]
@@ -184,7 +193,8 @@ flowchart TD
     T32 --> T41
     T41 --> T42["4.2 fix compose header"]
 
-    T23 --> T61["6.1 OIDC + concurrency"]
+    T23 --> T61["6.1 OIDC + concurrency + environment"]
+    T24 --> T61
     T41 --> T61
     T52 --> T61
     T61 --> T62["6.2 deploy script"]
@@ -215,7 +225,7 @@ flowchart TD
   "waves": [
     { "wave": 1, "tasks": ["1.1", "1.2", "2.1", "3.1", "7.1"] },
     { "wave": 2, "tasks": ["2.2", "5.1", "7.2"] },
-    { "wave": 3, "tasks": ["2.3", "5.2", "5.3", "3.2", "7.3"] },
+    { "wave": 3, "tasks": ["2.3", "2.4", "5.2", "5.3", "3.2", "7.3"] },
     { "wave": 4, "tasks": ["4.1"] },
     { "wave": 5, "tasks": ["4.2", "6.1", "9.2"] },
     { "wave": 6, "tasks": ["6.2"] },
