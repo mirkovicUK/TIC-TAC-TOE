@@ -295,6 +295,12 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
       and `tic-tac-toe-web:latest` (89 MB) are still on the instance. The reclaim loop scans the two
       GHCR repositories by name, and these are outside them, so nothing will ever remove them
       automatically. 13 GB is free, so it is a one-off `docker rmi` when it matters, not a defect
+    - **Re-confirmed on the second deployment (`b4f96e3d…`), which is the one that exercised the
+      reclaim with something to reclaim.** Each GHCR repository now holds exactly two tags — the
+      deploying one and the retained one — so deletion-by-name kept the keep-set and removed
+      nothing else. Disk moved 6.1 GB → 6.2 GB for a second ~1 GB pair, because images built from
+      adjacent commits differ only in the final `COPY . .` layer and share the rest; the reported
+      905 MB is mostly shared storage
     - _Requirements: 4.3, 4.4, 4.5_
   - [ ] 8.3 Confirm nothing was pushed from a branch or a pull request
     - Open a throwaway pull request and confirm `quality` and `browser` run while `publish` and `deploy` are skipped
@@ -332,6 +338,10 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Confirm: the gate fails after its budget; both previous images were verified present before anything was disturbed; the previous pair is deployed and passes its own gate; the run goes **red** despite the site being up; and `release.env` still names the same `PREVIOUS_RELEASE_TAG` it did before
     - Then revert the commit and confirm the next deployment is ordinary
     - **This is the single most valuable check in the feature**, because the fallback path runs only when something is already wrong. Do it once, deliberately, while watching — not for the first time during a real incident
+    - **Now possible, and it was not before.** After the second deployment `PREVIOUS_RELEASE_TAG` is
+      `28c427ae…`, whose Image_Pair exists both on the instance and in GHCR (anonymous pull returns
+      200 for each). Until then the pointer named `f89b4b6…`, which predates the registry, so a
+      fallback would have failed at the pull rather than exercising the path
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
 ---
