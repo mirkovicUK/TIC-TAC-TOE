@@ -10,7 +10,12 @@ parameters:
     # surfaces as a confusing test failure rather than an honest analyser
     # complaint. PHPStan does not check leniently outside `paths`; it does not
     # open the files at all.
+    #
+    # `scripts/` was added with `check-migrations.php`. It is CI's own guard against a
+    # migration that cannot be deployed, so an unread type error there would be a broken
+    # check on a file whose whole job is to be trustworthy.
     paths:
         - app
         - database
+        - scripts
         - tests

@@ -102,6 +102,19 @@ jobs:
       - name: Run static analysis
         run: composer analyse
 
+      # Fails the job, deliberately, rather than warning. A migration that performs two
+      # schema changes and dies between them cannot be rolled back — Laravel opens no
+      # transaction for SQLite, because `SQLiteGrammar` inherits `$transactions = false`
+      # — and leaves no row in `migrations`, so the next deploy re-runs it, hits "already
+      # exists", and every deployment after that fails identically until someone repairs
+      # the database by hand. Rolling the image back does not clear it.
+      #
+      # Cheap and early: it reads files and boots nothing, so it belongs beside the other
+      # static checks rather than after the suite. `tests/Unit/MigrationGuardTest.php` is
+      # what proves the guard can still fail.
+      - name: Check the migrations are additive
+        run: composer check:migrations
+
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

@@ -218,18 +218,49 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Log the failed tag, the tag deployed in its place, and the outcome
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8_
 
-- [ ] 7. The migration rules and their check
-  - [ ] 7.1 Write `scripts/check-migrations.php`
+- [x] 7. The migration rules and their check
+  - [x] 7.1 Write `scripts/check-migrations.php`
     - Fail on `dropColumn`, `renameColumn`, `dropIfExists`, `drop` or `change` inside an `up()` method
     - Fail on more than one `Schema::create` or `Schema::table` call inside an `up()` method
     - State in the file's header what it cannot detect: a non-nullable column added to a populated table, a destructive raw `DB::statement`, or whether the one change is the right change
+    - **Tokenised with `token_get_all`, not grepped**, and it has to be. `down()` is exempt because
+      `Schema::dropIfExists()` belongs there, so the rule needs the `up()` body specifically —
+      located by finding `function up` and matching braces. Comments are skipped for the same
+      reason: this project's migrations carry docblocks explaining why a column is *not* dropped,
+      and a grep would read those as violations
+    - **The rule as originally written would have failed three of the six existing migrations.**
+      Laravel's scaffold creates users/password_reset_tokens/sessions, cache/cache_locks and
+      jobs/job_batches/failed_jobs in one `up()` each. They are already applied on every database
+      this project has, so they are named in `MULTI_TABLE_EXEMPT` — exempt from the one-table rule
+      only, never from the destructive-operation rules. Rewriting applied history to satisfy a
+      check added afterwards is the more dangerous change
+    - **Counted by distinct table, not by call.** The three real migrations are a raw
+      `CREATE TABLE` plus a `Schema::table()` for the indexes — two calls, one table. A
+      call-counting rule would have rejected all three
+    - Raw SQL is checked separately from Blueprint calls, because this project writes its tables
+      with `DB::statement()`, which is where a `DROP` would most plausibly appear here
+    - Exit 2 for a bad path, distinct from 1 for a violation, so a check pointed at the wrong
+      directory cannot report success
+    - `scripts/` added to `phpstan.neon` paths; it was outside them, and an unread type error in
+      CI's own guard is a broken check on the one file whose job is to be trustworthy. Clean at level 8
     - _Requirements: 8.3, 8.8_
-  - [ ] 7.2 Add the check as a step of the `quality` job
+  - [x] 7.2 Add the check as a step of the `quality` job
     - It must fail the job, not warn
+    - `composer check:migrations`, placed beside the other static checks rather than after the
+      suite: it reads files and boots nothing
+    - **Proven to fail rather than assumed.** Copying the `drop_column` fixture into
+      `database/migrations/` made `composer check:migrations` exit 1 with the violation named and
+      the composer script reporting error code 1; removing it returned to exit 0
     - _Requirements: 8.3_
-  - [ ] 7.3 Test the check against a fixture of each rejected shape
+  - [x] 7.3 Test the check against a fixture of each rejected shape
     - A check that cannot fail is worse than no check, and this project has one recorded incident of exactly that
     - Cover: a dropped column, a renamed column, two `Schema::table` calls in one `up()`, and one valid additive migration that must pass
+    - `tests/Unit/MigrationGuardTest.php`, nine cases, 21 assertions, 0.20s, no booted framework.
+      Five rejections (dropped column, renamed column, `change()`, two tables, raw `DROP TABLE`)
+      and four acceptances (one nullable column; a destructive `down()` beside an additive `up()`;
+      the six real migrations; and exit 2 on an empty directory)
+    - The `destructive_down` fixture **names `dropColumn` and `DROP TABLE` inside a comment** and
+      must still pass, so it fails any grep-based implementation of this guard
     - _Requirements: 8.3_
 
 - [ ] 8. Verify the first real deployment
@@ -276,8 +307,11 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - How a deploy is triggered, where its outcome is observed, and that a failed gate redeploys the previous tag
     - That no backup of the database volume exists and what its loss costs
     - _Requirements: 9.1, 9.2, 9.3, 9.4_
-  - [ ] 9.2 Add `database/migrations/README.md`
+  - [x] 9.2 Add `database/migrations/README.md`
     - The additive and one-change rules where a person writing a migration will actually meet them
+    - Carries the expand-and-contract table, why the reason is a stuck pipeline rather than data
+      loss, the non-nullable-column trap the checker cannot see, and why the three scaffold files
+      are exempt. The checker's failure message points here
     - _Requirements: 9.2_
   - [ ] 9.3 Write `docs/decisions/adr-012-continuous-deployment.md` and index it
     - Decision, alternatives, reason, in the form the other eleven records use

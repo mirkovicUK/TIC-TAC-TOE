@@ -73,6 +73,9 @@
         "lint": [
             "pint --test"
         ],
+        "check:migrations": [
+            "@php scripts/check-migrations.php"
+        ],
         "lint:fix": [
             "pint"
         ],
