@@ -185,6 +185,25 @@ services:
     depends_on:
       - app
 
+    # Liveness only, and it exists so that `docker compose up -d --wait` in the deploy
+    # document means the same thing for both services. Without a healthcheck here, `--wait`
+    # degrades to "the container is running" for `web`, which a Caddy that started and
+    # immediately failed to load its config would satisfy.
+    #
+    # Caddy's admin API on 127.0.0.1:2019, not the public site. Probing the site from
+    # inside would need the real hostname and a valid certificate for it, neither of which
+    # resolves within the container — so it would fail for reasons unrelated to health.
+    # Whether the site actually serves is established by the workflow's health gate over
+    # the public URL, which is the check that can see TLS and the proxy hop.
+    #
+    # `wget` is busybox's, present in `caddy:2-alpine`; the image carries no curl.
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
     # The noisy half of the stack, and the reason both services state a limit. Caddy's
     # access log is one JSON object per request carrying the request and response headers:
     # measured at 886 bytes for an Inertia poll, fourteen times what `app` writes for the
