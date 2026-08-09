@@ -137,6 +137,21 @@ every pull request:
 The split is so a red tick tells you which kind of thing broke; the reasoning is in the workflow's
 comments and in [ADR-008](docs/decisions/adr-008-one-browser-test.md).
 
+**If you change the UI, run `composer test:browser` before you believe it works.** That test drives
+the real interface and pins three things, only one of which is obvious:
+
+- **visible text** — `'Start a game'`, `'Create a game'`, `'Join game'`, `'You are playing'`,
+  `'that is you.'`, `'Waiting for a second player'`, `'X won this game.'`
+- **`aria-label` values** on the cells, in the exact form `'centre, empty'` and
+  `'top left, X, in a winning line'`
+- **DOM structure** — it reads the mark paragraph as `main > p:has(span)`, so that paragraph has
+  to stay a direct child of the layout's `main`
+
+Tailwind classes are free to change; those three are not. The third is the one that catches
+people: wrapping the mark paragraph in a `<header>` made Pest report
+`Target page, context or browser has been closed`, which reads like a browser crash rather than a
+moved element. `resources/js/pages/Game.tsx` carries a comment at that paragraph saying so.
+
 Two more run only on `main`, and they are the deployment:
 
 - **`publish`** — builds both images and pushes them to GHCR tagged with the commit SHA
