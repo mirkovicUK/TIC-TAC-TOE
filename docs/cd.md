@@ -288,15 +288,37 @@ aws ssm update-document \
   --content file://deploy/ssm/DeployTicTacToe.json
 
 aws ssm describe-document --name DeployTicTacToe \
-  --query 'Document.{Status:Status,Version:DocumentVersion,Latest:LatestVersion}'
+  --query 'Document.{Status:Status,Default:DocumentVersion,Latest:LatestVersion}'
 ```
+
+**`update-document` does not change which version runs.** It creates a new version and leaves the
+*default* where it was, so the output above will read `Default: 1, Latest: 2` and `SendCommand`
+would still execute version 1. Promote it:
+
+```bash
+aws ssm update-document-default-version \
+  --name DeployTicTacToe --document-version 2
+
+aws ssm describe-document --name DeployTicTacToe \
+  --query 'Document.{Status:Status,Default:DocumentVersion,Latest:LatestVersion}'
+```
+
+Now expect `Status: Active` with `Default` and `Latest` both `2`. Confirm the new mode is really
+in the default version rather than trusting the number:
+
+```bash
+aws ssm get-document --name DeployTicTacToe \
+  --query 'Content' --output text | jq -r '.parameters.Mode.allowedValues'
+```
+
+Expect three values, including `diagnose`. The `--document-version '$LATEST'` argument on
+`update-document` names the version being *edited*, not the one being made default — an easy
+misread, and the failure mode is a deploy that works while the diagnosis silently does not.
 
 `diagnose` is read-only: it prints `release.env`, `docker compose ps -a`, the last 50 lines of
 `app`, the last 20 of `web` and `df -h`, then exits 0. It exists because the deploy job needs to
 report the health Compose sees when a gate fails, and the deployment role can run this one
 document and nothing else — there is no route from the runner to a shell on the instance.
-
-Expect `Status: Active` and `Version` to have advanced to `2`.
 
 ---
 
@@ -319,10 +341,30 @@ cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
 aws ssm start-session --target "$IID"
 ```
 
+Replace the whole line rather than editing it in place. **Do not pipe `crontab -l` through a
+filter into `crontab -`**: if the filter fails, it writes nothing to the pipe, `crontab -` reads
+zero bytes, and that installs an *empty* crontab — the schedule is gone and the only symptom is
+`crontab -l` printing nothing. A long `sed` expression pasted into a wrapped terminal is exactly
+how that happens.
+
 ```bash
-crontab -l | sed 's|docker compose exec|docker compose --env-file deploy/release.env exec|' | crontab -
+crontab -l                                        # what is there now; keep a copy of it
+crontab -l 2>/dev/null | grep -c 'games:sweep'    # 0 means there is nothing to replace
+```
+
+Then write the entry. `crontab -r` first only if `grep -c` returned non-zero:
+
+```bash
+( crontab -l 2>/dev/null | grep -v 'games:sweep'
+  echo '17 3 * * * cd /srv/tic-tac-toe && docker compose --env-file deploy/release.env exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep'
+) | crontab -
+
 crontab -l
 ```
+
+That form is safe in the way the pipeline above is not: `crontab -l` failing contributes nothing
+to the subshell's output while the `echo` still runs, so the worst case is a crontab holding only
+the entry you meant to add.
 
 Then prove it under the environment cron actually gives it — no TTY, almost no `PATH` — because
 that is what caught the last problem with this entry:

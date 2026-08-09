@@ -40,6 +40,13 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
       lock would make it useless in that exact case
     - **The document must be re-registered after this change.** `aws ssm update-document` by hand;
       the role holds no document-write action, so editing the JSON and pushing does nothing
+    - **`update-document` alone is not enough, and this is the trap.** It creates a new version and
+      leaves the *default* pointing at the old one, so `SendCommand` — which takes the default —
+      keeps running the previous script. `describe-document` reports `DocumentVersion: 1` beside
+      `LatestVersion: 2`, which reads as success unless you know those two fields differ.
+      `aws ssm update-document-default-version --document-version 2` is the promoting step, and the
+      check that settles it is reading `parameters.Mode.allowedValues` out of `get-document`
+      rather than comparing version numbers
     - Deviation from Requirement 6.2 worth recording rather than hiding: it asks that both images
       of the previous pair be confirmed *present on the target*. The script instead `docker pull`s
       them, which is stronger in effect — it recovers even if the local images were reclaimed —
@@ -128,6 +135,12 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Fix: add `--env-file deploy/release.env` to the entry. One word, and it must be done on the
       instance the first time it checks out this commit — which the deploy document does itself,
       as its `git checkout` step
+    - **Rewrite the whole line; do not pipe `crontab -l` through a filter into `crontab -`.** A
+      filter that fails writes nothing to the pipe, `crontab -` reads zero bytes, and that
+      installs an empty crontab — the schedule is silently gone and `crontab -l` prints nothing.
+      This happened once here, with a long `sed` expression broken across a wrapped terminal line.
+      The `( crontab -l 2>/dev/null | grep -v …; echo '<entry>' ) | crontab -` form cannot do
+      that, because the `echo` runs whether or not the read succeeded
     - Rejected alternative: `docker exec tic-tac-toe-app-1 …`, which sidesteps interpolation but
       hardcodes a container name and loses the service abstraction
     - Verify the way task 13.3 did: run the entry under a simulated cron environment
