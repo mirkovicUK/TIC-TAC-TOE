@@ -225,8 +225,8 @@ That was a deliberate scoping decision for a demonstration project, recorded rat
 overlooked. Volumes are also why `docker compose down -v` is the one command never to run on that
 box: `-v` deletes them, taking both the database and the TLS certificate.
 
-Deploying a specific tag by hand, and rolling back when the pipeline itself is broken, are in
-[`docs/cd.md`](docs/cd.md).
+Deploying a specific tag by hand, rolling back, and what to do when the pipeline itself is broken
+are in [`docs/deployment.md`](docs/deployment.md).
 
 ## No accounts, and what that costs
 
@@ -419,8 +419,7 @@ proceeded rather than reconstructed at the end.
 | --- | --- |
 | [`docs/decisions/`](docs/decisions/README.md) | One decision record per significant technical choice, each with its alternatives and reasons. Twelve of them |
 | [`docs/ai-direction.md`](docs/ai-direction.md) | How the tooling was directed, and every place the generated output was wrong |
-| [`docs/cd.md`](docs/cd.md) | The pipeline: the one-off manual steps, deploying a tag by hand, rolling back, and what each exit code means |
-| [`docs/deploy-schedule-swap.md`](docs/deploy-schedule-swap.md) | Deploying without the pipeline, for when the pipeline is the broken thing |
+| [`docs/deployment.md`](docs/deployment.md) | The one deployment document: setup steps, an ordinary push, deploying a tag by hand, rolling back, break glass, what survives, exit codes |
 | [`docs/aws-infra.md`](docs/aws-infra.md) | How the instance, security group, role and hostname were provisioned |
 | [`database/migrations/README.md`](database/migrations/README.md) | The additive-schema rules and the expand-and-contract sequence |
 | [`.kiro/specs/continuous-deployment/`](.kiro/specs/continuous-deployment/requirements.md) | The pipeline's own spec: requirements, design and plan |

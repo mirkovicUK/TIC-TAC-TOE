@@ -5,7 +5,7 @@ authorises GitHub Actions to deploy, and Requirement 3.7 of the continuous-deplo
 for them to be tracked precisely so that the scoping can be checked by reading the repository
 rather than by holding AWS credentials.
 
-They are **inputs to a command you run by hand** — step 3 of `docs/cd.md` — not something the
+They are **inputs to a command you run by hand** — step 3 of `docs/deployment.md` — not something the
 pipeline applies. Provisioning is out of scope for the feature, so changing a file here changes
 nothing until the role is updated from it.
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ten groups. Groups 1 to 3 are preparation that changes nothing about how the application currently deploys, so they are safe to land ahead of the pipeline. Group 4 is the point of no return: once `compose.yaml` names images instead of building them, the manual `--build` loop no longer works and `docs/deploy-schedule-swap.md` is briefly wrong until group 9 fixes it. Groups 5 and 6 build the pipeline. Group 10 is the drill that proves the part nothing else can.
+Ten groups. Groups 1 to 3 are preparation that changes nothing about how the application currently deploys, so they are safe to land ahead of the pipeline. Group 4 is the point of no return: once `compose.yaml` names images instead of building them, the manual `--build` loop no longer works and `docs/deploy-schedule-swap.md` is wrong until group 9 deals with it — which it did by deleting that file, `docs/deployment.md` replacing it as the one deployment document. Groups 5 and 6 build the pipeline. Group 10 is the drill that proves the part nothing else can.
 
 Sequencing note: **seed `release.env` on the instance before landing group 4**, or the first Compose invocation after the change refuses to start the stack.
 
@@ -165,7 +165,7 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Now installed on the instance and verified: `crontab -u ssm-user -l` shows the entry, the
       file is 337 bytes, and a dry run as `ssm-user` under `env -i` exits 0 with three sweep lines
       in `journalctl -t games-sweep`
-    - `docs/cd.md` step 9 now labels every block with the machine it runs on, the way
+    - `docs/deployment.md` (then `docs/cd.md`) step 9 now labels every block with the machine it runs on, the way
       `docs/aws-infra.md` does throughout
     - _Requirements: 2.6, 9.8_
 
@@ -263,7 +263,7 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
       must still pass, so it fails any grep-based implementation of this guard
     - _Requirements: 8.3_
 
-- [ ] 8. Verify the first real deployment
+- [x] 8. Verify the first real deployment
   - [x] 8.1 Push a trivial commit and watch the whole line
     - Confirm: both images published and labelled; the instance pulled rather than built; `release.env` updated; both container labels equal the deployed SHA; the gate passed on two consecutive responses
     - Measure the pull time against the 600-second bound and record it, since that bound is currently a guess
@@ -302,11 +302,17 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
       adjacent commits differ only in the final `COPY . .` layer and share the rest; the reported
       905 MB is mostly shared storage
     - _Requirements: 4.3, 4.4, 4.5_
-  - [ ] 8.3 Confirm nothing was pushed from a branch or a pull request
-    - Open a throwaway pull request and confirm `quality` and `browser` run while `publish` and `deploy` are skipped
-    - _Requirements: 1.4_
 
-- [ ] 9. Documentation
+> **A third task, 8.3, was removed rather than completed.** It asked for a throwaway pull request
+> proving `publish` and `deploy` are skipped off `main`. Both jobs carry
+> `if: github.ref == 'refs/heads/main'`, and on a pull request `github.ref` is `refs/pull/<n>/merge`,
+> so neither can start; `deploy` additionally requires the `production` environment, whose
+> deployment-branch rule is `main` alone. The condition is worth reading and was read. What was not
+> worth it was a pull request in this repository's history purely to demonstrate two skipped jobs.
+> Requirement 1.4 is unchanged and still implemented — only its verification task is gone, and this
+> is an accepted gap in evidence rather than a claim of proof.
+
+- [x] 9. Documentation
   - [x] 9.1 Update the README
     - The additive-schema rule, the expand-and-contract sequence, and one schema change per migration
     - That schema changes move forward only and an image rollback does not reverse a migration
@@ -319,7 +325,7 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
       counts were 298/8,394 against an actual 307/8,415; the CI section said two jobs where there are
       now four; the crontab entry lacked `--env-file deploy/release.env` and would have failed
       nightly; the decision-record count said eleven; `composer check:migrations` was missing from
-      the commands table; and there was no link to `docs/cd.md` or `database/migrations/README.md`
+      the commands table; and there was no link to the deployment document or `database/migrations/README.md`
     - **The setup instructions were verified rather than trusted**, because the challenge brief asks
       specifically for "enough documentation to run the code and any tests". A fresh `git clone` into
       an empty directory, then `composer setup` (exit 0 — created `.env`, a base64 `APP_KEY`, the
@@ -350,9 +356,35 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Index updated: ADR-012 added, "four decisions exercised or corrected" → five, and a note that
       the supersession is partial
     - _Requirements: 9.5, 9.6_
-  - [ ] 9.4 Rewrite `docs/deploy-schedule-swap.md` as the by-hand path
-    - Deploying a named Release_Tag and restoring the previous one by hand, for when the pipeline itself is broken
-    - Remove the build-on-the-box loop and its rebuild table; keep the swap, the sweep crontab and the prune guidance
+  - [x] 9.4 Retire `docs/deploy-schedule-swap.md`; one deployment document instead
+    - Originally: rewrite it as the by-hand path, keeping the swap, the sweep crontab and the prune
+      guidance. **Deleted instead, and Requirement 9.8 amended to match** — the amendment is recorded
+      against that criterion rather than the requirement being quietly dropped
+    - Two reasons. Roughly 70% of the file was obsolete or actively wrong *for an incident*: a
+      `docker image prune -f` step that reclaims nothing because every image is tagged, a sweep
+      crontab line missing `--env-file` that would silently stop expiry, and a "what actually needs a
+      rebuild" table for a build that no longer exists. And the premise did not survive scrutiny — a
+      by-hand path needs a Session Manager shell, which is Systems Manager, the same dependency
+      `send-command` uses, so the two documents had no independent failure mode
+    - The real break-glass case is narrower: the Deploy_Document itself being wrong, or `release.env`
+      corrupted. That is about thirty lines, not five hundred
+    - `docs/cd.md` renamed `docs/deployment.md`, because it is no longer only the setup steps, and
+      given a contents list. New sections: an ordinary push including `Mode=diagnose`; deploying a
+      chosen tag by hand, with the warning that **no health gate runs** on that path; break glass,
+      with `update-document` *and* `update-document-default-version` since the first alone changes
+      nothing; what survives a deployment; and reclaiming disk
+    - Three things carried across from the deleted file: never change `APP_KEY` (no accounts means no
+      recovery), what survives a deployment and what does not, and verifying the Requirement 10.3
+      lifecycle records by reconciling `move.accepted` against rows in `moves` — with the note that
+      grepping the wrong prefix once made a working application look defective
+    - The prune guidance was **replaced rather than carried**: `docker image prune -f` frees nothing
+      here and `prune -a` would delete the retained pair. What accumulates instead is BuildKit cache
+      (1.85 GB, cleared — nothing builds on that instance now) and the two locally built `:latest`
+      images, which sit outside the keep-set by name. Also that a failed deployment's images are not
+      reclaimed at the time, because the failing containers still hold them
+    - Every reference updated: README twice, `deploy/iam/README.md`, this spec's requirements, design
+      and overview, and `remote-tic-tac-toe/tasks.md` task 13.3 — which cited the deleted file as the
+      runbook used, so it now says so and points at git history
     - _Requirements: 9.8_
   - [x] 9.5 Correct the stale claims in the `remote-tic-tac-toe` spec
     - The Deployment section of its design and that document's ADR-009 summary both state there is no registry and no CD pipeline
@@ -452,7 +484,6 @@ flowchart TD
     T64 --> T81["8.1 first real deployment"]
     T65 --> T81
     T81 --> T82["8.2 negative + invariant checks"]
-    T81 --> T83["8.3 no publish from PR"]
 
     T81 --> T91["9.1 README"]
     T81 --> T94["9.4 rewrite manual runbook"]
@@ -476,7 +507,7 @@ flowchart TD
     { "wave": 7, "tasks": ["6.3"] },
     { "wave": 8, "tasks": ["6.4", "6.5"] },
     { "wave": 9, "tasks": ["8.1", "9.3"] },
-    { "wave": 10, "tasks": ["8.2", "8.3", "9.1", "9.4", "9.5"] },
+    { "wave": 10, "tasks": ["8.2", "9.1", "9.4", "9.5"] },
     { "wave": 11, "tasks": ["10.1"] }
   ]
 }

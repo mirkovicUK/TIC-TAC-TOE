@@ -281,7 +281,7 @@ No new test suite is added to the repository. The existing `quality` job gains t
 | `database/migrations/README.md` (new) | the additive and one-change rules, where a person writing a migration meets them | 9.2 |
 | `docs/decisions/adr-012-continuous-deployment.md` (new) | decision, alternatives, reason; states what it supersedes in ADR-009 and what of that record still holds | 9.5, 9.6 |
 | `docs/decisions/README.md` | index row for ADR-012 | 9.5 |
-| `docs/deploy-schedule-swap.md` | becomes the by-hand path — deploy a named tag, restore the previous one — with the build-on-the-box loop removed | 9.8 |
+| `docs/deploy-schedule-swap.md` | **deleted** in task 9.4; the by-hand path, the break-glass path and the three parts worth keeping moved into `docs/deployment.md` (renamed from `docs/cd.md`). Amendment recorded under criterion 8 of Requirement 9 | 9.8 |
 | `compose.yaml` header, `remote-tic-tac-toe/design.md` Deployment section and its ADR-009 summary, `ci.yml` permissions comment | correct the "no registry, no CD pipeline" and "built on the instance" claims | 9.9 |
 
 ADR-009's rejection of putting an SSH private key in repository secrets **still holds and is honoured** — this design uses OIDC and stores no credential at all. What no longer holds is its decision that deploys are manual and the image is built on the box.

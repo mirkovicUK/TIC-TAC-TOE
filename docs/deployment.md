@@ -1,9 +1,34 @@
-# Continuous deployment: the steps only you can run
+# Deploying this application
+
+The one deployment document. It covers the setup that cannot be automated, what happens on an
+ordinary push, deploying a chosen tag by hand, rolling back, and what to do when the pipeline
+itself is the broken thing.
+
+It replaces `docs/deploy-schedule-swap.md`, which documented building the image on the instance
+and was deleted rather than rewritten. Two deployment documents is how one of them comes to
+describe a loop the stack no longer supports — and that one already had a `docker image prune -f`
+step that reclaimed nothing and a crontab line that would have silently stopped the sweep. Git
+history has it if you want to see how the manual era worked.
+
+- [The setup steps only you can run](#the-setup-steps-only-you-can-run)
+- [An ordinary push](#an-ordinary-push)
+- [Deploying a chosen tag by hand](#deploying-a-chosen-tag-by-hand)
+- [Rolling back by hand](#rolling-back-by-hand)
+- [Break glass: when the document itself is broken](#break-glass-when-the-document-itself-is-broken)
+- [What survives a deployment](#what-survives-a-deployment)
+- [When something goes wrong](#when-something-goes-wrong)
+- [Reclaiming disk](#reclaiming-disk)
+- [Cost note](#cost-note)
+
+## The setup steps only you can run
 
 The pipeline cannot create its own permission to exist, and it cannot click a button in
 GitHub's settings. Everything else in `.kiro/specs/continuous-deployment/tasks.md` is a file
 somebody writes; the nine steps below are yours, and four of them have to happen at a
 particular moment or the deployment breaks.
+
+**All nine are already done on this deployment.** They are kept because they are how the instance
+got into its current state, and because rebuilding it from scratch means running them again.
 
 Read the **When** column first. The order is not a suggestion.
 
@@ -24,7 +49,7 @@ Facts these steps use, all verified: account `811362454196`, region `eu-west-2`,
 
 ---
 
-## Step 1 — Create the GitHub OIDC provider
+### Step 1 — Create the GitHub OIDC provider
 
 **When:** any time. Nothing depends on it yet and it changes nothing that is running.
 
@@ -65,7 +90,7 @@ scoping is therefore mandatory, not advisory — steps 2 and 3 are where it happ
 
 ---
 
-## Step 2 — Create the `production` environment, restricted to `main`
+### Step 2 — Create the `production` environment, restricted to `main`
 
 **When:** any time. Nothing depends on it yet.
 
@@ -90,7 +115,7 @@ here, with no change to AWS.
 
 ---
 
-## Step 3 — Create the deployment role
+### Step 3 — Create the deployment role
 
 **When:** after tasks 1.1 and 1.2 have written `deploy/iam/deployment-role-trust-policy.json`
 and `deploy/iam/deployment-role-permissions-policy.json`. The role is created *from* those
@@ -163,7 +188,7 @@ Note the role ARN from the output. You need it for step 5.
 
 ---
 
-## Step 4 — Register the deploy document
+### Step 4 — Register the deploy document
 
 **When:** after task 1.3 has written `deploy/ssm/DeployTicTacToe.json`. Before the deploy job
 lands in task 6.1, because the role can execute nothing else.
@@ -211,7 +236,7 @@ price of the constraint.
 
 ---
 
-## Step 5 — Add the role ARN as a repository variable
+### Step 5 — Add the role ARN as a repository variable
 
 **When:** straight after step 3. (Step 4 is independent and can be done either side of this.)
 
@@ -227,7 +252,7 @@ where a secret would be masked in logs for no benefit.
 
 ---
 
-## Step 6 — Seed `release.env` on the instance
+### Step 6 — Seed `release.env` on the instance
 
 **When: before task 4.1 lands.** This is the step with teeth. Once `compose.yaml` uses
 `${RELEASE_TAG:?…}`, Compose refuses to start anything without that variable — correct
@@ -262,7 +287,7 @@ stopping the stack.
 
 ---
 
-## Step 7 — Make both GHCR packages public
+### Step 7 — Make both GHCR packages public
 
 **When:** after the `publish` job has run once and before task 6.1 lands. The packages cannot
 be made public until they exist, and the deploy job cannot pull them until they are public.
@@ -303,7 +328,7 @@ grant, so it is worth being explicit that the answer chosen was "make them publi
 
 ---
 
-## Step 8 — Re-register the document
+### Step 8 — Re-register the document
 
 **When:** before the first deploy. The document gained a third `Mode`, `diagnose`, and the
 copy in Systems Manager is the one that runs — editing the JSON and pushing changes nothing.
@@ -352,7 +377,7 @@ document and nothing else — there is no route from the runner to a shell on th
 
 ---
 
-## Step 9 — Add `--env-file` to the sweep crontab
+### Step 9 — Add `--env-file` to the sweep crontab
 
 **When:** before or immediately after the first deploy. Nothing warns you about this one.
 
@@ -428,7 +453,7 @@ Expect `exit=0` and a sweep line in the journal.
 
 ---
 
-## After the nine steps: pushing is the whole workflow
+## An ordinary push
 
 ```bash
 composer lint && composer analyse && npx tsc --noEmit && npm run build
@@ -452,6 +477,59 @@ And on the instance, what is actually running:
 
 ```bash
 cat /srv/tic-tac-toe/deploy/release.env
+```
+
+`Mode=diagnose` is the read-only way to see the whole picture — `release.env`, git HEAD,
+`docker compose ps -a`, disk, and the tail of both containers' logs — without opening a shell:
+
+```bash
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
+
+CMD=$(aws ssm send-command --document-name DeployTicTacToe --instance-ids "$IID" \
+  --parameters "ReleaseTag=$(git rev-parse HEAD),Mode=diagnose" \
+  --query 'Command.CommandId' --output text)
+
+aws ssm get-command-invocation --command-id "$CMD" --instance-id "$IID" \
+  --query 'StandardOutputContent' --output text
+```
+
+---
+
+## Deploying a chosen tag by hand
+
+Any tag that was ever published can be redeployed. GHCR keeps every pair; the instance keeps only
+the current and previous ones, so an older tag is simply pulled again.
+
+```bash
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
+
+CMD=$(aws ssm send-command \
+  --document-name DeployTicTacToe \
+  --instance-ids "$IID" \
+  --timeout-seconds 600 \
+  --parameters "ReleaseTag=<40-char-sha>,Mode=deploy" \
+  --query 'Command.CommandId' --output text)
+
+aws ssm get-command-invocation --command-id "$CMD" --instance-id "$IID" \
+  --query '{Status:Status,Code:ResponseCode,Out:StandardOutputContent,Err:StandardErrorContent}'
+```
+
+**No health gate runs.** The gate lives in the workflow, not the document, so a deployment sent
+this way is not checked and not reverted. Check it yourself:
+
+```bash
+curl -s "https://$HOST/health"
+```
+
+`Mode=deploy` advances `PREVIOUS_RELEASE_TAG` to whatever was running, so the rollback target stays
+correct. Confirm the tag exists in the registry first if you are unsure — a pull failure aborts
+before anything is recreated, leaving the running stack alone:
+
+```bash
+T=$(curl -sS "https://ghcr.io/token?service=ghcr.io&scope=repository:mirkovicuk/tic-tac-toe-app:pull" | jq -r .token)
+curl -sS -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $T" \
+  -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+  "https://ghcr.io/v2/mirkovicuk/tic-tac-toe-app/manifests/<40-char-sha>"
 ```
 
 ---
@@ -485,11 +563,6 @@ That mode also leaves `PREVIOUS_RELEASE_TAG` alone, so a second fallback restore
 rather than walking backwards through history. If nothing was ever recorded, the document exits
 **71** and leaves the current stack running.
 
-Editing `release.env` by hand and running Compose yourself also works, but it skips the lock, the
-pull check, the `--wait` gate and the revision assertion — every safeguard the document exists
-for. Prefer the command above; keep the manual path for when SSM itself is the thing that is
-broken, in which case `docs/deploy-schedule-swap.md` is the runbook.
-
 Do **not** run `docker compose down -v`. The `-v` removes volumes, and one of them holds the
 TLS certificate whose replacement depends on a Let's Encrypt rate limit shared with every other
 user of `sslip.io`.
@@ -498,6 +571,101 @@ Do **not** run `php artisan migrate:rollback`. Rolling an image back does not ro
 back, and the `down()` method on the games migration is `Schema::dropIfExists('games')` — it
 would delete every game and move. Schema changes move forward only; a bad migration is fixed by
 a new migration.
+
+---
+
+## Break glass: when the document itself is broken
+
+Use this **only** when `DeployTicTacToe` cannot run — a bad `update-document`, or a corrupted
+`release.env`. It skips the lock, the pull check, the `--wait` gate and the revision assertion,
+which is to say every safeguard the document exists for.
+
+Note what this is *not* a fallback for. It needs a Session Manager shell, which is Systems Manager,
+which is the same dependency `send-command` uses. If SSM is unavailable you get neither. The case
+this covers is the document being wrong, not AWS being down.
+
+```bash
+# Local machine.
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
+aws ssm start-session --target "$IID"
+```
+
+```bash
+# Session Manager shell, on the instance.
+cd /srv/tic-tac-toe
+cat deploy/release.env                                  # note both values before changing anything
+
+git fetch --depth 1 origin <sha> && git checkout --quiet --detach <sha>
+
+printf 'RELEASE_TAG=%s\nPREVIOUS_RELEASE_TAG=%s\n' <sha> <previous-sha> > deploy/release.env
+chmod 600 deploy/release.env
+
+docker compose --env-file deploy/release.env up -d --wait
+docker compose --env-file deploy/release.env ps
+curl -s https://18-175-88-107.sslip.io/health
+```
+
+`--env-file` on **every** `docker compose` command. Compose interpolates `compose.yaml` before it
+does anything at all, including `ps` and `exec`, and `${RELEASE_TAG:?…}` makes it refuse rather
+than guess.
+
+To restore the document itself, from your laptop:
+
+```bash
+aws ssm update-document --name DeployTicTacToe --document-version '$LATEST' \
+  --document-format JSON --content file://deploy/ssm/DeployTicTacToe.json
+aws ssm update-document-default-version --name DeployTicTacToe --document-version <n>
+```
+
+Both commands are needed. `update-document` creates a version and leaves the default where it was.
+
+---
+
+## What survives a deployment
+
+**Survives.** Everything in the two volumes: the SQLite database with its games, moves and
+`sessions` table, and Caddy's certificate. Players stay in their games across a deployment. Seven
+deployments have not lost a game.
+
+**Does not survive, by design.** The rate-limit counters, which live in the container's own
+filesystem. Everyone starts from a clean limit after a deployment, which costs nothing.
+
+**Never change `APP_KEY`.** It is in `deploy/app.env` on the instance, which is gitignored and
+therefore cannot be touched by a deployment. Regenerating it invalidates every session cookie at
+once — and with no user accounts to recover through, every player in a game in progress is locked
+out permanently, with no way back for them or for you.
+
+**There is no backup.** The SQLite file is in a Docker volume on one instance's root EBS volume.
+Nothing copies it anywhere. Deployments do not touch it, but if that volume is lost every game and
+move is gone. That was a deliberate scoping decision, recorded in the requirements rather than
+overlooked.
+
+### Downtime
+
+`docker compose up -d` destroys both containers and creates new ones, so requests in flight are
+dropped and there is a gap of a second or two. `web` answers 502 while `app` restarts, migrates and
+rebuilds its caches. The client polls every 2 seconds, so a player sees a brief stall rather than a
+broken page.
+
+A pull that fails, or a container that will not become healthy, leaves the previous version
+serving — the document aborts before recreating anything in the first case, and the workflow's
+gate reverts in the second.
+
+### Verifying the lifecycle records
+
+Requirement 10.3's records go to `app`'s stdout as JSON. The vocabulary is `move.accepted`,
+`move.rejected` and `rematch.created` — **not** `game.move_accepted`; grepping for the wrong prefix
+once made a working application look defective. The check worth making reconciles the count against
+the database rather than just finding the lines:
+
+```bash
+# Session Manager shell, on the instance, in /srv/tic-tac-toe.
+docker compose --env-file deploy/release.env logs --no-color app | grep -c '"message":"move.accepted"'
+docker compose --env-file deploy/release.env exec -T app php -r \
+  '$p=new PDO("sqlite:/var/www/html/database/database.sqlite"); echo $p->query("select count(*) from moves")->fetchColumn(), PHP_EOL;'
+```
+
+The two should agree, allowing for log rotation — `json-file` is capped at 10 MB × 3 files.
 
 ---
 
@@ -541,8 +709,48 @@ docker compose logs --tail=60
 
 ---
 
+## Reclaiming disk
+
+The instance keeps only the deploying and retained image pairs; the document deletes the rest by
+name on every deployment. So under ordinary use there is nothing to reclaim, and **`docker image
+prune -f` is the wrong command** — it removes only *dangling* images, and every image here carries
+a tag, so it frees nothing while looking like housekeeping. `prune -a` is worse: it removes whatever
+no running container uses, which is exactly the retained pair the rollback depends on.
+
+Two things do accumulate outside that logic:
+
+```bash
+# Session Manager shell, on the instance.
+docker system df
+```
+
+**BuildKit cache.** Left over from when images were built on the instance. Nothing builds there now,
+so it can never be hit — it was 1.85 GB, larger than every image on the machine, and was cleared
+once with `docker builder prune -f`. Safe, because nothing on that box builds.
+
+**`tic-tac-toe-app:latest` and `tic-tac-toe-web:latest`.** The last locally built pair. They sit
+outside the two GHCR repositories, so the reclaim never sees them, and they are about 184 MB of real
+shared storage. `docker rmi tic-tac-toe-app:latest tic-tac-toe-web:latest` when it matters.
+
+Leave `caddy:2-alpine` — `compose.placeholder.yaml` still refers to it for the certificate path in
+`docs/aws-infra.md`.
+
+One thing to know before reading disk figures after an incident: **a failed deployment's images are
+not reclaimed at the time.** The reclaim runs before `up`, so the failing containers still hold
+them and `docker rmi` refuses. The next ordinary deployment removes them.
+
+Sizes in `docker image ls` are misleading here. It reports each image's full size, counting shared
+layers every time — seven images listing at ~3.1 GB occupy 1.18 GB, because two pairs from adjacent
+commits differ only in the final `COPY` layer. `docker system df` gives the real figure.
+
+---
+
 ## Cost note
 
-The instance and its Elastic IP bill continuously whether or not you deploy. `docs/aws-infra.md`
-carries the teardown, and releasing the address is the step that stops the meter. GHCR storage
-and transfer are free for public packages, so the registry adds nothing.
+The instance and its Elastic IP bill continuously whether or not you deploy. GHCR storage and
+transfer are free for public packages, so the registry adds nothing.
+
+**Teardown** is in [`docs/aws-infra.md`](aws-infra.md) — it owns provisioning, so it owns the
+reverse. Bring the stack down first with `cd /srv/tic-tac-toe && docker compose --env-file
+deploy/release.env down` (never `-v`), then follow that document. Releasing the Elastic IP is the
+step that stops the meter.
