@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\TicTacToe\Mark;
+use App\Games\CreateRematch;
 use App\Games\GameSnapshot;
 use App\Games\GameState;
 use App\Games\JoinCode;
@@ -15,6 +16,7 @@ use App\Games\ResolvedPlayer;
 use App\Games\SubmitMove;
 use App\Models\Game;
 use App\Models\Move;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
@@ -383,4 +385,126 @@ it('accepts exactly one of two moves submitted from one snapshot and refuses the
         // The no-re-query invariant from the other side: the model inside the
         // snapshot still reads what it read.
         ->and($observed->game->version_counter)->toBe($before['version_counter'], 'SubmitMove refreshed the observed Game model, so the second call did not see the state a concurrent second request would see (Req 5.3)');
+});
+
+/**
+ * A Game won by X on the fifth Move, with the Move_List that produced it.
+ *
+ * Terminal because Requirement 7.10 refuses a Rematch of anything else, so a
+ * non-terminal fixture would be refused by the state guard and never reach the
+ * insert this race is about. Both token hashes are already set by
+ * `concurrencyActiveGame()`; neither is read by `CreateRematch::handle()`, which
+ * takes the acting Mark as a parameter.
+ */
+function concurrencyFinishedGame(): Game
+{
+    $game = concurrencyActiveGame(0, 3, 1, 4, 2);
+
+    $game->state = GameState::Won;
+    // The CHECK on `games` pairs `state = 'won'` with a non-null `winning_mark`.
+    $game->winning_mark = Mark::X;
+    $game->save();
+
+    return $game;
+}
+
+/**
+ * Inserts a Rematch of `$precedingId` the way a winning request would, through the
+ * query builder so no model event fires and nothing memoises.
+ *
+ * Called from a query listener rather than before the subject runs, so the row does
+ * not exist when the subject's first `existingRematchOf()` looks and does exist by
+ * the time its insert reaches the unique index. That ordering IS the race.
+ */
+function concurrencyInsertRematchOf(string $precedingId): string
+{
+    $id = Str::uuid7()->toString();
+
+    DB::table('games')->insert([
+        'id' => $id,
+        // NULL `join_code`: a Rematch is reached by navigation, and the reachability
+        // CHECK is satisfied by `rematch_of_game_id` instead.
+        'join_code' => null,
+        'state' => GameState::Active->value,
+        'winning_mark' => null,
+        'x_token_hash' => null,
+        'o_token_hash' => null,
+        'rematch_of_game_id' => $precedingId,
+        'version_counter' => 0,
+        'last_activity_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    return $id;
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE LOSER OF A REMATCH RACE RECEIVES THE WINNER'S REMATCH (Req 7.8, 7.9).
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `CreateRematch::createRematchOf()` catches the unique-index violation and answers
+ * with `existingRematchOf($preceding) ?? throw`. That catch branch had no test:
+ * `RematchTest` says so in its own header, deferring it here, and nothing arrived.
+ * The gap is not hypothetical — replacing `$preceding->rematch()->first()` with the
+ * memoised `$preceding->rematch`, which that method's docblock explicitly warns
+ * against, left all 310 tests and the browser test green.
+ *
+ * The interleaving, and why it is placed where it is. The winner's row must be absent
+ * when the subject's first `existingRematchOf()` runs and present when its insert
+ * runs. A listener on that first SELECT achieves it, and it must be that SELECT
+ * rather than anything inside `createRematchOf()`: the insert runs inside
+ * `DB::transaction()`, so a row inserted from within the closure would be rolled back
+ * by the same failure it is meant to survive, and the re-read would then find nothing
+ * even against correct code.
+ *
+ * Sequential rather than parallel, as the two races above are (Req 14.9). Faithful
+ * for the same reason: the whole of the control is the unique index refusing the
+ * second insert, and the subject re-reads afterwards rather than holding a lock.
+ */
+it('returns the winner\'s rematch to the request whose insert lost the race, without raising', function () {
+    $preceding = concurrencyFinishedGame();
+
+    // Preconditions BEFORE the listener is armed, and that order is load-bearing.
+    // This count is itself a `select ... rematch_of_game_id`, so with the listener
+    // already registered it would fire here: the winner's row would exist before
+    // `handle()` ran, `existingRematchOf()` would find it on its first call, and
+    // `createRematchOf()` — the whole subject of this test — would never be entered.
+    // The assertions below all still passed that way. Ordering is what makes this a
+    // test of the catch branch rather than of the already-exists path.
+    expect($preceding->state->isTerminal())->toBeTrue('the fixture Game is not terminal, so the Rematch would be refused by the state guard and no insert would collide')
+        ->and(DB::table('games')->where('rematch_of_game_id', $preceding->id)->count())->toBe(0, 'the fixture already has a Rematch, so the subject would find one and never attempt the insert this test is about');
+
+    $winner = null;
+
+    DB::listen(function (QueryExecuted $query) use (&$winner, $preceding): void {
+        if ($winner === null
+            && str_starts_with($query->sql, 'select')
+            && str_contains($query->sql, 'rematch_of_game_id')) {
+            $winner = concurrencyInsertRematchOf((string) $preceding->id);
+        }
+    });
+
+    $result = (new CreateRematch(new PlayerTokens))->handle($preceding, Mark::X);
+
+    expect($winner)->toBeString('the listener never inserted a competing Rematch, so the subject won its insert and the catch branch was not entered')
+        ->and($result)->toBeInstanceOf(ResolvedPlayer::class, 'the losing request did not answer with a Player; a raised UniqueConstraintViolationException here is the memoised-null defect');
+
+    // Narrowing for static analysis only — `handle()` returns a union, and the two
+    // expectations above have already failed if either of these does not hold.
+    if (! $result instanceof ResolvedPlayer || ! is_string($winner)) {
+        throw new LogicException('Unreachable: the expectations above have already failed.');
+    }
+
+    expect($result->game->id)->toBe($winner, 'the losing request answered with a Rematch other than the winner\'s, so the two Players would be sent to different Games (Req 7.9)')
+        ->and(DB::table('games')->where('rematch_of_game_id', $preceding->id)->count())->toBe(1, 'the race left more than one Rematch of the preceding Game (Req 7.8)')
+        // Req 7.3: the loser still gets its swapped Mark, minted against the winner's
+        // row rather than against the row its own insert failed to create.
+        ->and($result->mark)->toBe(Mark::O, 'the losing request was not given the swap of the Mark it held in the preceding Game (Req 7.3)')
+        ->and((new PlayerTokens)->heldFor($winner))->not->toBeNull('no Player_Token was minted for the losing session against the winner\'s Rematch (Req 7.6)');
+
+    // The winner's increment is the only one: the loser wrote nothing, because its
+    // transaction rolled back before the UPDATE was reached.
+    expect(concurrencyRowOf($preceding->id)['state'])->toBe(GameState::Won->value, 'the losing request changed the preceding Game');
 });
