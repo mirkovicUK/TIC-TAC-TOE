@@ -1,5 +1,7 @@
 import { Head, useForm, usePage } from '@inertiajs/react';
 import type { FormEvent } from 'react';
+import Card from '@/components/Card';
+import Layout from '@/components/Layout';
 
 /*
  * `GET /join/{join_code?}` — the target of a Join_Link, and the landing place for a
@@ -41,15 +43,19 @@ export default function Join({ joinCode }: JoinProps) {
         <>
             <Head title="Join a game" />
 
-            <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 p-6">
-                <h1 className="text-3xl font-semibold">Join a game</h1>
+            <Layout>
+                <h1 className="text-3xl font-semibold tracking-tight">Join a game</h1>
 
                 {message !== null && (
-                    <p role="alert" className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
+                    <p role="alert" className="rounded-xl border border-notice/30 bg-notice-face px-4 py-3 text-notice">
                         {message}
                     </p>
                 )}
 
+                <Card className="flex flex-col gap-3">
+                <p className="text-sm text-ink-muted">
+                    You play <span className="font-mono font-bold text-mark-o">O</span>.
+                </p>
                 <form onSubmit={submit} className="flex flex-col gap-3">
                     <label htmlFor="join_code" className="text-sm font-medium">
                         Join code
@@ -63,17 +69,18 @@ export default function Join({ joinCode }: JoinProps) {
                         placeholder="XXXXX-XXXXX"
                         value={form.data.join_code}
                         onChange={(event) => form.setData('join_code', event.target.value)}
-                        className="w-56 rounded border border-gray-300 px-3 py-2 font-mono uppercase"
+                        className="w-56 rounded-xl border border-hairline bg-surface-deep px-3 py-2.5 font-mono tracking-widest uppercase text-ink placeholder:tracking-normal placeholder:text-ink-muted/50 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                     />
                     <button
                         type="submit"
                         disabled={form.processing}
-                        className="w-fit rounded bg-gray-900 px-4 py-2 font-medium text-white disabled:opacity-50"
+                        className="w-fit rounded-xl bg-accent px-4 py-2.5 font-semibold text-surface-deep shadow-[0_4px_0_0_var(--color-surface-deep)] transition hover:bg-accent-hover active:translate-y-0.5 active:shadow-[0_1px_0_0_var(--color-surface-deep)] focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel focus-visible:outline-none disabled:opacity-50"
                     >
                         Join game
                     </button>
                 </form>
-            </main>
+                </Card>
+            </Layout>
         </>
     );
 }

@@ -1,6 +1,16 @@
 import type { GameProps } from '@/pages/Game';
 
 /*
+ * One shared shell for all four branches, so the banner occupies the same height and
+ * position whichever state the game is in. Without it the board jumped a line whenever the
+ * turn copy changed length, which under a 2-second poll is a board that twitches.
+ */
+const shell = 'rounded-2xl border border-hairline/60 bg-panel px-4 py-3 shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset]';
+
+const mark = (m: 'x' | 'o') =>
+    `font-mono text-xl font-bold uppercase ${m === 'x' ? 'text-mark-x' : 'text-mark-o'}`;
+
+/*
  * What the board currently means, in words: whose turn it is, whether that is you,
  * whether we are waiting on the opponent, and how the Game ended.
  *
@@ -39,13 +49,19 @@ export default function StatusBanner({ game, opponentIdle }: StatusBannerProps) 
 
         case 'active':
             return (
-                <div role="status" className="flex flex-col gap-1">
-                    <p className="text-lg">
-                        <span className="font-mono uppercase">{game.markToMove}</span>
+                <div role="status" className={`${shell} flex flex-col gap-1`}>
+                    <p className="flex items-center gap-2 text-lg">
+                        <span className={mark(game.markToMove)}>{game.markToMove}</span>
                         {game.isYourTurn ? ' to move — that is you.' : ' to move — waiting for your opponent.'}
+                        {game.isYourTurn && (
+                            <span
+                                aria-hidden="true"
+                                className="ml-auto size-2 shrink-0 animate-pulse rounded-full bg-accent"
+                            />
+                        )}
                     </p>
                     {! game.isYourTurn && opponentIdle && (
-                        <p className="text-amber-800">
+                        <p className="text-notice">
                             Your opponent has not moved for a while and may have stopped playing.
                         </p>
                     )}
@@ -54,14 +70,14 @@ export default function StatusBanner({ game, opponentIdle }: StatusBannerProps) 
 
         case 'won':
             return (
-                <div role="status" className="flex flex-col gap-1">
-                    <p className="text-lg font-medium">
+                <div role="status" className={`${shell} flex flex-col gap-1`}>
+                    <p className="text-xl font-semibold">
                         {game.winningMark === null
                             ? 'This game has been won.'
                             : `${game.winningMark.toUpperCase()} won this game.`}
                     </p>
                     {game.winningMark !== null && (
-                        <p className="text-gray-700">
+                        <p className="text-ink-muted">
                             {game.winningMark === game.yourMark ? 'You won.' : 'Your opponent won.'}
                         </p>
                     )}
@@ -70,8 +86,8 @@ export default function StatusBanner({ game, opponentIdle }: StatusBannerProps) 
 
         case 'drawn':
             return (
-                <div role="status">
-                    <p className="text-lg font-medium">This game ended in a draw.</p>
+                <div role="status" className={shell}>
+                    <p className="text-xl font-semibold">This game ended in a draw.</p>
                 </div>
             );
 

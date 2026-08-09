@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Card from '@/components/Card';
 
 /*
  * The Join_Code and a copyable Join_Link, shown while a Game is
@@ -36,24 +37,35 @@ export default function JoinCodePanel({ joinCode, joinUrl }: JoinCodePanelProps)
     };
 
     return (
-        <section aria-labelledby="join-code-heading" className="flex flex-col gap-4 rounded border border-gray-200 p-4">
-            <h2 id="join-code-heading" className="text-lg font-medium">
+        <Card as="section" aria-labelledby="join-code-heading" className="flex flex-col gap-4">
+            {/* The pulsing dot is the only motion on the page and it is decorative:
+                `role="status"` on the heading is what actually announces the wait. */}
+            <h2 id="join-code-heading" className="flex items-center gap-2.5 text-lg font-semibold">
+                <span aria-hidden="true" className="relative flex size-2.5 shrink-0">
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-accent opacity-60" />
+                    <span className="relative inline-flex size-2.5 rounded-full bg-accent" />
+                </span>
                 Waiting for a second player
             </h2>
 
-            <p className="text-sm text-gray-600">Send one of these to the person you want to play.</p>
+            <p className="text-sm text-ink-muted">Send one of these to the person you want to play.</p>
 
-            <div className="flex flex-col gap-1">
-                <span id="join-code-label" className="text-sm font-medium">
+            <div className="flex flex-col gap-1.5">
+                <span id="join-code-label" className="text-xs font-medium tracking-wider text-ink-muted uppercase">
                     Join code
                 </span>
-                <p aria-labelledby="join-code-label" className="font-mono text-2xl tracking-widest">
+                {/* Big, monospaced and widely tracked, because this is read aloud down a
+                    phone as often as it is copied. */}
+                <p
+                    aria-labelledby="join-code-label"
+                    className="rounded-xl bg-surface-deep px-4 py-3 text-center font-mono text-3xl font-bold tracking-[0.2em] text-ink select-all"
+                >
                     {joinCode}
                 </p>
             </div>
 
             <div className="flex flex-col gap-2">
-                <label htmlFor="join-link" className="text-sm font-medium">
+                <label htmlFor="join-link" className="text-xs font-medium tracking-wider text-ink-muted uppercase">
                     Join link
                 </label>
                 <div className="flex flex-wrap items-center gap-2">
@@ -63,20 +75,20 @@ export default function JoinCodePanel({ joinCode, joinUrl }: JoinCodePanelProps)
                         readOnly
                         value={joinUrl}
                         onFocus={(event) => event.target.select()}
-                        className="w-full max-w-md rounded border border-gray-300 px-3 py-2 font-mono text-sm"
+                        className="w-full max-w-md rounded-lg border border-hairline bg-surface-deep px-3 py-2 font-mono text-sm text-ink"
                     />
                     <button
                         type="button"
                         onClick={() => void copy()}
-                        className="rounded bg-gray-900 px-3 py-2 text-sm font-medium text-white"
+                        className="rounded-xl border border-hairline bg-elevated px-3 py-2 text-sm font-semibold text-ink transition hover:bg-surface active:translate-y-px focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel focus-visible:outline-none"
                     >
-                        Copy link
+                        {copied ? 'Copied' : 'Copy link'}
                     </button>
                 </div>
-                <span role="status" className="text-sm text-green-700">
+                <span role="status" className="min-h-5 text-sm text-win">
                     {copied ? 'Join link copied.' : ''}
                 </span>
             </div>
-        </section>
+        </Card>
     );
 }

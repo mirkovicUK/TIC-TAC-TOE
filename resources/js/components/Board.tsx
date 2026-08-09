@@ -46,7 +46,14 @@ export default function Board({ game }: BoardProps) {
     };
 
     return (
-        <div role="group" aria-label="Board" className="grid w-fit grid-cols-3 gap-2">
+        // The well the cells sit in: an inset shadow makes the tray look recessed, which is
+        // what gives the raised cells something to be raised from. `mx-auto` because the
+        // grid is `w-fit` inside a flex column that would otherwise pin it left.
+        <div
+            role="group"
+            aria-label="Board"
+            className="mx-auto grid w-fit grid-cols-3 gap-3 rounded-2xl bg-surface-deep p-3 shadow-[inset_0_2px_8px_0_rgba(0,0,0,0.55),0_1px_0_0_rgba(255,255,255,0.05)]"
+        >
             {game.board.map((occupant, index) => (
                 <Cell
                     key={index}

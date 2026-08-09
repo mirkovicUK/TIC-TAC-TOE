@@ -52,12 +52,28 @@ export default function Cell({ index, occupant, winning, disabled, onSelect }: C
                 }
             }}
             className={[
-                'flex h-20 w-20 items-center justify-center rounded border-2 text-4xl font-semibold',
-                winning ? 'border-green-600 bg-green-50 text-green-900' : 'border-gray-300 bg-white text-gray-900',
-                disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:bg-indigo-50',
+                // The face. `shadow-[…]` carries three layers: a hard bottom edge that is
+                // the depth, an ambient drop, and an inset top highlight that reads as light
+                // from above. Tailwind has no scale for that combination, hence the literal.
+                'relative flex h-20 w-20 items-center justify-center rounded-xl text-4xl font-bold',
+                'transition-[transform,box-shadow,background-color] duration-100 ease-out',
+                'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none',
+                winning
+                    ? 'bg-win-face text-win shadow-[0_4px_0_0_var(--color-win-face),0_6px_14px_-4px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.16)]'
+                    : 'bg-elevated shadow-[0_4px_0_0_var(--color-surface-deep),0_6px_14px_-4px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.08)]',
+                // Colour by mark, on top of the glyph rather than instead of it: the letter is
+                // the accessible name, so a player who cannot tell the hues apart loses nothing.
+                occupant === 'x' ? 'text-mark-x' : occupant === 'o' ? 'text-mark-o' : '',
+                // Lift on hover, press on click — but only when the cell is playable, so an
+                // inert board does not invite a move the server would refuse.
+                disabled
+                    ? 'cursor-not-allowed'
+                    : 'cursor-pointer hover:-translate-y-0.5 hover:bg-panel active:translate-y-0.5 active:shadow-[0_1px_0_0_var(--color-surface-deep),0_2px_6px_-2px_rgba(0,0,0,0.6)]',
             ].join(' ')}
         >
-            <span aria-hidden="true">{occupant === null ? '' : occupant.toUpperCase()}</span>
+            <span aria-hidden="true" className="drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
+                {occupant === null ? '' : occupant.toUpperCase()}
+            </span>
         </button>
     );
 }

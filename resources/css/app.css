@@ -3,7 +3,64 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+/*
+ * The `@source` line above is load-bearing and is documented at the top of the Dockerfile:
+ * Tailwind scans a path inside `vendor` for class names, and building without it silently
+ * emits different CSS rather than failing. Do not remove it to tidy up.
+ */
+
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /*
+     * The palette, named by ROLE rather than by colour, so a change of mind is one edit
+     * here instead of a search for `bg-slate-900` across nine components. `surface` is the
+     * page, `panel` is anything raised off it, `elevated` is a cell face.
+     *
+     * oklch rather than hex because lightness is the first number: `--color-panel` and
+     * `--color-elevated` differ only in lightness, which is what makes the board read as
+     * lit from above rather than as two unrelated greys.
+     */
+    --color-surface: oklch(0.19 0.02 264);
+    --color-surface-deep: oklch(0.15 0.02 264);
+    --color-panel: oklch(0.25 0.02 264);
+    --color-elevated: oklch(0.31 0.02 264);
+
+    --color-ink: oklch(0.97 0.005 264);
+    --color-ink-muted: oklch(0.74 0.015 264);
+    --color-hairline: oklch(0.38 0.02 264);
+
+    /*
+     * X and O are told apart by hue AND by glyph, never by hue alone — the glyph is the
+     * accessible name and the colour is decoration on top of it.
+     */
+    --color-mark-x: oklch(0.78 0.14 230);
+    --color-mark-o: oklch(0.78 0.15 35);
+
+    /*
+     * The winning-line colour had to change with the dark surface. It was
+     * `bg-green-50 text-green-900`, which is invisible on `--color-surface`: light text on
+     * a light panel. This pair is measured the other way round — a bright mint on a dark
+     * green-tinted face.
+     */
+    --color-win: oklch(0.82 0.17 155);
+    --color-win-face: oklch(0.33 0.06 155);
+
+    --color-accent: oklch(0.66 0.17 268);
+    --color-accent-hover: oklch(0.72 0.17 268);
+    --color-notice: oklch(0.83 0.13 85);
+    --color-notice-face: oklch(0.30 0.05 85);
+}
+
+/*
+ * Set on `html` rather than on a component so there is no flash of white before React
+ * mounts, and so the colour survives the browser's overscroll area. `color-scheme` tells
+ * the browser to render form controls, scrollbars and the caret dark too, which no utility
+ * class can do.
+ */
+html {
+    background-color: var(--color-surface-deep);
+    color: var(--color-ink);
+    color-scheme: dark;
 }

@@ -1,5 +1,6 @@
 import { Head, usePage } from '@inertiajs/react';
 import Board from '@/components/Board';
+import Layout from '@/components/Layout';
 import JoinCodePanel from '@/components/JoinCodePanel';
 import OutcomeMessage from '@/components/OutcomeMessage';
 import RematchControl from '@/components/RematchControl';
@@ -57,11 +58,30 @@ export default function Game({ game }: { game: GameProps }) {
         <>
             <Head title="Your game" />
 
-            <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 p-6">
-                <h1 className="text-3xl font-semibold">Your game</h1>
+            <Layout>
+                <h1 className="text-3xl font-semibold tracking-tight">Your game</h1>
 
-                <p className="text-sm text-gray-600">
-                    You are playing <span className="font-mono uppercase">{game.yourMark}</span>.
+                {/*
+                 * DO NOT wrap this paragraph in a `header`, `div` or `section`, and do not
+                 * change its text. `PlayAGameTest` reads it as `main > p:has(span)` and
+                 * asserts the exact string 'You are playing x.', so its position as a DIRECT
+                 * child of the layout's `main` is part of the contract — a wrapper makes the
+                 * selector match nothing and the failure reads as a closed browser rather
+                 * than a moved element. Learned by breaking it.
+                 *
+                 * That also rules out putting the mark in a decorative chip beside the
+                 * heading: the glyph would land in the paragraph's text content and the
+                 * assertion compares the whole string. Colour and weight on the letter is the
+                 * emphasis that fits inside the constraint.
+                 */}
+                <p className="text-sm text-ink-muted">
+                    You are playing{' '}
+                    <span
+                        className={`font-mono text-lg font-bold ${game.yourMark === 'x' ? 'text-mark-x' : 'text-mark-o'}`}
+                    >
+                        {game.yourMark}
+                    </span>
+                    .
                 </p>
 
                 <OutcomeMessage outcome={outcome} />
@@ -75,7 +95,7 @@ export default function Game({ game }: { game: GameProps }) {
                 {game.state === 'waiting_for_opponent' && game.joinCode !== null && game.joinUrl !== null && (
                     <JoinCodePanel joinCode={game.joinCode} joinUrl={game.joinUrl} />
                 )}
-            </main>
+            </Layout>
         </>
     );
 }

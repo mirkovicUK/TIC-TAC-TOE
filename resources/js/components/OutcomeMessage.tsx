@@ -33,7 +33,7 @@ export default function OutcomeMessage({ outcome }: OutcomeMessageProps) {
     }
 
     return (
-        <p role="alert" className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
+        <p role="alert" className="rounded-xl border border-notice/30 bg-notice-face px-4 py-3 text-notice">
             {message}
         </p>
     );

@@ -1,4 +1,5 @@
 import { router } from '@inertiajs/react';
+import Card from '@/components/Card';
 import type { GameProps } from '@/pages/Game';
 
 /*
@@ -39,8 +40,8 @@ export default function RematchControl({ game }: RematchControlProps) {
     };
 
     return (
-        <div className="flex flex-col gap-2 rounded border border-gray-200 p-4">
-            <p className="text-sm text-gray-600">
+        <Card className="flex flex-col gap-3">
+            <p className="text-sm text-ink-muted">
                 {exists
                     ? 'A rematch of this game is ready. You keep the same opponent and swap marks.'
                     : 'Play the same opponent again. Marks swap, so whoever played X plays O.'}
@@ -49,14 +50,14 @@ export default function RematchControl({ game }: RematchControlProps) {
             <button
                 type="button"
                 onClick={start}
-                className="w-fit rounded bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-500"
+                className="w-fit rounded-xl bg-accent px-4 py-2.5 font-semibold text-surface-deep shadow-[0_4px_0_0_var(--color-surface-deep)] transition hover:bg-accent-hover active:translate-y-0.5 active:shadow-[0_1px_0_0_var(--color-surface-deep)] focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel focus-visible:outline-none"
             >
                 {exists ? 'Go to the rematch' : 'Play again'}
             </button>
 
-            <span role="status" className="text-sm text-green-700">
+            <span role="status" className="min-h-5 text-sm text-win">
                 {exists ? 'A rematch is ready.' : ''}
             </span>
-        </div>
+        </Card>
     );
 }
