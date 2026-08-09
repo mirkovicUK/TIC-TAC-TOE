@@ -235,23 +235,32 @@ stopping the stack.
 **When:** after the `publish` job has run once and before task 6.1 lands. The packages cannot
 be made public until they exist, and the deploy job cannot pull them until they are public.
 
-**This is the step most likely to break your first deployment.** New GHCR packages inherit
-private visibility, and the instance holds no registry credential by design. The symptom is a
-pull failure that does not obviously say "permissions".
+**Verified already done, on the first publish.** A package first pushed from a *public*
+repository with `GITHUB_TOKEN` inherits that repository's visibility, so both arrived public
+with no action needed. Confirmed anonymously against the GHCR API — a pull token carrying no
+credentials fetched both manifests with 200.
 
-Sequence:
+Check it anyway rather than trusting it. The instance holds no registry credential by design,
+and if a package is ever private the symptom is a pull failure that does not obviously say
+"permissions".
 
-1. Land task 5.1 and push to `main`. Watch `publish` go green.
-2. Go to your GitHub profile → **Packages**. You should see `tic-tac-toe-app` and
-   `tic-tac-toe-web`.
-3. For **each** one: **Package settings → Danger Zone → Change visibility → Public**.
-4. Confirm from your laptop, with no credentials in play:
+Confirm from your laptop, with no credentials in play:
 
 ```bash
-docker pull ghcr.io/mirkovicuk/tic-tac-toe-app:$(git rev-parse HEAD)
+SHA=$(git rev-parse HEAD)
+for img in app web; do
+  T=$(curl -sS "https://ghcr.io/token?service=ghcr.io&scope=repository:mirkovicuk/tic-tac-toe-$img:pull" | jq -r .token)
+  printf '%s: ' "$img"
+  curl -sS -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $T" \
+    -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+    "https://ghcr.io/v2/mirkovicuk/tic-tac-toe-$img/manifests/$SHA"
+done
 ```
 
-If that pull works without `docker login`, the instance will manage it too.
+Both `200` means the instance will pull. A `404` is the answer for both "private" and "no such
+tag", so check the SHA is the full 40 characters before concluding it is a permissions problem.
+
+If either is private: **Package settings → Danger Zone → Change visibility → Public**, for each.
 
 **Public is not a convenience here, it sidesteps a second problem.** If the packages stayed
 private, the instance would need a registry credential — and the deploy runs `git` as `ssm-user`

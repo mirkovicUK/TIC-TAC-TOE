@@ -40,7 +40,7 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Landed with 1.3 rather than in group 4, because the document written there depends on it and the change is safe ahead of the Registry switch
     - _Requirements: 4.10, 5.5_
 
-- [ ] 2. Provision the AWS identity, by hand
+- [x] 2. Provision the AWS identity, by hand
   - [x] 2.1 Create the GitHub OIDC provider
     - `aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com`
     - No thumbprint argument; AWS manages GitHub's
@@ -61,7 +61,7 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - **This rule is the whole branch boundary.** Task 1.1 scopes the trust policy to `environment:production`, which carries no branch information, so without this restriction a run on any branch that targets the environment could assume the role. GitHub evaluates it before issuing a token, which is why it is stronger than the branch condition it replaces
     - _Requirements: 3.3a_
 
-  - [ ] 2.5 Register the Deploy_Document in Systems Manager
+  - [x] 2.5 Register the Deploy_Document in Systems Manager
     - `aws ssm create-document --name DeployTicTacToe --document-type Command --document-format JSON --content file://deploy/ssm/DeployTicTacToe.json`
     - Confirm with `aws ssm describe-document --name DeployTicTacToe` that it is `Active` and owned by this account
     - **Every later change to the deploy script needs `aws ssm update-document` by hand.** The Deployment_Role is granted no document-write action on purpose, because a pipeline that can rewrite its own permitted script is constrained by nothing. This is the ongoing cost of the constraint
@@ -74,10 +74,14 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - **This must be done before group 4 lands**, because the `:?` form in `compose.yaml` makes Compose refuse to act with the variable unset — which is the intended behaviour and would otherwise strand the instance
     - Add it to `.gitignore` alongside `deploy/app.env`
     - _Requirements: 2.5, 2.6_
-  - [ ] 3.2 Make both GHCR packages public, after the first publish
-    - New GHCR packages inherit private visibility, and a private package cannot be pulled without a credential the instance deliberately does not hold
-    - This is the assumption most likely to break the first deployment; the symptom is a pull failure, not an auth prompt
-    - Sequence: land group 5, let it publish once, set both packages public, then land group 6
+  - [x] 3.2 Make both GHCR packages public, after the first publish
+    - **Nothing had to be done.** A package first pushed from a public repository with
+      `GITHUB_TOKEN` inherits that repository's visibility, so both were public on
+      arrival. Verified anonymously against the GHCR API: a pull token with no
+      credentials fetches both manifests with 200
+    - The task stays in the plan because the assumption is worth checking rather than
+      inheriting. If the repository is ever made private, or a package is created some
+      other way, private is the default and the failure is a pull error on the instance
     - _Requirements: 1.5, 3.8_
 
 - [ ] 4. Point `compose.yaml` at the Registry
@@ -289,7 +293,7 @@ Taken from the requirements' Out of Scope section, repeated here so nobody adds 
 
 1. Land groups 1, 2 and 3.1 — policies written, role created, `release.env` seeded
 2. Land group 5 so `publish` runs once
-3. **Make both GHCR packages public** (task 3.2) — private is the default and the instance holds no credential
+3. **Confirm both GHCR packages are public** (task 3.2) — they were, inherited from the public repository, but the instance holds no credential so this must be true rather than assumed
 4. Land group 4, then group 6
 
 Landing group 4 before `release.env` exists strands the instance: Compose will refuse to start anything, which is correct behaviour and still an outage.
