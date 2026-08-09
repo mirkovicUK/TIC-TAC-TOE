@@ -8,9 +8,14 @@ use App\Games\GameState;
 use App\Games\JoinCode;
 use App\Games\PlayerTokens;
 use App\Models\Game;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
+use Ramsey\Uuid\Uuid;
+use Ramsey\Uuid\UuidInterface;
 
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
@@ -284,4 +289,58 @@ it('renders the raw Player_Token into no response body: not the redirect, the pa
             }
         }
     }
+});
+
+/*
+ * THE BOUNDED RETRY, observed through the insert attempts.
+ *
+ * `MAX_INSERT_ATTEMPTS` and the `catch` around `save()` had no test. Every other
+ * test in this file creates a Game whose Join_Code is free on the first attempt, so
+ * the catch block was never entered — confirmed by setting the constant to 1, which
+ * left the whole suite green.
+ *
+ * A Join_Code collision cannot be forced: `JoinCode::generate()` is static and draws
+ * from `random_bytes()`. A PRIMARY KEY collision can be, and SQLite reports it as
+ * the same `UniqueConstraintViolationException`. Because the id is generated once
+ * OUTSIDE the loop, freezing it makes every attempt collide, which is what puts the
+ * three attempts within reach of counting.
+ *
+ * The last two expectations are the docblock's claim that the retry repairs a
+ * Join_Code collision and cannot repair an id collision: the id is identical across
+ * all three inserts, the Join_Code differs in each.
+ *
+ * `Str::createUuidsNormally()` runs in a `finally` because nothing in the framework's
+ * teardown resets the factory, and a leaked one would hand every later test in the
+ * process the same Game_Id.
+ */
+it('attempts the insert three times and rethrows, reusing the id and regenerating the join code', function () {
+    $occupied = createGame()->handle();
+
+    // The Eloquent `creating` event, not `DB::listen`: a query that throws is never
+    // logged, because `Connection::run()` reaches `logQuery()` only on success. This
+    // event fires once per `save()` call, before the insert that fails.
+    $attempts = [];
+
+    Event::listen('eloquent.creating: '.Game::class, function (Game $model) use (&$attempts): void {
+        $attempts[] = ['id' => $model->id, 'join_code' => $model->join_code];
+    });
+
+    try {
+        // The factory stands in for `Str::uuid7()`, whose return value `handle()`
+        // calls `->toString()` on, so it must be a Uuid rather than a string.
+        Str::createUuidsUsing(fn (): UuidInterface => Uuid::fromString((string) $occupied->id));
+
+        expect(fn () => createGame()->handle())
+            ->toThrow(UniqueConstraintViolationException::class);
+    } finally {
+        Str::createUuidsNormally();
+    }
+
+    $ids = array_column($attempts, 'id');
+    $codes = array_column($attempts, 'join_code');
+
+    expect($attempts)->toHaveCount(3, 'the insert was not attempted three times, so MAX_INSERT_ATTEMPTS is not the bound the docblock claims')
+        ->and($ids)->toBe(array_fill(0, 3, $occupied->id), 'some attempt did not carry the frozen id, so the collision under test was not a primary-key collision')
+        ->and($codes)->each->toHaveLength(JoinCode::LENGTH)
+        ->and(array_unique($codes))->toHaveCount(3, 'the Join_Code was not regenerated on every attempt, so a colliding code would be retried unchanged');
 });

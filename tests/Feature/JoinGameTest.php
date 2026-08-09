@@ -376,17 +376,26 @@ it('leaves no player token in the session or the row for a losing join', functio
 });
 
 /*
- * THE GUARD ACTUALLY GUARDS, observed through the affected-row count.
+ * A REPLICA OF THE GUARDED UPDATE AFFECTS ZERO ROWS, observed through the return
+ * value.
  *
- * The statement `JoinGame` issues is run a second time by hand against the claimed
- * row and its return value read: zero rows affected is the entire mechanism by which
- * the loser is told `game_full` (Req 2.7). The state and Version_Counter are
- * confirmed not to move, so the zero is a no-op rather than an idempotent rewrite.
+ * READ THE NAME LITERALLY: the second statement below is typed out in this test
+ * body, not issued by `JoinGame`. What it establishes is that a guarded UPDATE
+ * against an already-claimed row affects zero rows and moves nothing — the
+ * mechanism by which the loser is told `game_full` (Req 2.7) — and that the zero is
+ * a no-op rather than an idempotent rewrite.
+ *
+ * It does NOT establish that `JoinGame` issues those guards. Deleting them from
+ * production leaves this test green, because it reads its own copy. The next test
+ * is the one that checks the real statement: it asserts `"o_token_hash" is null`
+ * appears in the UPDATE the query log captured, and that `"state" = ?` appears
+ * twice — once in SET, once in WHERE. Verified by deleting the guards, which fails
+ * that test and two others in this file.
  *
  * The behavioural half — two sessions, A gets `O` and B gets `game_full` — is
  * `ConcurrencyTest`'s, and Property 13 belongs there.
  */
-it('affects zero rows and moves nothing when the guarded update runs against a claimed slot', function () {
+it('affects zero rows and moves nothing when a replica of the guarded update runs against a claimed slot', function () {
     [$join, $tokens] = joiningServiceAnd();
     [$game] = joiningWaitingGame();
 
