@@ -2,7 +2,7 @@
 
 The pipeline cannot create its own permission to exist, and it cannot click a button in
 GitHub's settings. Everything else in `.kiro/specs/continuous-deployment/tasks.md` is a file
-somebody writes; the seven steps below are yours, and three of them have to happen at a
+somebody writes; the nine steps below are yours, and four of them have to happen at a
 particular moment or the deployment breaks.
 
 Read the **When** column first. The order is not a suggestion.
@@ -16,6 +16,8 @@ Read the **When** column first. The order is not a suggestion.
 | 5 | Add the role ARN as a repository variable | Straight after step 3 | GitHub settings |
 | 6 | Seed `release.env` on the instance | **Before task 4.1 lands.** Miss this and the site stops | Session Manager |
 | 7 | Make both GHCR packages public | After the first `publish` run, before task 6.1 lands | GitHub settings |
+| 8 | Re-register the document, now it has a `diagnose` mode | Before the first deploy | AWS, your laptop |
+| 9 | Add `--env-file` to the sweep crontab | **Before or immediately after the first deploy.** Miss it and the nightly sweep dies quietly | Session Manager |
 
 Facts these steps use, all verified: account `811362454196`, region `eu-west-2`, instance
 `i-0c6bab4bc4644e760`, repository `mirkovicUK/TIC-TAC-TOE`, deployment branch `main`.
@@ -271,7 +273,73 @@ grant, so it is worth being explicit that the answer chosen was "make them publi
 
 ---
 
-## After the seven steps: pushing is the whole workflow
+## Step 8 — Re-register the document
+
+**When:** before the first deploy. The document gained a third `Mode`, `diagnose`, and the
+copy in Systems Manager is the one that runs — editing the JSON and pushing changes nothing.
+
+```bash
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
+
+aws ssm update-document \
+  --name DeployTicTacToe \
+  --document-version '$LATEST' \
+  --document-format JSON \
+  --content file://deploy/ssm/DeployTicTacToe.json
+
+aws ssm describe-document --name DeployTicTacToe \
+  --query 'Document.{Status:Status,Version:DocumentVersion,Latest:LatestVersion}'
+```
+
+`diagnose` is read-only: it prints `release.env`, `docker compose ps -a`, the last 50 lines of
+`app`, the last 20 of `web` and `df -h`, then exits 0. It exists because the deploy job needs to
+report the health Compose sees when a gate fails, and the deployment role can run this one
+document and nothing else — there is no route from the runner to a shell on the instance.
+
+Expect `Status: Active` and `Version` to have advanced to `2`.
+
+---
+
+## Step 9 — Add `--env-file` to the sweep crontab
+
+**When:** before or immediately after the first deploy. Nothing warns you about this one.
+
+`compose.yaml` now resolves `${RELEASE_TAG:?…}`, and Compose interpolates that file before it
+does *anything* — including `exec`. So the existing crontab entry
+
+```
+17 3 * * * cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep
+```
+
+now fails every night with an interpolation error, and the only place it shows is
+`journalctl -t games-sweep`. Games stop expiring; nothing else looks wrong.
+
+```bash
+cd ~/Desktop/tic-tac-toe && source deploy/.provisioned.env
+aws ssm start-session --target "$IID"
+```
+
+```bash
+crontab -l | sed 's|docker compose exec|docker compose --env-file deploy/release.env exec|' | crontab -
+crontab -l
+```
+
+Then prove it under the environment cron actually gives it — no TTY, almost no `PATH` — because
+that is what caught the last problem with this entry:
+
+```bash
+cd /srv/tic-tac-toe
+env -i HOME=/home/ssm-user PATH=/usr/local/bin:/usr/bin:/bin bash -c \
+  'cd /srv/tic-tac-toe && docker compose --env-file deploy/release.env exec -T app php artisan games:sweep 2>&1 | logger -t games-sweep'
+echo "exit=$?"
+journalctl -t games-sweep --no-pager | tail -3
+```
+
+Expect `exit=0` and a sweep line in the journal.
+
+---
+
+## After the nine steps: pushing is the whole workflow
 
 ```bash
 composer lint && composer analyse && npx tsc --noEmit && npm run build

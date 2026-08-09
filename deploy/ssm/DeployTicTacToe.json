@@ -9,11 +9,12 @@
         },
         "Mode": {
             "type": "String",
-            "description": "deploy advances the previous-tag pointer and deploys ReleaseTag. fallback deploys the recorded PREVIOUS_RELEASE_TAG and leaves that pointer untouched.",
+            "description": "deploy advances the previous-tag pointer and deploys ReleaseTag. fallback deploys the recorded PREVIOUS_RELEASE_TAG and leaves that pointer untouched. diagnose changes nothing and prints the state Compose reports.",
             "default": "deploy",
             "allowedValues": [
                 "deploy",
-                "fallback"
+                "fallback",
+                "diagnose"
             ]
         }
     },
@@ -42,6 +43,23 @@
                     "WEB=ghcr.io/mirkovicuk/tic-tac-toe-web",
                     "",
                     "command -v jq >/dev/null || { echo 'jq is required by this document and is not installed'; exit 69; }",
+                    "",
+                    "# Read-only, and deliberately before the lock: it exists to observe a deployment",
+                    "# that has gone wrong, including one still in progress, so taking the lock would",
+                    "# make it useless in exactly that case. It changes nothing and always exits 0.",
+                    "#",
+                    "# It is here rather than in the workflow because the deployment role is permitted",
+                    "# to run this document and nothing else -- there is no route to `docker compose ps`",
+                    "# from the runner, and Req 5.5 asks for the health Compose reports for `app`.",
+                    "if [[ \"$MODE\" == diagnose ]]; then",
+                    "  echo '--- release.env'; cat \"$ENVFILE\" 2>/dev/null || echo 'absent'",
+                    "  echo '--- git'; sudo -u ssm-user git -C \"$DIR\" log --oneline -1 2>&1 || true",
+                    "  echo '--- compose ps'; docker compose --env-file \"$ENVFILE\" ps -a 2>&1 || true",
+                    "  echo '--- app logs'; docker compose --env-file \"$ENVFILE\" logs --tail=50 --no-color app 2>&1 || true",
+                    "  echo '--- web logs'; docker compose --env-file \"$ENVFILE\" logs --tail=20 --no-color web 2>&1 || true",
+                    "  echo '--- disk'; df -h / 2>&1 || true",
+                    "  exit 0",
+                    "fi",
                     "",
                     "# One deployment at a time, enforced on the instance. GitHub's concurrency group",
                     "# serialises workflow runs, but a person running send-command by hand is outside",

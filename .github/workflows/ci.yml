@@ -360,3 +360,131 @@ jobs:
         run: |
           echo "app: ghcr.io/mirkovicuk/tic-tac-toe-app:${{ github.sha }}"
           echo "web: ghcr.io/mirkovicuk/tic-tac-toe-web:${{ github.sha }}"
+
+  # Deploys the Image_Pair `publish` just pushed, gates it on the public health endpoint,
+  # and puts the previous tag back if that gate fails (ADR-012).
+  #
+  # No SSH key and no long-lived access key exists anywhere for this: the job mints a
+  # short-lived OIDC token, AWS trades it for a role, and the role may run exactly one SSM
+  # document. ADR-009's rejection of a private key in repository secrets still stands.
+  deploy:
+    name: deploy
+    runs-on: ubuntu-24.04
+    needs: publish
+    if: github.ref == 'refs/heads/main'
+
+    # Load-bearing, not cosmetic. Without it the OIDC token's subject claim carries
+    # `ref:refs/heads/main` instead of `environment:production`, and the role's trust
+    # policy — which matches on the environment form — refuses the assumption. It is also
+    # what applies the environment's deployment-branch rule, and that rule is the entire
+    # branch boundary, since the environment subject carries no branch information.
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    # `cancel-in-progress: false` is the load-bearing half. Cancelling a run mid-deploy
+    # could kill the poll while the instance is still recreating containers, leaving the
+    # stack in a state no later step observes. The instance takes its own `flock` as well,
+    # because this group does not cover a person running `send-command` by hand.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    env:
+      AWS_REGION: eu-west-2
+      INSTANCE_ID: i-0c6bab4bc4644e760
+      HEALTH_URL: https://18-175-88-107.sslip.io/health
+
+    steps:
+      # For `scripts/`, not for the application: the images are already built.
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # `vars`, not `secrets`. The ARN names a role only this repository's `production`
+      # environment can assume, so masking it in logs would cost legibility for nothing.
+      - name: Assume the deployment role by OIDC
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-duration-seconds: 3600
+          aws-region: ${{ env.AWS_REGION }}
+
+      # These three steps deliberately do NOT fail the job themselves — the verdict at the
+      # bottom does. Failing here would skip the diagnosis and the fallback, which are the
+      # two things worth having when a deployment goes wrong.
+      - name: Deploy the Release_Tag
+        id: deploy
+        run: |
+          scripts/ssm-run.sh deploy "${{ github.sha }}" && ok=true || ok=false
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      - name: Health gate
+        id: health
+        if: steps.deploy.outputs.ok == 'true'
+        run: |
+          scripts/health-gate.sh && ok=true || ok=false
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      # Req 5.5: the health Compose reports for `app`. The deployment role can run this one
+      # document and nothing else, so the document carries a read-only `diagnose` mode
+      # rather than the workflow reaching for a shell it is not permitted to have.
+      - name: Report the state on the instance
+        if: steps.deploy.outputs.ok != 'true' || steps.health.outputs.ok != 'true'
+        run: scripts/ssm-run.sh diagnose "${{ github.sha }}" || true
+
+      # Only when the gate failed, and that condition is the point rather than an
+      # oversight. If the document itself failed — a pull error, exit 66 on disk, exit 70
+      # on the lock — the stack was never recreated and the previous version is still
+      # serving, so "falling back" would take a working deployment and change it.
+      #
+      # Exit 67 is the interesting case and is also excluded by the same rule. The pair
+      # check runs after Compose, so a 67 leaves a stack that is running but mismatched;
+      # a fallback would still be wrong, because the registry holds an image whose label
+      # disagrees with its tag and reverting deploys nothing better. Republish instead.
+      #
+      # The tag argument is ignored in this mode. The instance reads
+      # `PREVIOUS_RELEASE_TAG` from its own `release.env`, which is the only place that
+      # value is authoritatively known, and exits 71 if nothing is recorded.
+      - name: Fall back to the Previous_Release_Tag
+        id: fallback
+        if: steps.deploy.outputs.ok == 'true' && steps.health.outputs.ok != 'true'
+        run: |
+          echo "the gate failed for ${{ github.sha }}; restoring the recorded previous tag"
+          scripts/ssm-run.sh fallback "${{ github.sha }}" && ok=true || ok=false
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      - name: Health gate for the fallback
+        id: fallback-health
+        if: steps.fallback.outputs.ok == 'true'
+        run: |
+          scripts/health-gate.sh && ok=true || ok=false
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      # One place decides, and it runs on every path. A run that fell back is RED even
+      # when the fallback is healthy and the site is up (Req 6.4): the commit did not
+      # deploy, and a green tick would say it had.
+      - name: Verdict
+        if: always()
+        run: |
+          echo "tag        ${{ github.sha }}"
+          echo "deploy     status=${{ steps.deploy.outputs.status }} rc=${{ steps.deploy.outputs.rc }} ok=${{ steps.deploy.outputs.ok }}"
+          echo "gate       ok=${{ steps.health.outputs.ok || 'not run' }}"
+          echo "fallback   sent=${{ steps.fallback.outputs.ok || 'not attempted' }} healthy=${{ steps.fallback-health.outputs.ok || 'not run' }}"
+
+          if [[ '${{ steps.deploy.outputs.ok }}' == 'true' && '${{ steps.health.outputs.ok }}' == 'true' ]]; then
+            echo 'deployed and serving'
+            exit 0
+          fi
+
+          if [[ '${{ steps.fallback.outputs.ok }}' == 'true' ]]; then
+            echo 'the previous tag is back; this commit did NOT deploy'
+          elif [[ '${{ steps.deploy.outputs.rc }}' == '67' ]]; then
+            echo 'revision label mismatch: republish, do not revert'
+          elif [[ '${{ steps.deploy.outputs.ok }}' != 'true' ]]; then
+            echo 'the deployment did not run; the previous version is still serving'
+          else
+            echo 'no fallback was possible; the failed deployment is still in place'
+          fi
+          exit 1

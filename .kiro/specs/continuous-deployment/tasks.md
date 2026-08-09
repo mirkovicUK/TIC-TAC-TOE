@@ -31,7 +31,21 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - Four things a review caught, each of which would have failed silently, and all four are now in the script: `docker image prune -f` frees nothing when every image is tagged and `prune -a` would delete the fallback pair, so reclamation is **by name against a keep-set**; writing `release.env` before Compose succeeded would have recorded a never-ran tag as the next fallback target, so it is a temp file promoted with `mv`; `up -d` exits 0 for a container that dies two seconds later, so it is `up -d --wait`; and reading the revision label without comparing it proves nothing, so the comparison is an assertion that exits 67
     - `flock -n` on `deploy/.deploy.lock` at the top, because GitHub's concurrency group does not cover a person running `send-command` by hand
     - `jq` is asserted present in the first lines. It is a hard runtime dependency of this document and is declared in `docs/aws-infra.md`
-    - _Requirements: 3.5a, 3.5b, 4.7, 4.9, 4.10, 6.1, 6.2, 7.4, 7.5_
+    - **A third `Mode`, `diagnose`, added while writing task 6.3.** Requirement 5.5 wants the health
+      Compose reports for `app` when a gate fails, and the deployment role can run this document
+      and nothing else — so there is no route from the runner to `docker compose ps`. It prints
+      `release.env`, `compose ps -a`, the last 50 lines of `app`, the last 20 of `web` and `df -h`,
+      changes nothing, and always exits 0. It runs **before** the `flock` on purpose: it exists to
+      observe a deployment that has gone wrong, including one still in progress, and taking the
+      lock would make it useless in that exact case
+    - **The document must be re-registered after this change.** `aws ssm update-document` by hand;
+      the role holds no document-write action, so editing the JSON and pushing does nothing
+    - Deviation from Requirement 6.2 worth recording rather than hiding: it asks that both images
+      of the previous pair be confirmed *present on the target*. The script instead `docker pull`s
+      them, which is stronger in effect — it recovers even if the local images were reclaimed —
+      and still satisfies the ordering, since the pull precedes any recreation, so a pull failure
+      leaves the failing deployment running as Requirement 6.7 requires
+    - _Requirements: 3.5a, 3.5b, 4.7, 4.9, 4.10, 5.5, 6.1, 6.2, 7.4, 7.5_
 
   - [x] 1.4 Add a healthcheck to the `web` service in `compose.yaml`
     - `wget --spider` against Caddy's admin API on `127.0.0.1:2019/config/`; busybox `wget` is present in `caddy:2-alpine` and `curl` is not
@@ -67,12 +81,22 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - **Every later change to the deploy script needs `aws ssm update-document` by hand.** The Deployment_Role is granted no document-write action on purpose, because a pipeline that can rewrite its own permitted script is constrained by nothing. This is the ongoing cost of the constraint
     - _Requirements: 3.5a, 3.5c_
 
-- [ ] 3. Prepare the instance
-  - [ ] 3.1 Seed `deploy/release.env` with the currently deployed commit
+- [x] 3. Prepare the instance
+  - [x] 3.1 Seed `deploy/release.env` with the currently deployed commit
     - `RELEASE_TAG` set to the SHA the running stack was built from; `PREVIOUS_RELEASE_TAG` left empty
     - Owned by `ssm-user`, mode 600, in `/srv/tic-tac-toe/deploy/`
     - **This must be done before group 4 lands**, because the `:?` form in `compose.yaml` makes Compose refuse to act with the variable unset — which is the intended behaviour and would otherwise strand the instance
     - Add it to `.gitignore` alongside `deploy/app.env`
+    - **Done, and the seeded value has a consequence worth stating.** `RELEASE_TAG` is
+      `f89b4b6`, honestly the commit the running stack was built from — but that commit predates
+      the registry, so **no Image_Pair exists for it**. The first deployment therefore records
+      `f89b4b6` as `PREVIOUS_RELEASE_TAG`, and a fallback to it would fail at `docker pull`
+    - That failure is clean rather than dangerous: the pull happens before Compose recreates
+      anything, so the failed deployment is left running and the run goes red — which is what
+      Requirement 6.7 asks for when no fallback is possible. The first deployment has no working
+      fallback, exactly as it would have had with the pointer left empty
+    - Consequence for the drill: **task 10.1 cannot run against the first deployment.** It needs
+      two published tags behind it, so it runs from the second deployment onward
     - _Requirements: 2.5, 2.6_
   - [x] 3.2 Make both GHCR packages public, after the first publish
     - **Nothing had to be done.** A package first pushed from a public repository with
@@ -85,16 +109,30 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - _Requirements: 1.5, 3.8_
 
 - [ ] 4. Point `compose.yaml` at the Registry
-  - [ ] 4.1 Replace both `build:` blocks with `image:` references
+  - [x] 4.1 Replace both `build:` blocks with `image:` references
     - `ghcr.io/mirkovicuk/tic-tac-toe-app:${RELEASE_TAG:?RELEASE_TAG must be set}` and the same shape for `web`
     - The `:?` form, not `${RELEASE_TAG}` and never `${RELEASE_TAG:-latest}`: it makes Compose refuse rather than resolve to something unintended
     - One variable feeds both services, so they cannot be given different tags by editing one line
     - Lowercase path literals, because GHCR refuses an uppercase reference and the repository is `mirkovicUK/TIC-TAC-TOE`
     - Leave everything else untouched — no `ports:` on `app`, both volumes with their deliberate asymmetry, `env_file`, the healthcheck, the log rotation
     - _Requirements: 2.1, 2.6, 7.3_
-  - [ ] 4.2 Correct the `compose.yaml` header comment
+  - [x] 4.2 Correct the `compose.yaml` header comment
     - It currently states the image is built on the instance and that there is no registry and no CD pipeline
     - _Requirements: 9.9_
+  - [ ] 4.3 Fix the sweep crontab on the instance, by hand
+    - **Landing 4.1 breaks the nightly sweep, silently.** The crontab entry is
+      `cd /srv/tic-tac-toe && docker compose exec -T app php artisan games:sweep`, and Compose
+      interpolates `compose.yaml` before it does anything at all — including `exec`. With
+      `${RELEASE_TAG:?…}` and no env file, the entry now fails every night at 03:17 with an
+      interpolation error, visible only in `journalctl -t games-sweep`
+    - Fix: add `--env-file deploy/release.env` to the entry. One word, and it must be done on the
+      instance the first time it checks out this commit — which the deploy document does itself,
+      as its `git checkout` step
+    - Rejected alternative: `docker exec tic-tac-toe-app-1 …`, which sidesteps interpolation but
+      hardcodes a container name and loses the service abstraction
+    - Verify the way task 13.3 did: run the entry under a simulated cron environment
+      (`env -i`, no TTY) and confirm it exits 0 and logs to `journalctl -t games-sweep`
+    - _Requirements: 2.6, 9.8_
 
 - [x] 5. The `publish` job
   - [x] 5.1 Add `publish` to `.github/workflows/ci.yml`
@@ -111,31 +149,31 @@ Sequencing note: **seed `release.env` on the instance before landing group 4**, 
     - It states that nothing in the workflow writes to the repository or publishes anything, which `publish` makes false
     - _Requirements: 9.9_
 
-- [ ] 6. The `deploy` job
-  - [ ] 6.1 Assume the role by OIDC and add the concurrency group
+- [x] 6. The `deploy` job
+  - [x] 6.1 Assume the role by OIDC and add the concurrency group
     - `environment: production` on the job — without it the token's subject carries `ref:` rather than `environment:` and the trust policy from task 1.1 refuses the assumption
     - `permissions: { contents: read, id-token: write }`; `aws-actions/configure-aws-credentials` pinned by SHA with `role-duration-seconds: 3600`
     - `concurrency: { group: deploy-production, cancel-in-progress: false }` — `false` is load-bearing, because cancelling mid-deploy could leave the stack down or `release.env` half-written
     - _Requirements: 3.1, 3.3b, 3.6, 4.9_
-  - [ ] 6.2 Send the deployment by Run Command and wait on it
+  - [x] 6.2 Send the deployment by Run Command and wait on it
     - **The script is not written here.** It is already fixed inside `DeployTicTacToe` from task 1.3; the workflow's whole job is to invoke it and report. This is the point of the custom document — the workflow passes two parameters and no commands
     - `aws ssm send-command --document-name DeployTicTacToe --instance-ids i-0c6bab4bc4644e760 --timeout-seconds 600 --parameters ReleaseTag=<sha>,Mode=deploy`, then poll `get-command-invocation` until it leaves `InProgress`
     - Copy the invocation's `StandardOutputContent` and `StandardErrorContent` into the workflow log **whatever its status**, and fail the step on any status other than `Success`
     - The document's exit codes are the diagnosis, so keep them visible rather than collapsing them: 64 resolved tag not a SHA, 65 `release.env` missing, 66 out of disk, 67 revision label mismatch, 68 service not running, 69 `jq` missing, 70 another deployment holds the lock, 71 no previous tag recorded
     - _Requirements: 2.2, 4.1, 4.2, 4.6, 4.7, 4.8, 4.10, 6.1, 7.4_
-  - [ ] 6.3 Add the health gate
+  - [x] 6.3 Add the health gate
     - Poll `https://18-175-88-107.sslip.io/health` from the runner, certificate validation left on, at no more than 10-second intervals within a 120-second budget
     - Pass requires **two consecutive** successes at least 5 seconds apart, because the outgoing container can still answer during recreation and one success may have come from the version being replaced
     - Treat a failure status, an unreachable-persistence body, and no response alike as breaking the consecutive run
     - Log the poll count and the final status; on failure also log the health status Compose reports for `app`
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
-  - [ ] 6.4 Route the pair-check failure without triggering the fallback
+  - [x] 6.4 Route the pair-check failure without triggering the fallback
     - **The comparison itself now lives in the document**, which asserts both containers' `org.opencontainers.image.revision` against the deployed tag and exits 67 on a mismatch. It belongs there because that is the only place that can read a container's labels
     - What this task adds is the routing: exit 67 fails the run and the fallback is **not** attempted. A mismatch means the registry holds an image whose label disagrees with its tag, so reverting deploys nothing better; the fix is to republish
     - **The ordering concern the design raised is resolved by the keep-set rather than by ordering.** Reclamation deletes by name and keeps both the deploying and the retained pair, so a mismatch cannot destroy the image it is about even though the reclaim runs before the assertion
     - Note in the workflow that the reclaim runs *after* the pull, and it has to: the keep-set is resolved by reference, so an image not yet pulled would not be in it and would be deleted immediately after arriving
     - _Requirements: 4.6, 7.5_
-  - [ ] 6.5 Add the fallback
+  - [x] 6.5 Add the fallback
     - A second `send-command` with `Mode=fallback`. **The workflow does not name a tag** — it passes the same `ReleaseTag` value, which that mode ignores, because the parameter is required and SSM 2.2 has no conditional parameters
     - **The instance decides what to restore**, reading `PREVIOUS_RELEASE_TAG` from `release.env`. That is the only place the previous tag is authoritatively known, and it removes the workflow's need to scrape it out of a prior command's output
     - Exit 71 means nothing was recorded to fall back to; the failed deployment stays running and the run fails. The failing stack is not disturbed before the document has resolved a tag it can actually deploy
