@@ -14,6 +14,7 @@ use App\Games\PlayerTokens;
 use App\Models\Game;
 use App\Models\Move;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -103,13 +104,28 @@ function representationGame(array $cellIndices, ?string $joinCode = null): array
     $game->last_activity_at = now();
     $game->save();
 
+    // One second between Moves, and this is load-bearing rather than realism. Inserted
+    // in a tight loop the rows share one `created_at` to second granularity, so the
+    // first Move and the last become indistinguishable — and the `lastMoveAt` test
+    // compares at exactly that granularity. Reading the Move_List from the wrong end
+    // then passes. Verified: with the rows one second apart, reversing the ordering in
+    // `GameRepresentation::lastMoveAtOf()` fails that test; sharing a second, it does
+    // not.
+    $base = Carbon::now();
+
     foreach ($cellIndices as $sequenceIndex => $cellIndex) {
+        Carbon::setTestNow($base->copy()->addSeconds($sequenceIndex));
+
         $move = new Move;
         $move->game_id = $game->id;
         $move->cell_index = $cellIndex;
         $move->sequence_index = $sequenceIndex;
         $move->save();
     }
+
+    // Reset before returning: a leaked test-now freezes the clock for every later test
+    // in the process.
+    Carbon::setTestNow();
 
     return [$game->refresh(), ['x' => $x->raw, 'o' => $o->raw]];
 }

@@ -446,6 +446,42 @@ it('logs a cell index that was not an integer as its json encoding', function ()
 });
 
 /*
+ * An oversized Cell is truncated, so one request cannot write an unbounded line into
+ * the log stream.
+ *
+ * `describeCellIndex()` cuts the encoding at `CELL_INDEX_LIMIT` and appends `...`. That
+ * branch had no test: the case above encodes to eight characters and nothing else in
+ * the suite sends a longer value, so raising the limit to 65536 — disabling truncation
+ * — left the whole suite green.
+ *
+ * The length is asserted exactly rather than as "shorter than the input". A cut at the
+ * wrong offset, or a marker that is not appended, is the failure this pins, and both
+ * would satisfy an inequality. 64 kept characters plus three for the marker is 67; the
+ * kept characters are the opening quote and 63 of the payload.
+ */
+it('truncates an oversized cell index and marks it as truncated', function () {
+    $fixture = loggingFixture(GameState::Active, [0, 4]);
+    $game = $fixture['game'];
+
+    loggingActAs($fixture, Mark::X);
+
+    // Well past the limit, and a single repeated character so the encoding needs no
+    // escaping and its length is the payload's length plus the two quotes.
+    $oversized = str_repeat('a', 200);
+
+    post('/games/'.$game->id.'/moves', ['cell_index' => $oversized])
+        ->assertStatus(303)
+        ->assertSessionHas('outcome', MoveOutcome::InvalidMove->value);
+
+    $recorded = loggingSoleRecordOf('move.rejected')['cell_index'] ?? null;
+
+    expect($recorded)->toBeString('the oversized Cell_Index did not reach the record')
+        ->and(strlen((string) $recorded))->toBe(67, 'the truncated Cell_Index is not 64 kept characters plus the three-character marker')
+        ->and(str_ends_with((string) $recorded, '...'))->toBeTrue("the truncated Cell_Index carries no truncation marker: {$recorded}")
+        ->and($recorded)->toBe('"'.str_repeat('a', 63).'...', 'the truncation did not keep the leading 64 characters of the encoding');
+});
+
+/*
  * The Terminal_State transition is a second event and not a field of the first (Req
  * 10.3), so a winning Move emits both records. The order is asserted because the
  * Move is what caused the transition.
