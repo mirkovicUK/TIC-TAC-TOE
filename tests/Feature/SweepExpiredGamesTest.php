@@ -9,6 +9,7 @@ use App\Games\MintedToken;
 use App\Games\PlayerTokens;
 use App\Games\SweepExpiredGames;
 use App\Games\SweepReport;
+use App\Models\ExpiryRecord;
 use App\Models\Game;
 use App\Models\Move;
 use Illuminate\Database\QueryException;
@@ -760,4 +761,40 @@ it('exits zero and reports three zeroes when nothing is eligible', function () {
     expect(sweepSurvivingLabels(['a game played five minutes ago' => $game]))->toBe(['a game played five minutes ago'], 'a run that reported no deletions deleted a Game')
         ->and(sweepMoveCount($game->id))->toBe(2, 'a run that reported no deletions took a Move_List')
         ->and(sweepExpiryIds())->toBe([], 'a run that deleted nothing wrote a tombstone');
+});
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * A TOMBSTONE SAVES THROUGH THE MODEL, so `$timestamps = false` holds.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `expiry_records` has two columns, `game_id` and `deleted_at`, and no
+ * `created_at`/`updated_at`. `ExpiryRecord` therefore sets `$timestamps = false`, and
+ * with it on, an Eloquent save names columns the table does not have and the insert
+ * fails.
+ *
+ * That setting was pinned nowhere in this file. `recordExpiry()` writes through
+ * `ExpiryRecord::query()->insert()` and every fixture here through `DB::table()` —
+ * both query-builder writes, neither of which consults `$timestamps`. Turning it on
+ * left all seven tests above green. It failed in `GameResolverTest` and
+ * `EntryRoutesTest` instead, which build tombstones with `new ExpiryRecord` for
+ * convenience while testing routing and visibility.
+ *
+ * So the claim is asserted here, through the one write path that can observe it, in
+ * the file that owns tombstones rather than two files that do not mention them in
+ * their names.
+ */
+it('saves a tombstone through the model, which has no timestamp columns to write', function () {
+    $record = new ExpiryRecord;
+    $record->game_id = 'saved-through-eloquent';
+    $record->deleted_at = sweepClockAt('2026-09-01 12:00:00');
+
+    // The save is the assertion: with `$timestamps` on, Eloquent adds `created_at` and
+    // `updated_at` to the INSERT and SQLite rejects the statement.
+    $record->save();
+
+    expect(ExpiryRecord::query()->whereKey('saved-through-eloquent')->exists())->toBeTrue('the tombstone was not persisted through the model')
+        ->and($record->timestamps)->toBeFalse('ExpiryRecord has timestamps enabled, and the table has no columns for them')
+        ->and(array_keys(DB::table('expiry_records')->where('game_id', 'saved-through-eloquent')->get()->map(fn (object $row): array => (array) $row)->first() ?? []))
+        ->toBe(['game_id', 'deleted_at'], 'the persisted tombstone carries columns other than the two the table has');
 });
