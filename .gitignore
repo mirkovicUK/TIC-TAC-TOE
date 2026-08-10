@@ -1,11 +1,8 @@
 *.log
 .DS_Store
 
-# Employer-supplied material: the job description and the coding-challenge brief.
-# Deliberately not published. The job description carries a named employee's work
-# email address and a salary figure, and this repository is public (Req 12.4).
-# The brief is The Skills Network's material, not the candidate's, and publishing
-# it would expose the exact challenge to future applicants.
+# Employer-supplied material, deliberately not published: this repository is
+# public (Req 12.4) and none of it is the author's to license.
 /the-skills-network
 
 .env

@@ -19,18 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Scope of this licence
-
-It covers the code and documentation in this repository, which are the author's
-own work. It does not extend to third-party dependencies, each of which carries
-its own licence — the Laravel framework and the packages under `vendor/` and
-`node_modules/` are the largest of them.
-
-The coding-challenge brief and the job description this project was written
-against are not in this repository and are not licensed here. Both are excluded
-by `.gitignore` (`/the-skills-network`): the job description carries a named
-employee's work email address and a salary figure, and the brief is The Skills
-Network's material rather than the author's.

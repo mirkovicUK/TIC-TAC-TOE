@@ -343,4 +343,6 @@ artefact in this repository that is not Laravel's own scaffolding.
 
 ## Licence
 
-[MIT](LICENSE).
+[MIT](LICENSE), covering the code and documentation in this repository. It does not
+extend to third-party dependencies, each of which carries its own licence — the Laravel
+framework and the packages under `vendor/` and `node_modules/` are the largest of them.
